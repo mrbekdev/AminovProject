@@ -1,0 +1,18 @@
+import { IsString, IsOptional, MaxLength, IsInt, IsPositive } from 'class-validator';
+
+export class UpdateCategoryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  description?: string;
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  branchId?: number;
+}

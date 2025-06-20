@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Branch {
+  id         Int        @id @default(autoincrement())
+  name       String     @db.VarChar(100)
+  location   String     @db.VarChar(255)
+  phone      String?    @db.VarChar(20)
+  products   Product[]  @relation("BranchProducts")
+  users      User[]     @relation("BranchUsers")
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  Category   Category[]
+
+  @@unique([name, location])
+  @@index([location])
+}
+
+model User {
+  id           Int           @id @default(autoincrement())
+  name         String        @db.VarChar(100)
+  email        String        @unique @db.VarChar(255)
+  password     String        @db.VarChar(255)
+  phone        String?       @db.VarChar(20)
+  role         UserRole
+  branch       Branch        @relation("BranchUsers", fields: [branchId], references: [id], onDelete: Restrict)
+  branchId     Int
+  transactions Transaction[] @relation("UserTransactions")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([email, branchId])
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  CASHIER
+  WAREHOUSE
+  AUDITOR
+}
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique @db.VarChar(100)
+  description String?   @db.VarChar(255)
+  products    Product[] @relation("CategoryProducts")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  Branch      Branch?   @relation(fields: [branchId], references: [id])
+  branchId    Int?
+
+  @@index([name])
+}
+
+model Product {
+  id           Int           @id @default(autoincrement())
+  name         String        @db.VarChar(100)
+  barcode      String        @unique @db.VarChar(50)
+  description  String?       @db.VarChar(255)
+  category     Category      @relation("CategoryProducts", fields: [categoryId], references: [id], onDelete: Restrict)
+  categoryId   Int
+  status       ProductStatus
+  branch       Branch        @relation("BranchProducts", fields: [branchId], references: [id], onDelete: Restrict)
+  branchId     Int
+  price        Float
+  quantity     Int           @default(0)
+  transactions Transaction[] @relation("ProductTransactions")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  @@index([barcode, branchId, categoryId])
+}
+
+enum ProductStatus {
+  IN_WAREHOUSE
+  IN_STORE
+  SOLD
+  DEFECTIVE
+  RETURNED
+}
+
+model Transaction {
+  id        Int               @id @default(autoincrement())
+  product   Product           @relation("ProductTransactions", fields: [productId], references: [id], onDelete: Restrict)
+  productId Int
+  user      User              @relation("UserTransactions", fields: [userId], references: [id], onDelete: Restrict)
+  userId    Int
+  type      TransactionType
+  status    TransactionStatus @default(PENDING)
+  quantity  Int
+  price     Float
+  total     Float
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([productId, userId, type])
+}
+
+enum TransactionType {
+  SALE
+  RETURN
+  TRANSFER
+  WRITE_OFF
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
