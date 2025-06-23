@@ -6,10 +6,11 @@ import { UserModule } from './user/user.module';
 import { CategoryModule } from './category/category.module';
 import { ProductModule } from './product/product.module';
 import { TransactionModule } from './transaction/transaction.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
-  imports: [BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule],
+  imports: [BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

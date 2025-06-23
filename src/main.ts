@@ -1,9 +1,21 @@
+// main.ts
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableCors({origin:true});
-  await app.listen(process.env.PORT ?? 3000);
+
+  const config = new DocumentBuilder()
+    .setTitle('User API')
+    .setDescription('Foydalanuvchilarni boshqarish API hujjati')
+    .setVersion('1.0')
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document); // <<< MUHIM
+
+  app.enableCors({ origin: true });
+  await app.listen(process.env.PORT ?? 6000);
 }
 bootstrap();
