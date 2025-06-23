@@ -1,13 +1,24 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Controller, Get, Post, Put, Delete, Body, Param, Query,
+  HttpException, HttpStatus, UseGuards
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { BranchService } from './branch.service';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+@ApiTags('Branches')
 @Controller('branches')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class BranchController {
-  constructor(private readonly branchService: BranchService) {}
+  constructor(private readonly branchService: BranchService) { }
 
   @Post()
+  @ApiOperation({ summary: 'Yangi filial yaratish' })
+  @ApiResponse({ status: 201, description: 'Filial yaratildi' })
+  @ApiResponse({ status: 400, description: 'Xato so\'rov' })
   async create(@Body() createBranchDto: CreateBranchDto) {
     try {
       return await this.branchService.create(createBranchDto);
@@ -17,6 +28,9 @@ export class BranchController {
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Filial maʼlumotini olish' })
+  @ApiResponse({ status: 200, description: 'Filial topildi' })
+  @ApiResponse({ status: 404, description: 'Topilmadi' })
   async findOne(@Param('id') id: string) {
     const branch = await this.branchService.findOne(+id);
     if (!branch) throw new HttpException('Branch not found', HttpStatus.NOT_FOUND);
@@ -24,11 +38,15 @@ export class BranchController {
   }
 
   @Get()
+  @ApiOperation({ summary: 'Barcha filiallarni olish' })
+  @ApiQuery({ name: 'skip', required: false })
+  @ApiQuery({ name: 'take', required: false })
   async findAll(@Query('skip') skip = '0', @Query('take') take = '10') {
     return this.branchService.findAll(+skip, +take);
   }
 
   @Put(':id')
+  @ApiOperation({ summary: 'Filialni tahrirlash' })
   async update(@Param('id') id: string, @Body() updateBranchDto: UpdateBranchDto) {
     try {
       return await this.branchService.update(+id, updateBranchDto);
@@ -38,6 +56,7 @@ export class BranchController {
   }
 
   @Delete(':id')
+  @ApiOperation({ summary: 'Filialni o\'chirish' })
   async remove(@Param('id') id: string) {
     try {
       return await this.branchService.remove(+id);

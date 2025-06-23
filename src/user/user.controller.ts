@@ -1,21 +1,24 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
-  HttpException, HttpStatus
+  HttpException, HttpStatus, UseGuards
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Users') // Swaggerda kategoriya nomi
 @Controller('users')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(private readonly userService: UserService) { }
 
   @Post()
   @ApiOperation({ summary: 'Yangi foydalanuvchi yaratish' })
   @ApiResponse({ status: 201, description: 'Foydalanuvchi yaratildi' })
-  @ApiResponse({ status: 400, description: 'Xato so‘rov' })
+  @ApiResponse({ status: 400, description: 'Xato so\'rov' })
   async create(@Body() createUserDto: CreateUserDto) {
     try {
       return await this.userService.create(createUserDto);
@@ -53,7 +56,7 @@ export class UserController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Foydalanuvchini o‘chirish' })
+  @ApiOperation({ summary: 'Foydalanuvchini o\'chirish' })
   async remove(@Param('id') id: string) {
     try {
       return await this.userService.remove(+id);
