@@ -13,7 +13,7 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document); // <<< MUHIM
+  SwaggerModule.setup('api', app, document);
 
   app.enableCors({ origin: true });
   await app.listen(process.env.PORT ?? 6000);
