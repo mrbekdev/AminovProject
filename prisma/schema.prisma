@@ -70,6 +70,7 @@ model Product {
   branch       Branch        @relation("BranchProducts", fields: [branchId], references: [id], onDelete: Restrict)
   branchId     Int
   price        Float
+  marketPrice Float?
   quantity     Int           @default(0)
   transactions Transaction[] @relation("ProductTransactions")
   createdAt    DateTime      @default(now())

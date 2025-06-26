@@ -35,6 +35,10 @@ export class UpdateProductDto {
   @IsNumber()
   @IsPositive()
   price?: number;
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  marketPrice?: number;
 
   @IsOptional()
   @IsInt()
