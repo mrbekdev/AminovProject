@@ -5,6 +5,9 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(100)
   name: string;
+  @IsString()
+  @MaxLength(100)
+  model?: string;
 
   @IsString()
   @MaxLength(50)

@@ -6,6 +6,10 @@ export class UpdateProductDto {
   @IsString()
   @MaxLength(100)
   name?: string;
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  model?: string;
 
   @IsOptional()
   @IsString()

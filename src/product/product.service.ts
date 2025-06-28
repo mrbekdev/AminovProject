@@ -15,7 +15,8 @@ export class ProductService {
           ...createProductDto,
           createdAt: new Date(),
           updatedAt: new Date(),
-          marketPrice:createProductDto.marketPrice
+          marketPrice:createProductDto.marketPrice,
+          model:createProductDto.model
         },
       });
     });
@@ -47,7 +48,7 @@ export class ProductService {
   async update(id: number, updateProductDto: UpdateProductDto) {
     return this.prisma.product.update({
       where: { id },
-      data: { ...updateProductDto, updatedAt: new Date(), marketPrice:updateProductDto.marketPrice },
+      data: { ...updateProductDto, updatedAt: new Date(), marketPrice:updateProductDto.marketPrice,model:updateProductDto.model },
     });
   }
 

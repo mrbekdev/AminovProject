@@ -71,6 +71,7 @@ model Product {
   branchId     Int
   price        Float
   marketPrice Float?
+  model String?
   quantity     Int           @default(0)
   transactions Transaction[] @relation("ProductTransactions")
   createdAt    DateTime      @default(now())
