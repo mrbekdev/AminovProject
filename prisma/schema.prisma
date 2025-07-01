@@ -22,6 +22,8 @@ model Branch {
   @@index([location])
 }
 
+// schema.prisma ga qo'shish kerak
+
 model User {
   id           Int           @id @default(autoincrement())
   name         String        @db.VarChar(100)
@@ -32,10 +34,24 @@ model User {
   branch       Branch        @relation("BranchUsers", fields: [branchId], references: [id], onDelete: Restrict)
   branchId     Int
   transactions Transaction[] @relation("UserTransactions")
+  location     UserLocation?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-
   @@index([email, branchId])
+}
+
+model UserLocation {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  latitude  Float
+  longitude Float
+  address   String?  @db.VarChar(500)
+  isOnline  Boolean  @default(true)
+  lastSeen  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, isOnline])
 }
 
 enum UserRole {

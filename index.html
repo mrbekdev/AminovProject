@@ -1,275 +1,649 @@
 <!DOCTYPE html>
 <html lang="uz">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tranzaksiyalarni Test Qilish</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { padding: 20px; }
-    .container { max-width: 800px; }
-    .error { color: red; }
-    .success { color: green; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Location Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        .status-panel {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .status-item {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.offline {
+            background: #f44336;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            gap: 1rem;
+            padding: 1rem;
+        }
+
+        .map-container {
+            flex: 1;
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 1.5rem;
+            color: white;
+            overflow-y: auto;
+            max-height: calc(100vh - 120px);
+        }
+
+        .sidebar h3 {
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+            color: #fff;
+        }
+
+        .user-list {
+            list-style: none;
+        }
+
+        .user-item {
+            background: rgba(255, 255, 255, 0.1);
+            margin-bottom: 0.5rem;
+            padding: 1rem;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .user-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateX(5px);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .user-details {
+            flex: 1;
+        }
+
+        .user-name {
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+        }
+
+        .user-location {
+            font-size: 0.8rem;
+            opacity: 0.7;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+        }
+
+        .control-group {
+            margin-bottom: 1rem;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .control-group input, .control-group button {
+            width: 100%;
+            padding: 0.5rem;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 0.9rem;
+        }
+
+        .control-group input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .control-group button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        .control-group button:hover {
+            transform: translateY(-2px);
+        }
+
+        .floating-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .floating-btn {
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .floating-btn:hover {
+            transform: scale(1.1);
+            background: white;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            z-index: 2000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.error {
+            background: #f44336;
+        }
+
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+                padding: 0.5rem;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: 200px;
+                margin-bottom: 1rem;
+            }
+            
+            .header {
+                padding: 1rem;
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .status-panel {
+                justify-content: center;
+            }
+        }
+    </style>
 </head>
 <body>
-  <div class="container">
-    <h1 class="mb-4">Tranzaksiyalarni Test Qilish</h1>
-
-    <!-- Yangi Tranzaksiya Yaratish Formasi -->
-    <h3>Yangi Tranzaksiya Yaratish</h3>
-    <form id="create-transaction-form" class="mb-4">
-      <div class="mb-3">
-        <label for="productId" class="form-label">Mahsulot ID</label>
-        <input type="number" class="form-control" id="productId" required>
-      </div>
-      <div class="mb-3">
-        <label for="userId" class="form-label">Foydalanuvchi ID</label>
-        <input type="number" class="form-control" id="userId" required>
-      </div>
-      <div class="mb-3">
-        <label for="type" class="form-label">Tranzaksiya Turi</label>
-        <select class="form-select" id="type" required>
-          <option value="SALE">Sotish</option>
-          <option value="RETURN">Qaytarish</option>
-          <option value="TRANSFER">O‘tkazish</option>
-          <option value="WRITE_OFF">Yaroqsiz deb hisobdan chiqarish</option>
-        </select>
-      </div>
-      <div class="mb-3">
-        <label for="quantity" class="form-label">Soni</label>
-        <input type="number" class="form-control" id="quantity" required>
-      </div>
-      <div class="mb-3">
-        <label for="price" class="form-label">Narxi (bir dona)</label>
-        <input type="number" step="0.01" class="form-control" id="price" required>
-      </div>
-      <button type="submit" class="btn btn-primary">Yaratish</button>
-    </form>
-    <div id="create-message" class="mb-4"></div>
-
-    <!-- Tranzaksiyalarni Ko‘rish -->
-    <h3>Tranzaksiyalar Ro‘yxati</h3>
-    <form id="filter-transactions-form" class="mb-4">
-      <div class="row">
-        <div class="col-md-3 mb-3">
-          <label for="filterProductId" class="form-label">Mahsulot ID</label>
-          <input type="number" class="form-control" id="filterProductId">
+    <div class="header">
+        <h1>🗺️ Real-time Location Map</h1>
+        <div class="status-panel">
+            <div class="status-item">
+                <div class="status-indicator" id="connectionStatus"></div>
+                <span id="connectionText">Ulanmoqda...</span>
+            </div>
+            <div class="status-item">
+                <span>👥 <span id="userCount">0</span> foydalanuvchi</span>
+            </div>
         </div>
-        <div class="col-md-3 mb-3">
-          <label for="filterUserId" class="form-label">Foydalanuvchi ID</label>
-          <input type="number" class="form-control" id="filterUserId">
-        </div>
-        <div class="col-md-3 mb-3">
-          <label for="filterType" class="form-label">Tranzaksiya Turi</label>
-          <select class="form-select" id="filterType">
-            <option value="">Barchasi</option>
-            <option value="SALE">Sotish</option>
-            <option value="RETURN">Qaytarish</option>
-            <option value="TRANSFER">O‘tkazish</option>
-            <option value="WRITE_OFF">Yaroqsiz deb hisobdan chiqarish</option>
-          </select>
-        </div>
-        <div class="col-md-3 mb-3">
-          <label for="filterTake" class="form-label">Soni</label>
-          <input type="number" class="form-control" id="filterTake" value="10">
-        </div>
-      </div>
-      <button type="submit" class="btn btn-secondary">Filtrlash</button>
-    </form>
-    <table class="table table-bordered" id="transactions-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Mahsulot</th>
-          <th>Foydalanuvchi</th>
-          <th>Turi</th>
-          <th>Holati</th>
-          <th>Soni</th>
-          <th>Narxi</th>
-          <th>Jami</th>
-          <th>Amallar</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+    </div>
 
-    <!-- Tranzaksiyani Yangilash Formasi -->
-    <h3>Tranzaksiyani Yangilash</h3>
-    <form id="update-transaction-form" class="mb-4">
-      <div class="mb-3">
-        <label for="updateId" class="form-label">Tranzaksiya ID</label>
-        <input type="number" class="form-control" id="updateId" required>
-      </div>
-      <div class="mb-3">
-        <label for="updateProductId" class="form-label">Mahsulot ID</label>
-        <input type="number" class="form-control" id="updateProductId">
-      </div>
-      <div class="mb-3">
-        <label for="updateUserId" class="form-label">Foydalanuvchi ID</label>
-        <input type="number" class="form-control" id="updateUserId">
-      </div>
-      <div class="mb-3">
-        <label for="updateType" class="form-label">Tranzaksiya Turi</label>
-        <select class="form-select" id="updateType">
-          <option value="">O‘zgartirilmasin</option>
-          <option value="SALE">Sotish</option>
-          <option value="RETURN">Qaytarish</option>
-          <option value="TRANSFER">O‘tkazish</option>
-          <option value="WRITE_OFF">Yaroqsiz deb hisobdan chiqarish</option>
-        </select>
-      </div>
-      <div class="mb-3">
-        <label for="updateStatus" class="form-label">Holati</label>
-        <select class="form-select" id="updateStatus">
-          <option value="">O‘zgartirilmasin</option>
-          <option value="PENDING">Kutilmoqda</option>
-          <option value="COMPLETED">Yakunlangan</option>
-          <option value="CANCELLED">Bekor qilingan</option>
-        </select>
-      </div>
-      <div class="mb-3">
-        <label for="updateQuantity" class="form-label">Soni</label>
-        <input type="number" class="form-control" id="updateQuantity">
-      </div>
-      <div class="mb-3">
-        <label for="updatePrice" class="form-label">Narxi (bir dona)</label>
-        <input type="number" step="0.01" class="form-control" id="updatePrice">
-      </div>
-      <button type="submit" class="btn btn-warning">Yangilash</button>
-    </form>
-    <div id="update-message" class="mb-4"></div>
-  </div>
+    <div class="main-container">
+        <div class="map-container">
+            <div id="map"></div>
+            <div class="floating-controls">
+                <button class="floating-btn" onclick="centerMap()" title="Mening joylashuvim">📍</button>
+                <button class="floating-btn" onclick="refreshUsers()" title="Yangilash">🔄</button>
+                <button class="floating-btn" onclick="toggleTracking()" title="Kuzatishni yoqish/o'chirish" id="trackingBtn">🎯</button>
+            </div>
+        </div>
 
-  <script>
-    const API_URL = 'http://localhost:3000';
+        <div class="sidebar">
+            <div class="controls">
+                <div class="control-group">
+                    <label>JWT Token:</label>
+                    <input type="password" id="tokenInput" placeholder="Token kiriting...">
+                </div>
+                <div class="control-group">
+                    <label>Server URL:</label>
+                    <input type="text" id="serverInput" value="ws://localhost:3000/location" placeholder="Server manzili">
+                </div>
+                <div class="control-group">
+                    <button onclick="connectToServer()">🔗 Ulanish</button>
+                </div>
+                <div class="control-group">
+                    <label>Yaqin foydalanuvchilar radiusi (km):</label>
+                    <input type="range" id="radiusSlider" min="1" max="50" value="5" oninput="updateRadius(this.value)">
+                    <span id="radiusValue">5 km</span>
+                </div>
+            </div>
 
-    // Tranzaksiya yaratish
-    document.getElementById('create-transaction-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const data = {
-        productId: +document.getElementById('productId').value,
-        userId: +document.getElementById('userId').value,
-        type: document.getElementById('type').value,
-        quantity: +document.getElementById('quantity').value,
-        price: +document.getElementById('price').value,
-      };
-      try {
-        const response = await fetch(`${API_URL}/transactions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        const result = await response.json();
-        if (response.ok) {
-          document.getElementById('create-message').innerHTML = '<p class="success">Tranzaksiya muvaffaqiyatli yaratildi!</p>';
-          loadTransactions();
-        } else {
-          document.getElementById('create-message').innerHTML = `<p class="error">Xato: ${result.message}</p>`;
+            <h3>🌐 Onlayn foydalanuvchilar</h3>
+            <ul class="user-list" id="userList"></ul>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        // Global variables
+        let map;
+        let socket;
+        let currentUserId;
+        let userMarkers = {};
+        let myLocationMarker;
+        let isTracking = false;
+        let trackingInterval;
+
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView([41.2995, 69.2401], 12); // Toshkent markazi
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Get user's current location
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        map.setView([lat, lng], 15);
+                        
+                        // Add current location marker
+                        myLocationMarker = L.marker([lat, lng], {
+                            icon: L.divIcon({
+                                className: 'my-location-marker',
+                                html: '<div style="background: #4CAF50; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>',
+                                iconSize: [26, 26],
+                                iconAnchor: [13, 13]
+                            })
+                        }).addTo(map).bindPopup('Mening joylashuvim');
+                    },
+                    (error) => {
+                        showNotification('Joylashuv olishda xatolik: ' + error.message, 'error');
+                    }
+                );
+            }
         }
-      } catch (error) {
-        document.getElementById('create-message').innerHTML = `<p class="error">Xato: ${error.message}</p>`;
-      }
-    });
 
-    // Tranzaksiyalarni yuklash
-    async function loadTransactions() {
-      const filterProductId = document.getElementById('filterProductId').value;
-      const filterUserId = document.getElementById('filterUserId').value;
-      const filterType = document.getElementById('filterType').value;
-      const filterTake = document.getElementById('filterTake').value;
-      let url = `${API_URL}/transactions?take=${filterTake}`;
-      if (filterProductId) url += `&productId=${filterProductId}`;
-      if (filterUserId) url += `&userId=${filterUserId}`;
-      if (filterType) url += `&type=${filterType}`;
+        // Socket connection
+        function connectToServer() {
+            const token = document.getElementById('tokenInput').value;
+            const serverUrl = document.getElementById('serverInput').value;
 
-      try {
-        const response = await fetch(url);
-        const transactions = await response.json();
-        const tbody = document.querySelector('#transactions-table tbody');
-        tbody.innerHTML = '';
-        transactions.forEach(t => {
-          const row = document.createElement('tr');
-          row.innerHTML = `
-            <td>${t.id}</td>
-            <td>${t.product ? t.product.name : 'Noma’lum'}</td>
-            <td>${t.user ? t.user.name : 'Noma’lum'}</td>
-            <td>${t.type}</td>
-            <td>${t.status}</td>
-            <td>${t.quantity}</td>
-            <td>${t.price}</td>
-            <td>${t.total}</td>
-            <td><button class="btn btn-danger btn-sm" onclick="deleteTransaction(${t.id})">O‘chirish</button></td>
-          `;
-          tbody.appendChild(row);
-        });
-      } catch (error) {
-        console.error('Tranzaksiyalarni yuklashda xato:', error);
-      }
-    }
+            if (!token) {
+                showNotification('Token kiriting!', 'error');
+                return;
+            }
 
-    // Tranzaksiyalarni filtrlangan holda yuklash
-    document.getElementById('filter-transactions-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      loadTransactions();
-    });
+            // Disconnect existing connection
+            if (socket) {
+                socket.disconnect();
+            }
 
-    // Tranzaksiyani o‘chirish
-    async function deleteTransaction(id) {
-      if (!confirm('Tranzaksiyani o‘chirishni tasdiqlaysizmi?')) return;
-      try {
-        const response = await fetch(`${API_URL}/transactions/${id}`, { method: 'DELETE' });
-        if (response.ok) {
-          alert('Tranzaksiya muvaffaqiyatli o‘chirildi!');
-          loadTransactions();
-        } else {
-          const result = await response.json();
-          alert(`Xato: ${result.message}`);
+            updateConnectionStatus('Ulanmoqda...', false);
+
+            socket = io(serverUrl, {
+                auth: {
+                    token: token
+                }
+            });
+
+            // Connection events
+            socket.on('connect', () => {
+                updateConnectionStatus('Ulandi', true);
+                showNotification('Serverga muvaffaqiyatli ulandi!');
+                
+                // Request initial data
+                socket.emit('getAllOnlineUsers');
+            });
+
+            socket.on('disconnect', () => {
+                updateConnectionStatus('Uzildi', false);
+                showNotification('Server bilan aloqa uzildi', 'error');
+                clearAllMarkers();
+            });
+
+            socket.on('connect_error', (error) => {
+                updateConnectionStatus('Xatolik', false);
+                showNotification('Ulanishda xatolik: ' + error.message, 'error');
+            });
+
+            // Location events
+            socket.on('onlineUsers', updateUserList);
+            socket.on('onlineUsersUpdated', updateUserList);
+            socket.on('locationUpdated', updateUserLocation);
+            socket.on('nearbyUsers', updateNearbyUsers);
+            socket.on('locationUpdateConfirmed', (data) => {
+                if (data.success) {
+                    showNotification('Joylashuv yangilandi');
+                }
+            });
+
+            socket.on('error', (error) => {
+                showNotification('Xatolik: ' + error.message, 'error');
+            });
         }
-      } catch (error) {
-        alert(`Xato: ${error.message}`);
-      }
-    }
 
-    // Tranzaksiyani yangilash
-    document.getElementById('update-transaction-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const id = +document.getElementById('updateId').value;
-      const data = {};
-      const productId = document.getElementById('updateProductId').value;
-      const userId = document.getElementById('updateUserId').value;
-      const type = document.getElementById('updateType').value;
-      const status = document.getElementById('updateStatus').value;
-      const quantity = document.getElementById('updateQuantity').value;
-      const price = document.getElementById('updatePrice').value;
-
-      if (productId) data.productId = +productId;
-      if (userId) data.userId = +userId;
-      if (type) data.type = type;
-      if (status) data.status = status;
-      if (quantity) data.quantity = +quantity;
-      if (price) data.price = +price;
-
-      try {
-        const response = await fetch(`${API_URL}/transactions/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        const result = await response.json();
-        if (response.ok) {
-          document.getElementById('update-message').innerHTML = '<p class="success">Tranzaksiya muvaffaqiyatli yangilandi!</p>';
-          loadTransactions();
-        } else {
-          document.getElementById('update-message').innerHTML = `<p class="error">Xato: ${result.message}</p>`;
+        // Update connection status
+        function updateConnectionStatus(text, isConnected) {
+            const statusIndicator = document.getElementById('connectionStatus');
+            const connectionText = document.getElementById('connectionText');
+            
+            connectionText.textContent = text;
+            statusIndicator.className = isConnected ? 'status-indicator' : 'status-indicator offline';
         }
-      } catch (error) {
-        document.getElementById('update-message').innerHTML = `<p class="error">Xato: ${error.message}</p>`;
-      }
-    });
 
-    // Sahifa yuklanganda tranzaksiyalarni yuklash
-    loadTransactions();
-  </script>
+        // Update user list
+        function updateUserList(users) {
+            const userList = document.getElementById('userList');
+            const userCount = document.getElementById('userCount');
+            
+            userList.innerHTML = '';
+            userCount.textContent = users.length;
+
+            users.forEach(user => {
+                const li = document.createElement('li');
+                li.className = 'user-item';
+                li.onclick = () => focusOnUser(user);
+                
+                const initials = user.user?.name ? 
+                    user.user.name.split(' ').map(n => n[0]).join('').toUpperCase() : 
+                    'U' + user.userId;
+
+                li.innerHTML = `
+                    <div class="user-info">
+                        <div class="user-avatar">${initials}</div>
+                        <div class="user-details">
+                            <div class="user-name">${user.user?.name || 'Foydalanuvchi ' + user.userId}</div>
+                            <div class="user-location">
+                                📍 ${user.latitude.toFixed(4)}, ${user.longitude.toFixed(4)}
+                                ${user.address ? '<br>🏠 ' + user.address : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                userList.appendChild(li);
+                
+                // Update map marker
+                updateUserMarker(user);
+            });
+        }
+
+        // Update user marker on map
+        function updateUserMarker(user) {
+            const markerId = 'user_' + user.userId;
+            
+            if (userMarkers[markerId]) {
+                map.removeLayer(userMarkers[markerId]);
+            }
+
+            const initials = user.user?.name ? 
+                user.user.name.split(' ').map(n => n[0]).join('').toUpperCase() : 
+                'U' + user.userId;
+
+            const marker = L.marker([user.latitude, user.longitude], {
+                icon: L.divIcon({
+                    className: 'user-marker',
+                    html: `<div style="background: linear-gradient(45deg, #FF6B6B, #4ECDC4); width: 35px; height: 35px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px;">${initials}</div>`,
+                    iconSize: [41, 41],
+                    iconAnchor: [20, 20]
+                })
+            }).addTo(map);
+
+            const popupContent = `
+                <div style="text-align: center;">
+                    <h4>${user.user?.name || 'Foydalanuvchi ' + user.userId}</h4>
+                    <p><strong>Joylashuv:</strong> ${user.latitude.toFixed(6)}, ${user.longitude.toFixed(6)}</p>
+                    ${user.address ? `<p><strong>Manzil:</strong> ${user.address}</p>` : ''}
+                    <p><strong>Oxirgi ko'rilgan:</strong> ${new Date(user.lastSeen).toLocaleString()}</p>
+                </div>
+            `;
+            
+            marker.bindPopup(popupContent);
+            userMarkers[markerId] = marker;
+        }
+
+        // Update single user location
+        function updateUserLocation(locationData) {
+            updateUserMarker(locationData);
+            showNotification(`${locationData.user?.name || 'Foydalanuvchi'} joylashuvini yangiladi`);
+        }
+
+        // Update nearby users
+        function updateNearbyUsers(nearbyUsers) {
+            // You can add special styling for nearby users here
+            console.log('Nearby users:', nearbyUsers);
+        }
+
+        // Focus on specific user
+        function focusOnUser(user) {
+            map.setView([user.latitude, user.longitude], 16);
+            const markerId = 'user_' + user.userId;
+            if (userMarkers[markerId]) {
+                userMarkers[markerId].openPopup();
+            }
+        }
+
+        // Center map on current location
+        function centerMap() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        map.setView([lat, lng], 16);
+                        
+                        if (myLocationMarker) {
+                            map.removeLayer(myLocationMarker);
+                        }
+                        
+                        myLocationMarker = L.marker([lat, lng], {
+                            icon: L.divIcon({
+                                className: 'my-location-marker',
+                                html: '<div style="background: #4CAF50; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>',
+                                iconSize: [26, 26],
+                                iconAnchor: [13, 13]
+                            })
+                        }).addTo(map).bindPopup('Mening joylashuvim');
+                        
+                        // Send location to server if connected
+                        if (socket && socket.connected) {
+                            socket.emit('updateLocation', {
+                                latitude: lat,
+                                longitude: lng
+                            });
+                        }
+                    },
+                    (error) => {
+                        showNotification('Joylashuv olishda xatolik', 'error');
+                    }
+                );
+            }
+        }
+
+        // Refresh users
+        function refreshUsers() {
+            if (socket && socket.connected) {
+                socket.emit('getAllOnlineUsers');
+                showNotification('Ma\'lumotlar yangilandi');
+            } else {
+                showNotification('Serverga ulanmagan', 'error');
+            }
+        }
+
+        // Toggle location tracking
+        function toggleTracking() {
+            const btn = document.getElementById('trackingBtn');
+            
+            if (isTracking) {
+                clearInterval(trackingInterval);
+                isTracking = false;
+                btn.textContent = '🎯';
+                btn.title = 'Kuzatishni yoqish';
+                showNotification('Joylashuvni kuzatish to\'xtatildi');
+            } else {
+                isTracking = true;
+                btn.textContent = '⏹️';
+                btn.title = 'Kuzatishni to\'xtatish';
+                showNotification('Joylashuvni kuzatish boshlandi');
+                
+                trackingInterval = setInterval(() => {
+                    if (navigator.geolocation && socket && socket.connected) {
+                        navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                                socket.emit('updateLocation', {
+                                    latitude: position.coords.latitude,
+                                    longitude: position.coords.longitude
+                                });
+                            }
+                        );
+                    }
+                }, 10000); // Har 10 sekundda yangilanadi
+            }
+        }
+
+        // Update radius
+        function updateRadius(value) {
+            document.getElementById('radiusValue').textContent = value + ' km';
+            if (socket && socket.connected) {
+                socket.emit('getNearbyUsers', { radius: parseInt(value) });
+            }
+        }
+
+        // Clear all markers
+        function clearAllMarkers() {
+            Object.values(userMarkers).forEach(marker => {
+                map.removeLayer(marker);
+            });
+            userMarkers = {};
+        }
+
+        // Show notification
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = 'notification' + (type === 'error' ? ' error' : '');
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+        });
+    </script>
 </body>
 </html>

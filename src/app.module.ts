@@ -7,9 +7,10 @@ import { CategoryModule } from './category/category.module';
 import { ProductModule } from './product/product.module';
 import { TransactionModule } from './transaction/transaction.module';
 import { AuthModule } from './auth/auth.module';
+import { LocationModule } from './location/location.module';
 
 @Module({
-  imports: [BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule],
+  imports: [BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule,],
   controllers: [AppController],
   providers: [AppService],
 })
