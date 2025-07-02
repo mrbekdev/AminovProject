@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { BranchModule } from './branch/branch.module';
@@ -10,7 +11,10 @@ import { AuthModule } from './auth/auth.module';
 import { LocationModule } from './location/location.module';
 
 @Module({
-  imports: [BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule,],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
