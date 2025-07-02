@@ -1,3 +1,4 @@
+// location.gateway.ts
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -18,13 +19,32 @@ interface AuthenticatedSocket extends Socket {
   userData?: { sub: number; role: string; name?: string; email?: string; branch?: string };
 }
 
+interface UserLocationWithUser {
+  userId: number;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  isOnline: boolean;
+  lastSeen: Date;
+  updatedAt: Date;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    branch?: {
+      id: number;
+      name: string;
+    };
+  };
+}
+
 @WebSocketGateway({
   cors: {
     origin: '*',
     methods: ['GET', 'POST'],
     credentials: true,
   },
-  namespace: '/location',
 })
 @Injectable()
 export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -38,7 +58,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   constructor(
     private locationService: LocationService,
     private jwtService: JwtService,
-  ) {}
+  ) { }
 
   async handleConnection(client: AuthenticatedSocket) {
     try {
@@ -117,13 +137,15 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         isOnline: true,
       });
 
+      // Use the explicit type for destructuring, cast through unknown to avoid linter error
+      const { latitude, longitude, address, lastSeen, user } = updatedLocation as unknown as UserLocationWithUser;
       this.server.emit('locationUpdated', {
         userId: client.userId,
-        latitude: updatedLocation.latitude,
-        longitude: updatedLocation.longitude,
-        address: updatedLocation.address,
-        lastSeen: updatedLocation.lastSeen,
-        user: updatedLocation.user,
+        latitude,
+        longitude,
+        address,
+        lastSeen,
+        user,
       });
 
       // Notify admins with detailed user info
@@ -181,6 +203,28 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       client.emit('onlineUsers', onlineUsers);
     } catch (error) {
       this.handleSocketError(client, error, 'Get online users error');
+    }
+  }
+
+  // New event to get specific user location
+  @SubscribeMessage('getUserLocation')
+  async handleGetUserLocation(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { targetUserId: number },
+  ) {
+    if (typeof client.userId !== 'number') {
+      return this.handleSocketError(client, new UnauthorizedException('User not authenticated'), 'Authentication error');
+    }
+
+    if (client.userData?.role !== 'ADMIN') {
+      return this.handleSocketError(client, new UnauthorizedException('Only admins can view specific user locations'), 'Authorization error');
+    }
+
+    try {
+      const location = await this.locationService.getUserLocation(data.targetUserId);
+      client.emit('userLocation', location);
+    } catch (error) {
+      this.handleSocketError(client, error, 'Get user location error');
     }
   }
 

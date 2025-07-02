@@ -1,223 +1,207 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { UpdateLocationDto } from './dto/update-location.dto';
+
+export interface UserLocationWithUser {
+  userId: number;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  isOnline: boolean;
+  lastSeen: Date;
+  updatedAt: Date;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    branch?: {
+      id: number;
+      name: string;
+    };
+  };
+}
 
 @Injectable()
 export class LocationService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
-  async updateUserLocation(userId: number, locationDto: UpdateLocationDto) {
-    if (!this.validateUserId(userId)) {
-      throw new BadRequestException('Invalid userId');
-    }
-
-    const existingLocation = await this.prisma.userLocation.findUnique({
-      where: { userId },
-    });
-
-    const locationData = {
-      ...locationDto,
-      latitude: locationDto.latitude ?? 0,
-      longitude: locationDto.longitude ?? 0,
-      lastSeen: new Date(),
-      updatedAt: new Date(),
-      isOnline: locationDto.isOnline ?? true,
-    };
-
-    if (!this.validateCoordinates(locationData.latitude, locationData.longitude)) {
-      throw new BadRequestException('Invalid coordinates');
-    }
-
-    if (existingLocation) {
-      return this.prisma.userLocation.update({
-        where: { userId },
-        data: locationData,
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              role: true,
-              branch: true,
-            },
-          },
-        },
-      });
-    } else {
-      return this.prisma.userLocation.create({
-        data: {
-          userId,
-          ...locationData,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              role: true,
-              branch: true,
-            },
-          },
-        },
-      });
-    }
+  // Validate coordinates
+  validateCoordinates(latitude: number, longitude: number): boolean {
+    return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
   }
 
-  async getUserLocation(userId: number) {
-    if (!this.validateUserId(userId)) {
-      throw new BadRequestException('Invalid userId');
+  // Update or create a user's location
+  async updateUserLocation(
+    userId: number,
+    data: { userId: number; latitude: number; longitude: number; address?: string; isOnline?: boolean },
+  ): Promise<UserLocationWithUser> {
+    if (!this.validateCoordinates(data.latitude, data.longitude)) {
+      throw new Error('Invalid coordinates');
     }
 
-    const location = await this.prisma.userLocation.findUnique({
+    return await this.prisma.userLocation.upsert({
       where: { userId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            branch: true,
-          },
-        },
+      update: {
+        latitude: data.latitude,
+        longitude: data.longitude,
+        address: data.address,
+        isOnline: data.isOnline ?? true,
+        lastSeen: new Date(),
+        updatedAt: new Date(),
       },
-    });
-
-    if (!location) {
-      throw new BadRequestException('Location not found');
-    }
-    return location;
-  }
-
-  async getAllOnlineUsers() {
-    return this.prisma.userLocation.findMany({
-      where: {
-        isOnline: true,
-        lastSeen: {
-          gte: new Date(Date.now() - 5 * 60 * 1000), // Last 5 minutes
-        },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            branch: true,
-          },
-        },
-      },
-      orderBy: { lastSeen: 'desc' },
-    });
-  }
-
-  async setUserOffline(userId: number) {
-    if (!this.validateUserId(userId)) {
-      throw new BadRequestException('Invalid userId');
-    }
-
-    const location = await this.prisma.userLocation.findUnique({
-      where: { userId },
-    });
-
-    if (!location) {
-      throw new BadRequestException('Location not found');
-    }
-
-    return this.prisma.userLocation.update({
-      where: { userId },
-      data: {
-        isOnline: false,
+      create: {
+        userId,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        address: data.address,
+        isOnline: data.isOnline ?? true,
         lastSeen: new Date(),
       },
-    });
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            branch: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    }) as unknown as UserLocationWithUser;
   }
 
-  async deleteUserLocation(userId: number) {
-    if (!this.validateUserId(userId)) {
-      throw new BadRequestException('Invalid userId');
-    }
-
+  // Get a specific user's location
+  async getUserLocation(userId: number): Promise<UserLocationWithUser> {
     const location = await this.prisma.userLocation.findUnique({
       where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            branch: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!location) {
-      throw new BadRequestException('Location not found');
+      throw new NotFoundException(`Location for user ${userId} not found`);
     }
 
-    return this.prisma.userLocation.delete({
-      where: { userId },
-    });
+    return location as unknown as UserLocationWithUser;
   }
 
-  async getNearbyUsers(userId: number, radiusKm: number = 5) {
-    if (!this.validateUserId(userId)) {
-      throw new BadRequestException('Invalid userId');
-    }
-    if (radiusKm <= 0 || radiusKm > 100) {
-      throw new BadRequestException('Radius must be between 0 and 100 km');
-    }
+  // Get all online users' locations
+  async getAllOnlineUsers(): Promise<UserLocationWithUser[]> {
+    return (await this.prisma.userLocation.findMany({
+      where: { isOnline: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            branch: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    })) as unknown as UserLocationWithUser[];
+  }
 
+  // Get nearby users within a specified radius (in kilometers)
+  async getNearbyUsers(userId: number, radius: number): Promise<UserLocationWithUser[]> {
     const userLocation = await this.getUserLocation(userId);
-    if (!userLocation) {
-      throw new BadRequestException('User location not found');
-    }
+    const allLocations = await this.prisma.userLocation.findMany({
+      where: {
+        isOnline: true,
+        userId: { not: userId }, // Exclude the requesting user
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            branch: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
 
-    const allUsers = await this.getAllOnlineUsers();
-
-    return allUsers
-      .filter((location) => {
-        if (location.userId === userId) return false;
+    return allLocations
+      .map((loc) => {
         const distance = this.calculateDistance(
           userLocation.latitude,
           userLocation.longitude,
-          location.latitude,
-          location.longitude,
+          loc.latitude,
+          loc.longitude,
         );
-        return distance <= radiusKm;
+        if (distance <= radius) {
+          return { ...(loc as unknown as UserLocationWithUser), distance };
+        }
+        return null;
       })
-      .map((location) => ({
-        ...location,
-        distance: this.calculateDistance(
-          userLocation.latitude,
-          userLocation.longitude,
-          location.latitude,
-          location.longitude,
-        ),
-      }));
+      .filter((loc): loc is UserLocationWithUser & { distance: number } => loc !== null);
   }
 
+  // Set a user offline
+  async setUserOffline(userId: number): Promise<void> {
+    try {
+      await this.prisma.userLocation.update({
+        where: { userId },
+        data: { isOnline: false, updatedAt: new Date() },
+      });
+    } catch (error) {
+      throw new NotFoundException(`Location for user ${userId} not found`);
+    }
+  }
+
+  // Delete a user's location
+  async deleteUserLocation(userId: number): Promise<void> {
+    try {
+      await this.prisma.userLocation.delete({
+        where: { userId },
+      });
+    } catch (error) {
+      throw new NotFoundException(`Location for user ${userId} not found`);
+    }
+  }
+
+  // Calculate distance between two coordinates using Haversine formula (in kilometers)
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371; // Earth radius in km
-    const dLat = this.deg2rad(lat2 - lat1);
-    const dLon = this.deg2rad(lon2 - lon1);
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
-  }
-
-  private deg2rad(deg: number): number {
-    return deg * (Math.PI / 180);
-  }
-
-  validateCoordinates(latitude: number, longitude: number): boolean {
-    return (
-      latitude >= -90 &&
-      latitude <= 90 &&
-      longitude >= -180 &&
-      longitude <= 180 &&
-      !isNaN(latitude) &&
-      !isNaN(longitude)
-    );
-  }
-
-  private validateUserId(userId: number): boolean {
-    return userId !== undefined && userId !== null && !isNaN(userId) && userId > 0;
   }
 }
