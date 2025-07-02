@@ -15,7 +15,7 @@ import { debounce } from 'lodash';
 
 interface AuthenticatedSocket extends Socket {
   userId?: number;
-  userData?: { sub: number; role: string };
+  userData?: { sub: number; role: string; name?: string; email?: string; branch?: string };
 }
 
 @WebSocketGateway({
@@ -33,51 +33,58 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   private logger = new Logger('LocationGateway');
   private connectedUsers = new Map<number, string>(); // userId -> socketId
-  private emitOnlineUsersDebounced = debounce(this.emitOnlineUsers.bind(this), 1000); // 1 second debounce
+  private emitOnlineUsersDebounced = debounce(this.emitOnlineUsers.bind(this), 1000);
 
   constructor(
     private locationService: LocationService,
     private jwtService: JwtService,
   ) {}
 
-async handleConnection(client: AuthenticatedSocket) {
-  try {
-    // Extract token from auth or headers
-    const token = client.handshake.auth.token || client.handshake.headers.authorization?.replace('Bearer ', '');
-    if (!token) {
-      throw new UnauthorizedException('Token not provided');
+  async handleConnection(client: AuthenticatedSocket) {
+    try {
+      const token = client.handshake.auth.token || client.handshake.headers.authorization?.replace('Bearer ', '');
+      if (!token) {
+        throw new UnauthorizedException('Token not provided');
+      }
+
+      const payload = this.jwtService.verify(token);
+      if (typeof payload.sub !== 'number' || !payload.sub || typeof payload.role !== 'string') {
+        throw new UnauthorizedException('Invalid token payload');
+      }
+
+      client.userId = payload.sub;
+      client.userData = {
+        sub: payload.sub,
+        role: payload.role,
+        name: payload.name,
+        email: payload.email,
+        branch: payload.branch,
+      };
+      if (client.userId === undefined) {
+        throw new Error('userId is undefined');
+      }
+      this.connectedUsers.set(client.userId, client.id);
+
+      this.logger.log(`User ${client.userId} connected: ${client.id}`);
+
+      await this.locationService.updateUserLocation(client.userId, {
+        userId: client.userId,
+        isOnline: true,
+        latitude: 0,
+        longitude: 0,
+      });
+
+      this.emitOnlineUsersDebounced();
+
+      // Send all current locations to admin on connection
+      if (client.userData?.role === 'ADMIN') {
+        const onlineUsers = await this.locationService.getAllOnlineUsers();
+        client.emit('adminAllLocations', onlineUsers);
+      }
+    } catch (error) {
+      this.handleSocketError(client, error, 'Connection error');
     }
-
-    // Verify JWT and ensure payload has sub
-    const payload = this.jwtService.verify(token);
-    if (typeof payload.sub !== 'number' || !payload.sub || typeof payload.role !== 'string') {
-      throw new UnauthorizedException('Invalid token payload');
-    }
-
-    // Safely assign userId and userData
-    client.userId = payload.sub;
-    client.userData = payload;
-    if (client.userId === undefined) {
-  throw new Error('userId is undefined');
-}
-    this.connectedUsers.set(client.userId, client.id);
-
-    this.logger.log(`User ${client.userId} connected: ${client.id}`);
-
-    // Set user online with default location (0, 0) if no location exists
-    await this.locationService.updateUserLocation(client.userId, {
-      userId: client.userId,
-      isOnline: true,
-      latitude: 0,
-      longitude: 0,
-    });
-
-    // Emit initial online users list
-    this.emitOnlineUsersDebounced();
-  } catch (error) {
-    this.handleSocketError(client, error, 'Connection error');
   }
-}
 
   async handleDisconnect(client: AuthenticatedSocket) {
     if (typeof client.userId === 'number') {
@@ -98,7 +105,6 @@ async handleConnection(client: AuthenticatedSocket) {
     }
 
     try {
-      // Validate coordinates using service method
       if (!this.locationService.validateCoordinates(data.latitude, data.longitude)) {
         throw new Error('Invalid coordinates');
       }
@@ -111,7 +117,6 @@ async handleConnection(client: AuthenticatedSocket) {
         isOnline: true,
       });
 
-      // Broadcast updated location to all connected clients
       this.server.emit('locationUpdated', {
         userId: client.userId,
         latitude: updatedLocation.latitude,
@@ -121,18 +126,25 @@ async handleConnection(client: AuthenticatedSocket) {
         user: updatedLocation.user,
       });
 
-      // Notify admins (if user is not an admin)
+      // Notify admins with detailed user info
       if (client.userData?.role !== 'ADMIN') {
-        this.emitLocationToAdmins(updatedLocation);
+        this.emitLocationToAdmins({
+          ...updatedLocation,
+          user: {
+            id: client.userId,
+            name: client.userData?.name,
+            email: client.userData?.email,
+            role: client.userData?.role,
+            branch: client.userData?.branch,
+          },
+        });
       }
 
-      // Confirm to the user
       client.emit('locationUpdateConfirmed', {
         success: true,
         location: updatedLocation,
       });
 
-      // Emit nearby users to the client
       const nearbyUsers = await this.locationService.getNearbyUsers(client.userId, 5);
       client.emit('nearbyUsers', nearbyUsers);
     } catch (error) {

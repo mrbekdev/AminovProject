@@ -13,7 +13,7 @@ import { JwtStrategy } from './jwt.strategy';
         UserModule,
         PassportModule,
         JwtModule.register({
-            secret: 'aminov', // In production, use environment variable
+            secret: process.env.JWT_SECRET,
             signOptions: { expiresIn: '24h' },
         }),
     ],

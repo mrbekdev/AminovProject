@@ -9,7 +9,7 @@ import { LocationGateway } from './logation.gatewey';
 @Module({
   imports: [
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'your-secret-key',
+      secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '1h' },
     }),
   ],
@@ -17,4 +17,4 @@ import { LocationGateway } from './logation.gatewey';
   providers: [LocationService, LocationGateway, PrismaService],
   exports: [LocationService],
 })
-export class LocationModule {}
+export class LocationModule { }
