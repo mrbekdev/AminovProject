@@ -22,8 +22,6 @@ model Branch {
   @@index([location])
 }
 
-// schema.prisma ga qo'shish kerak
-
 model User {
   id           Int           @id @default(autoincrement())
   name         String        @db.VarChar(100)
@@ -101,6 +99,7 @@ enum ProductStatus {
   SOLD
   DEFECTIVE
   RETURNED
+  CARRIER
 }
 
 model Transaction {
@@ -114,6 +113,8 @@ model Transaction {
   quantity  Int
   price     Float
   total     Float
+  inflow    Int               @default(0) // Tracks incoming quantity
+  outflow   Int               @default(0) // Tracks outgoing quantity
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 

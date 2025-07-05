@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tranzaksiyalarni Test Qilish</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { padding: 20px; }
+    .container { max-width: 800px; }
+    .error { color: red; }
+    .success { color: green; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="mb-4">Tranzaksiyalarni Test Qilish</h1>
+
+    <!-- Yangi Tranzaksiya Yaratish Formasi -->
+    <h3>Yangi Tranzaksiya Yaratish</h3>
+    <form id="create-transaction-form" class="mb-4">
+      <div class="mb-3">
+        <label for="productId" class="form-label">Mahsulot ID</label>
+        <input type="number" class="form-control" id="productId" required>
+      </div>
+      <div class="mb-3">
+        <label for="userId" class="form-label">Foydalanuvchi ID</label>
+        <input type="number" class="form-control" id="userId" required>
+      </div>
+      <div class="mb-3">
+        <label for="type" class="form-label">Tranzaksiya Turi</label>
+        <select class="form-select" id="type" required>
+          <option value="SALE">Sotish</option>
+          <option value="RETURN">Qaytarish</option>
+          <option value="TRANSFER">O‘tkazish</option>
+          <option value="WRITE_OFF">Yaroqsiz deb hisobdan chiqarish</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="quantity" class="form-label">Soni</label>
+        <input type="number" class="form-control" id="quantity" required>
+      </div>
+      <div class="mb-3">
+        <label for="price" class="form-label">Narxi (bir dona)</label>
+        <input type="number" step="0.01" class="form-control" id="price" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Yaratish</button>
+    </form>
+    <div id="create-message" class="mb-4"></div>
+
+    <!-- Tranzaksiyalarni Ko‘rish -->
+    <h3>Tranzaksiyalar Ro‘yxati</h3>
+    <form id="filter-transactions-form" class="mb-4">
+      <div class="row">
+        <div class="col-md-3 mb-3">
+          <label for="filterProductId" class="form-label">Mahsulot ID</label>
+          <input type="number" class="form-control" id="filterProductId">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label for="filterUserId" class="form-label">Foydalanuvchi ID</label>
+          <input type="number" class="form-control" id="filterUserId">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label for="filterType" class="form-label">Tranzaksiya Turi</label>
+          <select class="form-select" id="filterType">
+            <option value="">Barchasi</option>
+            <option value="SALE">Sotish</option>
+            <option value="RETURN">Qaytarish</option>
+            <option value="TRANSFER">O‘tkazish</option>
+            <option value="WRITE_OFF">Yaroqsiz deb hisobdan chiqarish</option>
+          </select>
+        </div>
+        <div class="col-md-3 mb-3">
+          <label for="filterTake" class="form-label">Soni</label>
+          <input type="number" class="form-control" id="filterTake" value="10">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-secondary">Filtrlash</button>
+    </form>
+    <table class="table table-bordered" id="transactions-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Mahsulot</th>
+          <th>Foydalanuvchi</th>
+          <th>Turi</th>
+          <th>Holati</th>
+          <th>Soni</th>
+          <th>Narxi</th>
+          <th>Jami</th>
+          <th>Amallar</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <!-- Tranzaksiyani Yangilash Formasi -->
+    <h3>Tranzaksiyani Yangilash</h3>
+    <form id="update-transaction-form" class="mb-4">
+      <div class="mb-3">
+        <label for="updateId" class="form-label">Tranzaksiya ID</label>
+        <input type="number" class="form-control" id="updateId" required>
+      </div>
+      <div class="mb-3">
+        <label for="updateProductId" class="form-label">Mahsulot ID</label>
+        <input type="number" class="form-control" id="updateProductId">
+      </div>
+      <div class="mb-3">
+        <label for="updateUserId" class="form-label">Foydalanuvchi ID</label>
+        <input type="number" class="form-control" id="updateUserId">
+      </div>
+      <div class="mb-3">
+        <label for="updateType" class="form-label">Tranzaksiya Turi</label>
+        <select class="form-select" id="updateType">
+          <option value="">O‘zgartirilmasin</option>
+          <option value="SALE">Sotish</option>
+          <option value="RETURN">Qaytarish</option>
+          <option value="TRANSFER">O‘tkazish</option>
+          <option value="WRITE_OFF">Yaroqsiz deb hisobdan chiqarish</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="updateStatus" class="form-label">Holati</label>
+        <select class="form-select" id="updateStatus">
+          <option value="">O‘zgartirilmasin</option>
+          <option value="PENDING">Kutilmoqda</option>
+          <option value="COMPLETED">Yakunlangan</option>
+          <option value="CANCELLED">Bekor qilingan</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="updateQuantity" class="form-label">Soni</label>
+        <input type="number" class="form-control" id="updateQuantity">
+      </div>
+      <div class="mb-3">
+        <label for="updatePrice" class="form-label">Narxi (bir dona)</label>
+        <input type="number" step="0.01" class="form-control" id="updatePrice">
+      </div>
+      <button type="submit" class="btn btn-warning">Yangilash</button>
+    </form>
+    <div id="update-message" class="mb-4"></div>
+  </div>
+
+  <script>
+    const API_URL = 'https://suddocs.uz';
+
+    // Tranzaksiya yaratish
+    document.getElementById('create-transaction-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = {
+        productId: +document.getElementById('productId').value,
+        userId: +document.getElementById('userId').value,
+        type: document.getElementById('type').value,
+        quantity: +document.getElementById('quantity').value,
+        price: +document.getElementById('price').value,
+      };
+      try {
+        const response = await fetch(`${API_URL}/transactions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', },
+          
+          body: JSON.stringify(data),
+        });
+        const result = await response.json();
+        if (response.ok) {
+          document.getElementById('create-message').innerHTML = '<p class="success">Tranzaksiya muvaffaqiyatli yaratildi!</p>';
+          loadTransactions();
+        } else {
+          document.getElementById('create-message').innerHTML = `<p class="error">Xato: ${result.message}</p>`;
+        }
+      } catch (error) {
+        document.getElementById('create-message').innerHTML = `<p class="error">Xato: ${error.message}</p>`;
+      }
+    });
+
+    // Tranzaksiyalarni yuklash
+    async function loadTransactions() {
+      const filterProductId = document.getElementById('filterProductId').value;
+      const filterUserId = document.getElementById('filterUserId').value;
+      const filterType = document.getElementById('filterType').value;
+      const filterTake = document.getElementById('filterTake').value;
+      let url = `${API_URL}/transactions?take=${filterTake}`;
+      if (filterProductId) url += `&productId=${filterProductId}`;
+      if (filterUserId) url += `&userId=${filterUserId}`;
+      if (filterType) url += `&type=${filterType}`;
+
+      try {
+        const response = await fetch(url);
+        const transactions = await response.json();
+        const tbody = document.querySelector('#transactions-table tbody');
+        tbody.innerHTML = '';
+        transactions.forEach(t => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${t.id}</td>
+            <td>${t.product ? t.product.name : 'Noma’lum'}</td>
+            <td>${t.user ? t.user.name : 'Noma’lum'}</td>
+            <td>${t.type}</td>
+            <td>${t.status}</td>
+            <td>${t.quantity}</td>
+            <td>${t.price}</td>
+            <td>${t.total}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="deleteTransaction(${t.id})">O‘chirish</button></td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (error) {
+        console.error('Tranzaksiyalarni yuklashda xato:', error);
+      }
+    }
+
+    // Tranzaksiyalarni filtrlangan holda yuklash
+    document.getElementById('filter-transactions-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      loadTransactions();
+    });
+
+    // Tranzaksiyani o‘chirish
+    async function deleteTransaction(id) {
+      if (!confirm('Tranzaksiyani o‘chirishni tasdiqlaysizmi?')) return;
+      try {
+        const response = await fetch(`${API_URL}/transactions/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+          alert('Tranzaksiya muvaffaqiyatli o‘chirildi!');
+          loadTransactions();
+        } else {
+          const result = await response.json();
+          alert(`Xato: ${result.message}`);
+        }
+      } catch (error) {
+        alert(`Xato: ${error.message}`);
+      }
+    }
+
+    // Tranzaksiyani yangilash
+    document.getElementById('update-transaction-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = +document.getElementById('updateId').value;
+      const data = {};
+      const productId = document.getElementById('updateProductId').value;
+      const userId = document.getElementById('updateUserId').value;
+      const type = document.getElementById('updateType').value;
+      const status = document.getElementById('updateStatus').value;
+      const quantity = document.getElementById('updateQuantity').value;
+      const price = document.getElementById('updatePrice').value;
+
+      if (productId) data.productId = +productId;
+      if (userId) data.userId = +userId;
+      if (type) data.type = type;
+      if (status) data.status = status;
+      if (quantity) data.quantity = +quantity;
+      if (price) data.price = +price;
+
+      try {
+        const response = await fetch(`${API_URL}/transactions/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const result = await response.json();
+        if (response.ok) {
+          document.getElementById('update-message').innerHTML = '<p class="success">Tranzaksiya muvaffaqiyatli yangilandi!</p>';
+          loadTransactions();
+        } else {
+          document.getElementById('update-message').innerHTML = `<p class="error">Xato: ${result.message}</p>`;
+        }
+      } catch (error) {
+        document.getElementById('update-message').innerHTML = `<p class="error">Xato: ${error.message}</p>`;
+      }
+    });
+
+    // Sahifa yuklanganda tranzaksiyalarni yuklash
+    loadTransactions();
+  </script>
+</body>
+</html>
