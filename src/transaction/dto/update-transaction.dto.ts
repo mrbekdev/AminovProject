@@ -1,32 +1,24 @@
-import { IsInt, IsPositive, IsEnum, IsNumber, IsOptional } from 'class-validator';
-import { TransactionType, TransactionStatus } from '@prisma/client';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsPositive } from 'class-validator';
+import { TransactionType } from '@prisma/client';
 
 export class UpdateTransactionDto {
-  @IsOptional()
-  @IsInt()
-  @IsPositive()
-  productId?: number;
-
-  @IsOptional()
-  @IsInt()
-  @IsPositive()
-  userId?: number;
-
   @IsOptional()
   @IsEnum(TransactionType)
   type?: TransactionType;
 
-  @IsOptional()
-  @IsEnum(TransactionStatus)
-  status?: TransactionStatus;
-
+  @ApiPropertyOptional({ description: 'Quantity' })
   @IsOptional()
   @IsInt()
-  @IsPositive()
   quantity?: number;
 
+  @ApiPropertyOptional({ description: 'Price per unit' })
   @IsOptional()
   @IsNumber()
   @IsPositive()
   price?: number;
+
+  @ApiPropertyOptional({ description: 'Description for stock adjustments' })
+  @IsOptional()
+  description?: string;
 }

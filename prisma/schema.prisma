@@ -8,33 +8,35 @@ datasource db {
 }
 
 model Branch {
-  id         Int        @id @default(autoincrement())
-  name       String     @db.VarChar(100)
-  location   String     @db.VarChar(255)
-  phone      String?    @db.VarChar(20)
-  products   Product[]  @relation("BranchProducts")
-  users      User[]     @relation("BranchUsers")
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  Category   Category[]
+  id        Int        @id @default(autoincrement())
+  name      String     @db.VarChar(100)
+  location  String     @db.VarChar(255)
+  phone     String?    @db.VarChar(20)
+  products  Product[]  @relation("BranchProducts")
+  users     User[]     @relation("BranchUsers")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  Category  Category[]
 
   @@unique([name, location])
   @@index([location])
 }
 
 model User {
-  id           Int           @id @default(autoincrement())
-  name         String        @db.VarChar(100)
-  email        String        @unique @db.VarChar(255)
-  password     String        @db.VarChar(255)
-  phone        String?       @db.VarChar(20)
-  role         UserRole
-  branch       Branch        @relation("BranchUsers", fields: [branchId], references: [id], onDelete: Restrict)
-  branchId     Int
-  transactions Transaction[] @relation("UserTransactions")
-  location     UserLocation?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id                  Int                   @id @default(autoincrement())
+  name                String                @db.VarChar(100)
+  email               String                @unique @db.VarChar(255)
+  password            String                @db.VarChar(255)
+  phone               String?               @db.VarChar(20)
+  role                UserRole
+  branch              Branch                @relation("BranchUsers", fields: [branchId], references: [id], onDelete: Restrict)
+  branchId            Int
+  transactions        Transaction[]         @relation("UserTransactions")
+  location            UserLocation?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  ProductStockHistory ProductStockHistory[]
+
   @@index([email, branchId])
 }
 
@@ -49,6 +51,7 @@ model UserLocation {
   lastSeen  DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@index([userId, isOnline])
 }
 
@@ -74,22 +77,24 @@ model Category {
 }
 
 model Product {
-  id           Int           @id @default(autoincrement())
-  name         String        @db.VarChar(100)
-  barcode      String        @unique @db.VarChar(50)
-  description  String?       @db.VarChar(255)
-  category     Category      @relation("CategoryProducts", fields: [categoryId], references: [id], onDelete: Restrict)
+  id           Int                   @id @default(autoincrement())
+  name         String                @db.VarChar(100)
+  barcode      String                @unique @db.VarChar(50)
+  description  String?               @db.VarChar(255)
+  category     Category              @relation("CategoryProducts", fields: [categoryId], references: [id], onDelete: Restrict)
   categoryId   Int
   status       ProductStatus
-  branch       Branch        @relation("BranchProducts", fields: [branchId], references: [id], onDelete: Restrict)
+  branch       Branch                @relation("BranchProducts", fields: [branchId], references: [id], onDelete: Restrict)
   branchId     Int
   price        Float
-  marketPrice Float?
-  model String?
-  quantity     Int           @default(0)
-  transactions Transaction[] @relation("ProductTransactions")
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  marketPrice  Float?
+  model        String?
+  quantity     Int                   @default(0)
+  transactions Transaction[]         @relation("ProductTransactions")
+  stockHistory ProductStockHistory[] @relation("ProductStockHistory")
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
   @@index([barcode, branchId, categoryId])
 }
 
@@ -103,20 +108,19 @@ enum ProductStatus {
 }
 
 model Transaction {
-  id        Int               @id @default(autoincrement())
-  product   Product           @relation("ProductTransactions", fields: [productId], references: [id], onDelete: Restrict)
-  productId Int
-  user      User              @relation("UserTransactions", fields: [userId], references: [id], onDelete: Restrict)
-  userId    Int
-  type      TransactionType
-  status    TransactionStatus @default(PENDING)
-  quantity  Int
-  price     Float
-  total     Float
-  inflow    Int               @default(0) // Tracks incoming quantity
-  outflow   Int               @default(0) // Tracks outgoing quantity
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id           Int                   @id @default(autoincrement())
+  product      Product               @relation("ProductTransactions", fields: [productId], references: [id], onDelete: Restrict)
+  productId    Int
+  user         User                  @relation("UserTransactions", fields: [userId], references: [id], onDelete: Restrict)
+  userId       Int
+  type         TransactionType
+  status       TransactionStatus     @default(PENDING)
+  quantity     Int
+  price        Float
+  total        Float
+  stockHistory ProductStockHistory[] @relation("TransactionStockHistory")
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
   @@index([productId, userId, type])
 }
@@ -126,10 +130,34 @@ enum TransactionType {
   RETURN
   TRANSFER
   WRITE_OFF
+  STOCK_ADJUSTMENT
 }
 
 enum TransactionStatus {
   PENDING
   COMPLETED
   CANCELLED
+}
+
+model ProductStockHistory {
+  id            Int              @id @default(autoincrement())
+  product       Product          @relation("ProductStockHistory", fields: [productId], references: [id], onDelete: Restrict)
+  productId     Int
+  transaction   Transaction?     @relation("TransactionStockHistory", fields: [transactionId], references: [id], onDelete: SetNull)
+  transactionId Int?
+  branchId      Int
+  quantity      Int // Positive for inflow, negative for outflow
+  type          StockHistoryType
+  description   String?          @db.VarChar(255) // Optional note, e.g., "Manual adjustment for damaged goods"
+  createdAt     DateTime         @default(now())
+  createdBy     User             @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdById   Int
+
+  @@index([productId, transactionId, createdAt])
+}
+
+enum StockHistoryType {
+  INFLOW
+  OUTFLOW
+  ADJUSTMENT
 }
