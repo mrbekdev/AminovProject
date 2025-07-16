@@ -1,8 +1,10 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
-  HttpException, HttpStatus, UseGuards
+  HttpException, HttpStatus, UseGuards, UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -14,12 +16,12 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class ProductController {
-  constructor(private readonly productService: ProductService) { }
+  constructor(private readonly productService: ProductService) {}
 
   @Post()
   @ApiOperation({ summary: 'Yangi mahsulot yaratish' })
   @ApiResponse({ status: 201, description: 'Mahsulot yaratildi' })
-  @ApiResponse({ status: 400, description: 'Xato so\'rov' })
+  @ApiResponse({ status: 400, description: "Xato so'rov" })
   async create(@Body() createProductDto: CreateProductDto) {
     try {
       return await this.productService.create(createProductDto);
@@ -28,8 +30,30 @@ export class ProductController {
     }
   }
 
+  @Post('upload-excel')
+  @ApiOperation({ summary: 'Excel fayl orqali mahsulotlarni yuklash' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Mahsulotlar muvaffaqiyatli yuklandi' })
+  @ApiResponse({ status: 400, description: "Xato so'rov" })
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadExcel(@UploadedFile() file: Express.Multer.File) {
+    try {
+      return await this.productService.uploadExcel(file);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
+  }
+
   @Get(':id')
-  @ApiOperation({ summary: 'Mahsulot maʼlumotini olish' })
+  @ApiOperation({ summary: "Mahsulot ma'lumotini olish" })
   @ApiResponse({ status: 200, description: 'Mahsulot topildi' })
   @ApiResponse({ status: 404, description: 'Topilmadi' })
   async findOne(@Param('id') id: string) {
@@ -70,7 +94,7 @@ export class ProductController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Mahsulotni o\'chirish' })
+  @ApiOperation({ summary: "Mahsulotni o'chirish" })
   async remove(@Param('id') id: string) {
     try {
       return await this.productService.remove(+id);
