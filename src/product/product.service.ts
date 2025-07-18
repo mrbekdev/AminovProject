@@ -124,17 +124,8 @@ export class ProductService {
     });
   }
 
-  async findAll(skip: number, take: number, filters?: { branchId?: number; categoryId?: number; status?: ProductStatus }) {
-    return this.prisma.product.findMany({
-      skip,
-      take,
-      where: filters,
-      include: {
-        category: true,
-        branch: true,
-        transactions: true,
-      },
-    });
+  async findAll() {
+    return this.prisma.product.findMany()
   }
 
   async update(id: number, updateProductDto: UpdateProductDto) {

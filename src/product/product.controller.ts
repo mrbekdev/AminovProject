@@ -74,13 +74,8 @@ export class ProductController {
   @ApiQuery({ name: 'skip', required: false })
   @ApiQuery({ name: 'take', required: false })
   async findAll(
-    @Query('skip') skip = '0',
-    @Query('take') take = '10',
-    @Query('branchId') branchId?: string,
-    @Query('categoryId') categoryId?: string,
-    @Query('status') status?: ProductStatus,
   ) {
-    return this.productService.findAll(+skip, +take, { branchId: branchId ? +branchId : undefined, categoryId: categoryId ? +categoryId : undefined, status });
+    return this.productService.findAll();
   }
 
   @Put(':id')
