@@ -9,11 +9,12 @@ import { ProductModule } from './product/product.module';
 import { TransactionModule } from './transaction/transaction.module';
 import { AuthModule } from './auth/auth.module';
 import { LocationModule } from './location/location.module';
+import { CustomerModule } from './customer/customer.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule,
+    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule, CustomerModule,
   ],
   controllers: [AppController],
   providers: [AppService],

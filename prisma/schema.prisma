@@ -90,7 +90,7 @@ model Product {
   marketPrice  Float?
   model        String?
   quantity     Int                   @default(0)
-  transactions Transaction[]         @relation("ProductTransactions")
+  transactions TransactionItem[]      @relation("ProductTransactions")
   stockHistory ProductStockHistory[] @relation("ProductStockHistory")
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
@@ -107,22 +107,53 @@ enum ProductStatus {
   CARRIER
 }
 
+model Customer {
+  id        Int          @id @default(autoincrement())
+  firstName String       @db.VarChar(100)
+  lastName  String       @db.VarChar(100)
+  phone     String?      @db.VarChar(20)
+  address   String?      @db.VarChar(500)
+  email     String?      @unique @db.VarChar(255)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  transactions Transaction[] @relation("CustomerTransactions")
+
+  @@index([phone, email])
+}
+
 model Transaction {
-  id           Int                   @id @default(autoincrement())
-  product      Product               @relation("ProductTransactions", fields: [productId], references: [id], onDelete: Restrict)
-  productId    Int
-  user         User                  @relation("UserTransactions", fields: [userId], references: [id], onDelete: Restrict)
+  id           Int              @id @default(autoincrement())
+  customer     Customer?        @relation("CustomerTransactions", fields: [customerId], references: [id], onDelete: SetNull)
+  customerId   Int?
+  user         User             @relation("UserTransactions", fields: [userId], references: [id], onDelete: Restrict)
   userId       Int
   type         TransactionType
-  status       TransactionStatus     @default(PENDING)
+  status       TransactionStatus @default(PENDING)
+  items        TransactionItem[] @relation("TransactionItems")
+  discount     Float?           @default(0)
+  total        Float
+  finalTotal   Float            // total - discount
+  paymentType  PaymentType?
+  stockHistory ProductStockHistory[] @relation("TransactionStockHistory")
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([customerId, userId, type])
+}
+
+model TransactionItem {
+  id           Int        @id @default(autoincrement())
+  transaction  Transaction @relation("TransactionItems", fields: [transactionId], references: [id], onDelete: Cascade)
+  transactionId Int
+  product      Product     @relation("ProductTransactions", fields: [productId], references: [id], onDelete: Restrict)
+  productId    Int
   quantity     Int
   price        Float
   total        Float
-  stockHistory ProductStockHistory[] @relation("TransactionStockHistory")
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  @@index([productId, userId, type])
+  @@index([transactionId, productId])
 }
 
 enum TransactionType {
@@ -139,19 +170,26 @@ enum TransactionStatus {
   CANCELLED
 }
 
+enum PaymentType {
+  CASH
+  CARD
+  CREDIT
+}
+
 model ProductStockHistory {
   id            Int              @id @default(autoincrement())
   product       Product          @relation("ProductStockHistory", fields: [productId], references: [id], onDelete: Restrict)
   productId     Int
-  transaction   Transaction?     @relation("TransactionStockHistory", fields: [transactionId], references: [id], onDelete: SetNull)
+  transaction   Transaction?      @relation("TransactionStockHistory", fields: [transactionId], references: [id], onDelete: SetNull)
   transactionId Int?
   branchId      Int
-  quantity      Int // Positive for inflow, negative for outflow
+  quantity      Int              // Positive for inflow, negative for outflow
   type          StockHistoryType
-  description   String?          @db.VarChar(255) // Optional note, e.g., "Manual adjustment for damaged goods"
-  createdAt     DateTime         @default(now())
+  description   String?          @db.VarChar(255)
   createdBy     User             @relation(fields: [createdById], references: [id], onDelete: Restrict)
   createdById   Int
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
   @@index([productId, transactionId, createdAt])
 }

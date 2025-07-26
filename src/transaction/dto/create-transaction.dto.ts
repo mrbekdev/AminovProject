@@ -1,29 +1,39 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsNumber, IsPositive } from 'class-validator';
-import { TransactionType } from '@prisma/client';
+import { IsInt, IsEnum, IsNumber, IsOptional, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { TransactionType, PaymentType } from '@prisma/client';
 
-export class CreateTransactionDto {
-  @ApiProperty({ description: 'Product ID' })
+class TransactionItemDto {
   @IsInt()
   productId: number;
 
-  @ApiProperty({ description: 'User ID' })
-  @IsInt()
-  userId: number;
-
-  @ApiProperty({ enum: TransactionType, description: 'Transaction type' })
-  @IsEnum(TransactionType)
-  type: TransactionType;
-
-  @ApiProperty({ description: 'Quantity (positive or negative for adjustments)' })
   @IsInt()
   quantity: number;
 
-  @ApiProperty({ description: 'Price per unit' })
   @IsNumber()
-  @IsPositive()
   price: number;
+}
 
-  @ApiPropertyOptional({ description: 'Description for stock adjustments' })
-  description?: string;
+export class CreateTransactionDto {
+  @IsInt()
+  userId: number;
+
+  @IsInt()
+  @IsOptional()
+  customerId?: number;
+
+  @IsEnum(TransactionType)
+  type: TransactionType;
+
+  @IsNumber()
+  @IsOptional()
+  discount?: number;
+
+  @IsEnum(PaymentType)
+  @IsOptional()
+  paymentType?: PaymentType;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TransactionItemDto)
+  items: TransactionItemDto[];
 }

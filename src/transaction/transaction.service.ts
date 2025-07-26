@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { TransactionStatus, TransactionType, StockHistoryType } from '@prisma/client';
+import { TransactionStatus, TransactionType, StockHistoryType, PaymentType } from '@prisma/client';
 
 @Injectable()
 export class TransactionService {
@@ -10,77 +10,107 @@ export class TransactionService {
 
   async create(createTransactionDto: CreateTransactionDto) {
     return this.prisma.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({ where: { id: createTransactionDto.productId } });
-      if (!product) throw new Error('Product not found');
-
       const user = await tx.user.findUnique({ where: { id: createTransactionDto.userId } });
       if (!user) throw new Error('User not found');
 
-      let quantityChange = 0;
-      let stockHistoryType: StockHistoryType;
-      let description: string | undefined;
-
-      const transactionType = createTransactionDto.type as TransactionType;
-      switch (transactionType) {
-        case TransactionType.SALE:
-        case TransactionType.WRITE_OFF:
-          if (product.quantity < createTransactionDto.quantity) throw new Error('Insufficient stock');
-          quantityChange = -createTransactionDto.quantity;
-          stockHistoryType = StockHistoryType.OUTFLOW;
-          description = transactionType === TransactionType.SALE ? 'Product sold' : 'Product written off';
-          break;
-        case TransactionType.RETURN:
-        case TransactionType.TRANSFER:
-          quantityChange = createTransactionDto.quantity;
-          stockHistoryType = StockHistoryType.INFLOW;
-          description = transactionType === TransactionType.RETURN ? 'Product returned' : 'Product transferred';
-          break;
-        case TransactionType.STOCK_ADJUSTMENT:
-          quantityChange = createTransactionDto.quantity; // Can be positive or negative
-          stockHistoryType = StockHistoryType.ADJUSTMENT;
-          description = createTransactionDto.description || 'Manual stock adjustment';
-          break;
-        default:
-          throw new Error('Invalid transaction type');
+      if (createTransactionDto.customerId) {
+        const customer = await tx.customer.findUnique({ where: { id: createTransactionDto.customerId } });
+        if (!customer) throw new Error('Customer not found');
       }
 
-      // Update product quantity
-      const newQuantity = product.quantity + quantityChange;
-      if (newQuantity < 0) throw new Error('Resulting stock cannot be negative');
+      let total = 0;
+      const items = createTransactionDto.items;
 
-      await tx.product.update({
-        where: { id: createTransactionDto.productId },
-        data: { quantity: newQuantity, updatedAt: new Date() },
-      });
+      for (const item of items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+        if (createTransactionDto.type === TransactionType.SALE && product.quantity < item.quantity) {
+          throw new Error(`Insufficient stock for product ${product.name}`);
+        }
+        total += item.quantity * item.price;
+      }
 
-      // Create transaction
+      const discount = createTransactionDto.discount ?? 0;
+      const finalTotal = total - discount;
+
       const transaction = await tx.transaction.create({
         data: {
-          productId: createTransactionDto.productId,
+          customerId: createTransactionDto.customerId,
           userId: createTransactionDto.userId,
-          type: transactionType,
+          type: createTransactionDto.type,
           status: TransactionStatus.COMPLETED,
-          quantity: Math.abs(createTransactionDto.quantity),
-          price: createTransactionDto.price,
-          total: createTransactionDto.price * createTransactionDto.quantity,
+          discount,
+          total,
+          finalTotal,
+          paymentType: createTransactionDto.paymentType,
           createdAt: new Date(),
           updatedAt: new Date(),
         },
       });
 
-      // Create stock history entry
-      await tx.productStockHistory.create({
-        data: {
-          productId: createTransactionDto.productId,
-          transactionId: transaction.id,
-          branchId: product.branchId,
-          quantity: quantityChange,
-          type: stockHistoryType,
-          description,
-          createdById: createTransactionDto.userId,
-          createdAt: new Date(),
-        },
-      });
+      for (const item of items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+
+        let quantityChange = 0;
+        let stockHistoryType: StockHistoryType;
+        let description: string;
+
+        switch (createTransactionDto.type) {
+          case TransactionType.SALE:
+          case TransactionType.WRITE_OFF:
+            quantityChange = -item.quantity;
+            stockHistoryType = StockHistoryType.OUTFLOW;
+            description = createTransactionDto.type === TransactionType.SALE ? 'Product sold' : 'Product written off';
+            break;
+          case TransactionType.RETURN:
+          case TransactionType.TRANSFER:
+            quantityChange = item.quantity;
+            stockHistoryType = StockHistoryType.INFLOW;
+            description = createTransactionDto.type === TransactionType.RETURN ? 'Product returned' : 'Product transferred';
+            break;
+          case TransactionType.STOCK_ADJUSTMENT:
+            quantityChange = item.quantity;
+            stockHistoryType = StockHistoryType.ADJUSTMENT;
+            description = 'Manual stock adjustment';
+            break;
+          default:
+            throw new Error('Invalid transaction type');
+        }
+
+        const newQuantity = product.quantity + quantityChange;
+        if (newQuantity < 0) throw new Error(`Resulting stock for product ${product.name} cannot be negative`);
+
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: newQuantity, updatedAt: new Date() },
+        });
+
+        await tx.transactionItem.create({
+          data: {
+            transactionId: transaction.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            price: item.price,
+            total: item.quantity * item.price,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+
+        await tx.productStockHistory.create({
+          data: {
+            productId: item.productId,
+            transactionId: transaction.id,
+            branchId: product.branchId,
+            quantity: quantityChange,
+            type: stockHistoryType,
+            description,
+            createdById: createTransactionDto.userId,
+            createdAt: new Date(),
+          },
+        });
+      }
 
       return transaction;
     });
@@ -89,18 +119,28 @@ export class TransactionService {
   async findOne(id: number) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },
-      include: { product: true, user: true, stockHistory: { include: { product: true } } },
+      include: {
+        customer: true,
+        user: true,
+        items: { include: { product: true } },
+        stockHistory: { include: { product: true } },
+      },
     });
     if (!transaction) throw new Error('Transaction not found');
     return transaction;
   }
 
-  async findAll(skip: number, take: number, filters?: { productId?: number; userId?: number; type?: TransactionType }) {
+  async findAll(skip: number, take: number, filters?: { customerId?: number; userId?: number; type?: TransactionType }) {
     return this.prisma.transaction.findMany({
       skip,
       take,
       where: filters,
-      include: { product: true, user: true, stockHistory: { include: { product: true } } },
+      include: {
+        customer: true,
+        user: true,
+        items: { include: { product: true } },
+        stockHistory: { include: { product: true } },
+      },
     });
   }
 
@@ -113,7 +153,7 @@ export class TransactionService {
       skip,
       take,
       where: filters,
-      include: { product: true, transaction: true, createdBy: true },
+      include: { product: true, transaction: { include: { customer: true } }, createdBy: true },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -128,88 +168,135 @@ export class TransactionService {
     return this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({
         where: { id },
-        include: { product: true },
+        include: { items: { include: { product: true } } },
       });
       if (!transaction) throw new Error('Transaction not found');
 
-      const product = transaction.product;
-      let quantityChange = 0;
-      let stockHistoryType: StockHistoryType;
-      let description: string | undefined;
+      // Revert previous transaction effects
+      const itemsToRevert = transaction.items ?? [];
+      for (const item of itemsToRevert) {
+        const product = item.product;
+        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
 
-      // Revert previous transaction effect
-      let currentQuantity = product.quantity;
-      const previousType = transaction.type as TransactionType;
-      if (previousType === TransactionType.SALE || previousType === TransactionType.WRITE_OFF) {
-        currentQuantity += transaction.quantity; // Add back previous outflow
-      } else if (previousType === TransactionType.RETURN || previousType === TransactionType.TRANSFER) {
-        currentQuantity -= transaction.quantity; // Remove previous inflow
-      } else if (previousType === TransactionType.STOCK_ADJUSTMENT) {
-        currentQuantity -= transaction.quantity; // Revert previous adjustment
+        let quantityChange = 0;
+        if (transaction.type === TransactionType.SALE || transaction.type === TransactionType.WRITE_OFF) {
+          quantityChange = item.quantity;
+        } else if (transaction.type === TransactionType.RETURN || transaction.type === TransactionType.TRANSFER) {
+          quantityChange = -item.quantity;
+        } else if (transaction.type === TransactionType.STOCK_ADJUSTMENT) {
+          quantityChange = -item.quantity;
+        }
+
+        const newQuantity = product.quantity + quantityChange;
+        if (newQuantity < 0) throw new Error(`Resulting stock for product ${product.name} cannot be negative`);
+
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: newQuantity, updatedAt: new Date() },
+        });
       }
 
-      // Apply new transaction effect
-      const newQuantity = updateTransactionDto.quantity ?? transaction.quantity;
-      const newType = updateTransactionDto.type ?? (transaction.type as TransactionType);
-      const newPrice = updateTransactionDto.price ?? transaction.price;
+      // Delete old transaction items
+      await tx.transactionItem.deleteMany({ where: { transactionId: id } });
 
-      switch (newType) {
-        case TransactionType.SALE:
-        case TransactionType.WRITE_OFF:
-          if (currentQuantity < newQuantity) throw new Error('Insufficient stock');
-          quantityChange = -newQuantity;
-          stockHistoryType = StockHistoryType.OUTFLOW;
-          description = newType === TransactionType.SALE ? 'Updated sale' : 'Updated write-off';
-          break;
-        case TransactionType.RETURN:
-        case TransactionType.TRANSFER:
-          quantityChange = newQuantity;
-          stockHistoryType = StockHistoryType.INFLOW;
-          description = newType === TransactionType.RETURN ? 'Updated return' : 'Updated transfer';
-          break;
-        case TransactionType.STOCK_ADJUSTMENT:
-          quantityChange = newQuantity; // Can be positive or negative
-          stockHistoryType = StockHistoryType.ADJUSTMENT;
-          description = updateTransactionDto.description || 'Updated stock adjustment';
-          break;
-        default:
-          throw new Error('Invalid transaction type');
+      // Apply new transaction effects
+      let total = 0;
+      const items = updateTransactionDto.items ?? transaction.items.map(item => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        price: item.price,
+      }));
+
+      for (const item of items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+        if ((updateTransactionDto.type ?? transaction.type) === TransactionType.SALE && product.quantity < item.quantity) {
+          throw new Error(`Insufficient stock for product ${product.name}`);
+        }
+        total += item.quantity * item.price;
       }
 
-      // Update product quantity
-      const finalQuantity = currentQuantity + quantityChange;
-      if (finalQuantity < 0) throw new Error('Resulting stock cannot be negative');
+      const discount = updateTransactionDto.discount ?? transaction.discount ?? 0;
+      const finalTotal = total - discount;
 
-      await tx.product.update({
-        where: { id: product.id },
-        data: { quantity: finalQuantity, updatedAt: new Date() },
-      });
-
-      // Update transaction
       const updatedTransaction = await tx.transaction.update({
         where: { id },
         data: {
-          type: newType,
-          quantity: Math.abs(newQuantity),
-          price: newPrice,
-          total: newQuantity * newPrice,
+          customerId: updateTransactionDto.customerId ?? transaction.customerId,
+          userId: updateTransactionDto.userId ?? transaction.userId,
+          type: updateTransactionDto.type ?? transaction.type,
+          discount,
+          total,
+          finalTotal,
+          paymentType: updateTransactionDto.paymentType ?? transaction.paymentType,
           updatedAt: new Date(),
         },
       });
 
-      // Create new stock history entry
-      await tx.productStockHistory.create({
-        data: {
-          productId: product.id,
-          transactionId: id,
-          branchId: product.branchId,
-          quantity: quantityChange,
-          type: stockHistoryType,
-          description,
-          createdById: transaction.userId,
-          createdAt: new Date(),
-        },
-      });
+      for (const item of items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+
+        let quantityChange = 0;
+        let stockHistoryType: StockHistoryType;
+        let description: string;
+
+        const newType = updateTransactionDto.type ?? transaction.type;
+        switch (newType) {
+          case TransactionType.SALE:
+          case TransactionType.WRITE_OFF:
+            quantityChange = -item.quantity;
+            stockHistoryType = StockHistoryType.OUTFLOW;
+            description = newType === TransactionType.SALE ? 'Updated sale' : 'Updated write-off';
+            break;
+          case TransactionType.RETURN:
+          case TransactionType.TRANSFER:
+            quantityChange = item.quantity;
+            stockHistoryType = StockHistoryType.INFLOW;
+            description = newType === TransactionType.RETURN ? 'Updated return' : 'Updated transfer';
+            break;
+          case TransactionType.STOCK_ADJUSTMENT:
+            quantityChange = item.quantity;
+            stockHistoryType = StockHistoryType.ADJUSTMENT;
+            description = 'Updated stock adjustment';
+            break;
+          default:
+            throw new Error('Invalid transaction type');
+        }
+
+        const newQuantity = product.quantity + quantityChange;
+        if (newQuantity < 0) throw new Error(`Resulting stock for product ${product.name} cannot be negative`);
+
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: newQuantity, updatedAt: new Date() },
+        });
+
+        await tx.transactionItem.create({
+          data: {
+            transactionId: id,
+            productId: item.productId,
+            quantity: item.quantity,
+            price: item.price,
+            total: item.quantity * item.price,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+
+        await tx.productStockHistory.create({
+          data: {
+            productId: item.productId,
+            transactionId: id,
+            branchId: product.branchId,
+            quantity: quantityChange,
+            type: stockHistoryType,
+            description,
+            createdById: updatedTransaction.userId,
+            createdAt: new Date(),
+          },
+        });
+      }
 
       return updatedTransaction;
     });
@@ -219,49 +306,47 @@ export class TransactionService {
     return this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({
         where: { id },
-        include: { product: true },
+        include: { items: { include: { product: true } } },
       });
       if (!transaction) throw new Error('Transaction not found');
 
-      const product = transaction.product;
+      const itemsToRevert = transaction.items ?? [];
+      for (const item of itemsToRevert) {
+        const product = item.product;
+        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
 
-      // Revert transaction effect
-      let quantityUpdate = product.quantity;
-      const transactionType = transaction.type as TransactionType;
-      if (transactionType === TransactionType.SALE || transactionType === TransactionType.WRITE_OFF) {
-        quantityUpdate += transaction.quantity; // Add back previous outflow
-      } else if (transactionType === TransactionType.RETURN || transactionType === TransactionType.TRANSFER) {
-        quantityUpdate -= transaction.quantity; // Remove previous inflow
-      } else if (transactionType === TransactionType.STOCK_ADJUSTMENT) {
-        quantityUpdate -= transaction.quantity; // Revert adjustment
+        let quantityChange = 0;
+        if (transaction.type === TransactionType.SALE || transaction.type === TransactionType.WRITE_OFF) {
+          quantityChange = item.quantity;
+        } else if (transaction.type === TransactionType.RETURN || transaction.type === TransactionType.TRANSFER) {
+          quantityChange = -item.quantity;
+        } else if (transaction.type === TransactionType.STOCK_ADJUSTMENT) {
+          quantityChange = -item.quantity;
+        }
+
+        const newQuantity = product.quantity + quantityChange;
+        if (newQuantity < 0) throw new Error(`Resulting stock for product ${product.name} cannot be negative`);
+
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: newQuantity, updatedAt: new Date() },
+        });
+
+        await tx.productStockHistory.create({
+          data: {
+            productId: item.productId,
+            transactionId: null,
+            branchId: product.branchId,
+            quantity: quantityChange,
+            type: StockHistoryType.ADJUSTMENT,
+            description: `Reversed transaction of type ${transaction.type}`,
+            createdById: transaction.userId,
+            createdAt: new Date(),
+          },
+        });
       }
 
-      if (quantityUpdate < 0) throw new Error('Resulting stock cannot be negative');
-
-      // Update product
-      await tx.product.update({
-        where: { id: product.id },
-        data: { quantity: quantityUpdate, updatedAt: new Date() },
-      });
-
-      // Create stock history entry for reversal
-      await tx.productStockHistory.create({
-        data: {
-          productId: product.id,
-          transactionId: null, // No transaction associated with deletion
-          branchId: product.branchId,
-          quantity:
-            transaction.type === TransactionType.SALE || transaction.type === TransactionType.WRITE_OFF
-              ? transaction.quantity
-              : -transaction.quantity,
-          type: StockHistoryType.ADJUSTMENT,
-          description: `Reversed transaction of type ${transaction.type}`,
-          createdById: transaction.userId,
-          createdAt: new Date(),
-        },
-      });
-
-      // Delete transaction
+      await tx.transactionItem.deleteMany({ where: { transactionId: id } });
       return tx.transaction.delete({ where: { id } });
     });
   }

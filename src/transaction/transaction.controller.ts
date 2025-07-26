@@ -1,16 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpException,
-  HttpStatus,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { TransactionService } from './transaction.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -56,12 +44,12 @@ export class TransactionController {
   async findAll(
     @Query('skip') skip = '0',
     @Query('take') take = '10',
-    @Query('productId') productId?: string,
+    @Query('customerId') customerId?: string,
     @Query('userId') userId?: string,
     @Query('type') type?: TransactionType,
   ) {
     return this.transactionService.findAll(+skip, +take, {
-      productId: productId ? +productId : undefined,
+      customerId: customerId ? +customerId : undefined,
       userId: userId ? +userId : undefined,
       type,
     });
@@ -81,11 +69,15 @@ export class TransactionController {
     @Query('branchId') branchId?: string,
     @Query('type') type?: StockHistoryType,
   ) {
-    return this.transactionService.findStockHistory(+skip, +take, {
-      productId: productId ? +productId : undefined,
-      branchId: branchId ? +branchId : undefined,
-      type,
-    });
+    try {
+      return await this.transactionService.findStockHistory(+skip, +take, {
+        productId: productId ? +productId : undefined,
+        branchId: branchId ? +branchId : undefined,
+        type,
+      });
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+    }
   }
 
   @Put(':id')

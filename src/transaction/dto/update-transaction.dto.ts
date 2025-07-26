@@ -1,24 +1,44 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsNumber, IsOptional, IsPositive } from 'class-validator';
-import { TransactionType } from '@prisma/client';
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateTransactionDto } from './create-transaction.dto';
+import { IsInt, IsEnum, IsNumber, IsOptional, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { TransactionType, PaymentType } from '@prisma/client';
 
-export class UpdateTransactionDto {
+class TransactionItemDto {
+  @IsInt()
+  productId: number;
+
+  @IsInt()
+  quantity: number;
+
+  @IsNumber()
+  price: number;
+}
+
+export class UpdateTransactionDto extends PartialType(CreateTransactionDto) {
+  @IsOptional()
+  @IsInt()
+  userId?: number;
+
+  @IsOptional()
+  @IsInt()
+  customerId?: number;
+
   @IsOptional()
   @IsEnum(TransactionType)
   type?: TransactionType;
 
-  @ApiPropertyOptional({ description: 'Quantity' })
-  @IsOptional()
-  @IsInt()
-  quantity?: number;
-
-  @ApiPropertyOptional({ description: 'Price per unit' })
   @IsOptional()
   @IsNumber()
-  @IsPositive()
-  price?: number;
+  discount?: number;
 
-  @ApiPropertyOptional({ description: 'Description for stock adjustments' })
   @IsOptional()
-  description?: string;
+  @IsEnum(PaymentType)
+  paymentType?: PaymentType;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TransactionItemDto)
+  items?: TransactionItemDto[];
 }
