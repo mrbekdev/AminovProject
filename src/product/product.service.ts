@@ -5,7 +5,6 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { Product, ProductStatus } from '@prisma/client';
 import * as XLSX from 'xlsx';
 
-// Excel fayldan o‘qiladigan qator struktura
 interface ExcelRow {
   name?: string;
   barcode?: string;
@@ -59,17 +58,14 @@ export class ProductService {
             quantity: row.quantity ? parseInt(row.quantity.toString()) : 0,
           };
 
-          // Majburiy maydonlarni tekshirish
           if (!productData.name || !productData.barcode || !productData.categoryId || !productData.branchId || !productData.status || !productData.price) {
             throw new HttpException(`Invalid data in row: ${JSON.stringify(row)}`, HttpStatus.BAD_REQUEST);
           }
 
-          // Status to‘g‘riligini tekshirish
           if (!Object.values(ProductStatus).includes(productData.status)) {
             throw new HttpException(`Invalid status in row: ${productData.status}`, HttpStatus.BAD_REQUEST);
           }
 
-          // Barcode takrorlanmasligini tekshirish
           const existingProduct = await tx.product.findUnique({
             where: { barcode: productData.barcode },
           });
@@ -103,38 +99,69 @@ export class ProductService {
   }
 
   async findOne(id: number) {
-    return this.prisma.product.findUnique({
+    const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
         category: true,
         branch: true,
-        transactions: true,
       },
     });
+    if (!product) throw new HttpException('Product not found', HttpStatus.NOT_FOUND);
+    return product;
   }
 
   async findByBarcode(barcode: string) {
-    return this.prisma.product.findUnique({
+    const product = await this.prisma.product.findUnique({
       where: { barcode },
       include: {
         category: true,
         branch: true,
-        transactions: true,
+      },
+    });
+    if (!product) throw new HttpException('Product not found', HttpStatus.NOT_FOUND);
+    return product;
+  }
+
+  async findAll(branchId?: number) {
+    return this.prisma.product.findMany({
+      where: {
+        branchId: branchId ? parseInt(branchId.toString()) : undefined,
+      },
+      include: {
+        category: true,
       },
     });
   }
 
-  async findAll() {
-    return this.prisma.product.findMany()
-  }
+  async update(id: number, updateProductDto: UpdateProductDto, userId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.findUnique({ where: { id } });
+      if (!product) throw new HttpException('Product not found', HttpStatus.NOT_FOUND);
 
-  async update(id: number, updateProductDto: UpdateProductDto) {
-    return this.prisma.product.update({
-      where: { id },
-      data: {
-        ...updateProductDto,
-        updatedAt: new Date(),
-      },
+      const updatedProduct = await tx.product.update({
+        where: { id },
+        data: {
+          ...updateProductDto,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (updateProductDto.quantity !== undefined && updateProductDto.quantity !== product.quantity) {
+        await tx.productStockHistory.create({
+          data: {
+            productId: id,
+            branchId: product.branchId,
+            quantity: updateProductDto.quantity - product.quantity,
+            type: updateProductDto.quantity > product.quantity ? 'INFLOW' : 'OUTFLOW',
+            description: `Quantity updated to ${updateProductDto.quantity} via sales`,
+            createdById: userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+      }
+
+      return updatedProduct;
     });
   }
 

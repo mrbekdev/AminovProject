@@ -24,6 +24,21 @@ export class TransactionController {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
+  @Post('api/sales')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a new sale transaction' })
+  @ApiResponse({ status: 201, description: 'Transaction created' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  async createe(@Body() createTransactionDto: CreateTransactionDto, @Body() userId:string) {
+    try {
+      // Ensure userId is set from JWT
+      createTransactionDto.userId = +userId;
+      return await this.transactionService.create(createTransactionDto);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
+  }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get transaction details' })

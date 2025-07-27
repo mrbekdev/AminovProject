@@ -1,21 +1,22 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { TransactionStatus, TransactionType, StockHistoryType, PaymentType } from '@prisma/client';
+import { TransactionStatus, TransactionType, StockHistoryType, PaymentType, ProductStatus } from '@prisma/client';
 
 @Injectable()
 export class TransactionService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createTransactionDto: CreateTransactionDto) {
+async create(createTransactionDto: CreateTransactionDto) {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: createTransactionDto.userId } });
-      if (!user) throw new Error('User not found');
+      if (!user) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
 
+      let customer;
       if (createTransactionDto.customerId) {
-        const customer = await tx.customer.findUnique({ where: { id: createTransactionDto.customerId } });
-        if (!customer) throw new Error('Customer not found');
+        customer = await tx.customer.findUnique({ where: { id: createTransactionDto.customerId } });
+        if (!customer) throw new HttpException('Customer not found', HttpStatus.NOT_FOUND);
       }
 
       let total = 0;
@@ -23,15 +24,15 @@ export class TransactionService {
 
       for (const item of items) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+        if (!product) throw new HttpException(`Product with ID ${item.productId} not found`, HttpStatus.NOT_FOUND);
         if (createTransactionDto.type === TransactionType.SALE && product.quantity < item.quantity) {
-          throw new Error(`Insufficient stock for product ${product.name}`);
+          throw new HttpException(`Insufficient stock for product ${product.name}`, HttpStatus.BAD_REQUEST);
         }
         total += item.quantity * item.price;
       }
 
       const discount = createTransactionDto.discount ?? 0;
-      const finalTotal = total - discount;
+      const finalTotal = createTransactionDto.finalTotal || total - discount;
 
       const transaction = await tx.transaction.create({
         data: {
@@ -43,6 +44,10 @@ export class TransactionService {
           total,
           finalTotal,
           paymentType: createTransactionDto.paymentType,
+          deliveryMethod: createTransactionDto.deliveryMethod,
+          amountPaid: createTransactionDto.amountPaid,
+          remainingBalance: createTransactionDto.remainingBalance,
+          receiptId: createTransactionDto.receiptId,
           createdAt: new Date(),
           updatedAt: new Date(),
         },
@@ -50,7 +55,7 @@ export class TransactionService {
 
       for (const item of items) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+        if (!product) throw new HttpException(`Product with ID ${item.productId} not found`, HttpStatus.NOT_FOUND);
 
         let quantityChange = 0;
         let stockHistoryType: StockHistoryType;
@@ -75,15 +80,19 @@ export class TransactionService {
             description = 'Manual stock adjustment';
             break;
           default:
-            throw new Error('Invalid transaction type');
+            throw new HttpException('Invalid transaction type', HttpStatus.BAD_REQUEST);
         }
 
         const newQuantity = product.quantity + quantityChange;
-        if (newQuantity < 0) throw new Error(`Resulting stock for product ${product.name} cannot be negative`);
+        if (newQuantity < 0) throw new HttpException(`Resulting stock for product ${product.name} cannot be negative`, HttpStatus.BAD_REQUEST);
 
         await tx.product.update({
           where: { id: item.productId },
-          data: { quantity: newQuantity, updatedAt: new Date() },
+          data: {
+            quantity: newQuantity,
+            status: newQuantity === 0 ? ProductStatus.SOLD : product.status,
+            updatedAt: new Date(),
+          },
         });
 
         await tx.transactionItem.create({
@@ -93,6 +102,9 @@ export class TransactionService {
             quantity: item.quantity,
             price: item.price,
             total: item.quantity * item.price,
+            creditMonth: item.creditMonth,
+            creditPercent: item.creditPercent,
+            monthlyPayment: item.monthlyPayment,
             createdAt: new Date(),
             updatedAt: new Date(),
           },
@@ -108,6 +120,7 @@ export class TransactionService {
             description,
             createdById: createTransactionDto.userId,
             createdAt: new Date(),
+            updatedAt: new Date(),
           },
         });
       }
@@ -115,7 +128,6 @@ export class TransactionService {
       return transaction;
     });
   }
-
   async findOne(id: number) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },

@@ -8,15 +8,15 @@ datasource db {
 }
 
 model Branch {
-  id        Int        @id @default(autoincrement())
-  name      String     @db.VarChar(100)
-  location  String     @db.VarChar(255)
-  phone     String?    @db.VarChar(20)
-  products  Product[]  @relation("BranchProducts")
-  users     User[]     @relation("BranchUsers")
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  Category  Category[]
+  id         Int        @id @default(autoincrement())
+  name       String     @db.VarChar(100)
+  location   String     @db.VarChar(255)
+  phone      String?    @db.VarChar(20)
+  products   Product[]  @relation("BranchProducts")
+  users      User[]     @relation("BranchUsers")
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  categories Category[] // Changed from Category to categories for clarity
 
   @@unique([name, location])
   @@index([location])
@@ -35,7 +35,7 @@ model User {
   location            UserLocation?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
-  ProductStockHistory ProductStockHistory[]
+  productStockHistory ProductStockHistory[] @relation("ProductStockHistory")
 
   @@index([email, branchId])
 }
@@ -70,7 +70,7 @@ model Category {
   products    Product[] @relation("CategoryProducts")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  Branch      Branch?   @relation(fields: [branchId], references: [id])
+  branch      Branch?   @relation(fields: [branchId], references: [id])
   branchId    Int?
 
   @@index([name])
@@ -90,7 +90,7 @@ model Product {
   marketPrice  Float?
   model        String?
   quantity     Int                   @default(0)
-  transactions TransactionItem[]      @relation("ProductTransactions")
+  transactions TransactionItem[]     @relation("ProductTransactions")
   stockHistory ProductStockHistory[] @relation("ProductStockHistory")
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
@@ -108,50 +108,60 @@ enum ProductStatus {
 }
 
 model Customer {
-  id        Int          @id @default(autoincrement())
-  firstName String       @db.VarChar(100)
-  lastName  String       @db.VarChar(100)
-  phone     String?      @db.VarChar(20)
-  address   String?      @db.VarChar(500)
-  email     String?      @unique @db.VarChar(255)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id           Int           @id @default(autoincrement())
+  firstName    String        @db.VarChar(100)
+  lastName     String        @db.VarChar(100)
+  phone        String?       @db.VarChar(20)
+  address      String?       @db.VarChar(500)
+  email        String?       @unique @db.VarChar(255)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   transactions Transaction[] @relation("CustomerTransactions")
+  receipts     Receipt[]     @relation("CustomerReceipts")
 
   @@index([phone, email])
 }
 
 model Transaction {
-  id           Int              @id @default(autoincrement())
-  customer     Customer?        @relation("CustomerTransactions", fields: [customerId], references: [id], onDelete: SetNull)
-  customerId   Int?
-  user         User             @relation("UserTransactions", fields: [userId], references: [id], onDelete: Restrict)
-  userId       Int
-  type         TransactionType
-  status       TransactionStatus @default(PENDING)
-  items        TransactionItem[] @relation("TransactionItems")
-  discount     Float?           @default(0)
-  total        Float
-  finalTotal   Float            // total - discount
-  paymentType  PaymentType?
-  stockHistory ProductStockHistory[] @relation("TransactionStockHistory")
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  id               Int               @id @default(autoincrement())
+  customer         Customer?         @relation("CustomerTransactions", fields: [customerId], references: [id], onDelete: SetNull)
+  customerId       Int?
+  user             User              @relation("UserTransactions", fields: [userId], references: [id], onDelete: Restrict)
+  userId           Int
+  type             TransactionType
+  status           TransactionStatus @default(PENDING)
+  items            TransactionItem[] @relation("TransactionItems")
+  discount         Float?            @default(0)
+  total            Float
+  finalTotal       Float?
+  paymentType      PaymentType?
+  deliveryMethod   String? // Added for frontend compatibility
+  amountPaid       Float? // Added for frontend compatibility
+  remainingBalance Float? // Added for frontend compatibility
+  receiptId        String?           @unique // Link to Receipt
 
-  @@index([customerId, userId, type])
+  stockHistory ProductStockHistory[] @relation("TransactionStockHistory")
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  Receipt      Receipt[]
+
+  @@index([customerId, userId, type, receiptId])
 }
 
 model TransactionItem {
-  id           Int        @id @default(autoincrement())
-  transaction  Transaction @relation("TransactionItems", fields: [transactionId], references: [id], onDelete: Cascade)
-  transactionId Int
-  product      Product     @relation("ProductTransactions", fields: [productId], references: [id], onDelete: Restrict)
-  productId    Int
-  quantity     Int
-  price        Float
-  total        Float
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id             Int         @id @default(autoincrement())
+  transaction    Transaction @relation("TransactionItems", fields: [transactionId], references: [id], onDelete: Cascade)
+  transactionId  Int
+  product        Product     @relation("ProductTransactions", fields: [productId], references: [id], onDelete: Restrict)
+  productId      Int
+  quantity       Int
+  price          Float
+  total          Float
+  creditMonth    Int? // Added for frontend credit terms
+  creditPercent  Float? // Added for frontend credit terms
+  monthlyPayment Float? // Added for frontend credit terms
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   @@index([transactionId, productId])
 }
@@ -180,13 +190,13 @@ model ProductStockHistory {
   id            Int              @id @default(autoincrement())
   product       Product          @relation("ProductStockHistory", fields: [productId], references: [id], onDelete: Restrict)
   productId     Int
-  transaction   Transaction?      @relation("TransactionStockHistory", fields: [transactionId], references: [id], onDelete: SetNull)
+  transaction   Transaction?     @relation("TransactionStockHistory", fields: [transactionId], references: [id], onDelete: SetNull)
   transactionId Int?
   branchId      Int
-  quantity      Int              // Positive for inflow, negative for outflow
+  quantity      Int // Positive for inflow, negative for outflow
   type          StockHistoryType
   description   String?          @db.VarChar(255)
-  createdBy     User             @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy     User             @relation("ProductStockHistory", fields: [createdById], references: [id], onDelete: Restrict)
   createdById   Int
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
@@ -198,4 +208,26 @@ enum StockHistoryType {
   INFLOW
   OUTFLOW
   ADJUSTMENT
+}
+
+model Receipt {
+  id               String       @id
+  customer         Customer?    @relation("CustomerReceipts", fields: [customerId], references: [id], onDelete: SetNull)
+  customerId       Int?
+  cashier          String       @db.VarChar(100)
+  date             DateTime
+  items            Json // Store items as JSON for simplicity
+  total            Float
+  creditTotal      Float?
+  amountPaid       Float
+  remainingBalance Float
+  returnCode       String       @db.VarChar(50)
+  branchId         Int?
+  deliveryMethod   String       @db.VarChar(50)
+  paymentMethod    PaymentType
+  transaction      Transaction? @relation(fields: [id], references: [receiptId], onDelete: SetNull)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([customerId, date])
 }
