@@ -89,15 +89,16 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       await this.locationService.updateUserLocation(client.userId, {
         userId: client.userId,
         isOnline: true,
-        latitude: 0,
-        longitude: 0,
+        latitude: 41.3111,
+        longitude: 69.2797,
+        address: 'Initial connection',
       });
 
       this.emitOnlineUsersDebounced();
 
       if (client.userData?.role === 'ADMIN') {
         const onlineUsers = await this.locationService.getAllOnlineUsers();
-        client.emit('adminAllLocations', onlineUsers.filter(user => user.user?.role === 'AUDITOR'));
+        client.emit('adminAllLocations', onlineUsers);
         this.logger.log(`Sent adminAllLocations to admin ${client.userId}:`, onlineUsers);
       }
     } catch (error) {
@@ -117,10 +118,10 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   @SubscribeMessage('updateLocation')
   async handleLocationUpdate(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { latitude: number; longitude: number; address?: string },
+    @MessageBody() data: { userId: number; latitude: number; longitude: number; address?: string; isOnline?: boolean },
   ) {
-    if (typeof client.userId !== 'number') {
-      return this.handleSocketError(client, new UnauthorizedException('User not authenticated'), 'Authentication error');
+    if (typeof client.userId !== 'number' || client.userId !== data.userId) {
+      return this.handleSocketError(client, new UnauthorizedException('User not authenticated or invalid userId'), 'Authentication error');
     }
 
     try {
@@ -133,7 +134,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         latitude: data.latitude,
         longitude: data.longitude,
         address: data.address,
-        isOnline: true,
+        isOnline: data.isOnline ?? true,
       });
 
       this.server.emit('locationUpdated', {

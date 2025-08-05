@@ -110,8 +110,7 @@ export class LocationService {
       where: {
         isOnline: true,
         user: {
-          // Temporarily remove role filter for debugging
-          // role: 'AUDITOR',
+          role: 'AUDITOR',
           ...(branchId && { branchId }),
         },
       },
@@ -133,10 +132,30 @@ export class LocationService {
       },
     });
     console.log('Fetched online users:', users);
-    // Filter AUDITOR users after logging raw data
-    const filteredUsers = users.filter(user => user.user?.role === 'AUDITOR');
-    console.log('Filtered online users (AUDITOR only):', filteredUsers);
-    return filteredUsers as unknown as UserLocationWithUser[];
+    if (users.length === 0) {
+      console.warn('No online AUDITOR users found. Checking all online users...');
+      const allUsers = await this.prisma.userLocation.findMany({
+        where: { isOnline: true },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              branch: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      console.log('All online users (no role filter):', allUsers);
+    }
+    return users as unknown as UserLocationWithUser[];
   }
 
   async getNearbyUsers(userId: number, radius: number): Promise<UserLocationWithUser[]> {
