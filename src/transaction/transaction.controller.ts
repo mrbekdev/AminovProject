@@ -1,4 +1,3 @@
-
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { TransactionService } from './transaction.service';
@@ -41,6 +40,51 @@ export class TransactionController {
     }
   }
 
+  @Get('stock-history')
+  @ApiOperation({ summary: 'Get product stock history' })
+  @ApiQuery({ name: 'skip', required: false, type: Number, description: 'Number of records to skip' })
+  @ApiQuery({ name: 'take', required: false, type: Number, description: 'Number of records to take' })
+  @ApiQuery({ name: 'productId', required: false, type: Number, description: 'Filter by product ID' })
+  @ApiQuery({ name: 'branchId', required: false, type: Number, description: 'Filter by branch ID' })
+  @ApiQuery({ name: 'type', required: false, enum: StockHistoryType, description: 'Filter by stock history type' })
+  @ApiQuery({ name: 'userId', required: false, type: Number, description: 'Filter by user ID who created the stock history' })
+  @ApiResponse({ status: 200, description: 'Stock history retrieved successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+async findStockHistory(
+  @Query('skip') skip = '0',
+  @Query('take') take = '100',
+  @Query('productId') productId?: string,
+  @Query('branchId') branchId?: string,
+  @Query('type') type?: StockHistoryType,
+  @Query('userId') userId?: string,
+  @Request() req?// Error: Required parameter follows optional parameters
+){
+    try {
+      // Validate the 'type' parameter to ensure it's a valid StockHistoryType
+      if (type && !Object.values(StockHistoryType).includes(type)) {
+        throw new HttpException(`Invalid stock history type: ${type}`, HttpStatus.BAD_REQUEST);
+      }
+
+      // Extract authenticated user ID from JWT
+      const authUserId = req.user?.id;
+      if (!authUserId) {
+        throw new HttpException('Unauthorized: User ID not found in request', HttpStatus.UNAUTHORIZED);
+      }
+
+      // Use query userId if provided, otherwise fall back to authenticated user ID
+      const filterUserId = userId ? +userId : authUserId;
+
+      return await this.transactionService.findStockHistory(+skip, +take, {
+        productId: productId ? +productId : undefined,
+        branchId: branchId ? +branchId : undefined,
+        type,
+        userId: filterUserId,
+      });
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get transaction details' })
   @ApiResponse({ status: 200, description: 'Transaction found' })
@@ -72,31 +116,6 @@ export class TransactionController {
       userId: userId ? +userId : undefined,
       type,
     });
-  }
-
-  @Get('stock-history')
-  @ApiOperation({ summary: 'Get product stock history' })
-  @ApiQuery({ name: 'skip', required: false })
-  @ApiQuery({ name: 'take', required: false })
-  @ApiQuery({ name: 'productId', required: false })
-  @ApiQuery({ name: 'branchId', required: false })
-  @ApiQuery({ name: 'type', required: false, enum: StockHistoryType })
-  async findStockHistory(
-    @Query('skip') skip = '0',
-    @Query('take') take = '10',
-    @Query('productId') productId?: string,
-    @Query('branchId') branchId?: string,
-    @Query('type') type?: StockHistoryType,
-  ) {
-    try {
-      return await this.transactionService.findStockHistory(+skip, +take, {
-        productId: productId ? +productId : undefined,
-        branchId: branchId ? +branchId : undefined,
-        type,
-      });
-    } catch (error) {
-      throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-    }
   }
 
   @Put(':id')

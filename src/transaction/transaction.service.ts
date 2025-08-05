@@ -1,4 +1,3 @@
-
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -9,6 +8,28 @@ import { TransactionStatus, TransactionType, StockHistoryType, PaymentType, Prod
 export class TransactionService {
   constructor(private prisma: PrismaService) {}
 
+  async findStockHistory(
+    skip: number,
+    take: number,
+    filters?: { productId?: number; branchId?: number; type?: StockHistoryType; userId?: number }
+  ) {
+    const stockHistory = await this.prisma.productStockHistory.findMany({
+      skip,
+      take,
+      where: {
+        productId: filters?.productId,
+        branchId: filters?.branchId,
+        type: filters?.type,
+        createdById: filters?.userId, // Map userId to createdById
+      },
+      include: { product: true, transaction: { include: { customer: true } }, createdBy: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return stockHistory; // Return empty array instead of throwing 404
+  }
+
+  // Other methods (create, findOne, findAll, update, remove) remain unchanged
   async create(createTransactionDto: CreateTransactionDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId } });
@@ -163,26 +184,6 @@ export class TransactionService {
     });
   }
 
-  async findStockHistory(
-    skip: number,
-    take: number,
-    filters?: { productId?: number; branchId?: number; type?: StockHistoryType },
-  ) {
-    const stockHistory = await this.prisma.productStockHistory.findMany({
-      skip,
-      take,
-      where: filters,
-      include: { product: true, transaction: { include: { customer: true } }, createdBy: true },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!stockHistory || stockHistory.length === 0) {
-      throw new HttpException('No stock history found', HttpStatus.NOT_FOUND);
-    }
-
-    return stockHistory;
-  }
-
   async update(id: number, updateTransactionDto: UpdateTransactionDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({
@@ -191,13 +192,12 @@ export class TransactionService {
       });
       if (!transaction) throw new HttpException('Transaction not found', HttpStatus.NOT_FOUND);
 
-      // Revert previous transaction effects
       for (const item of transaction.items) {
         const product = item.product;
         if (!product) throw new HttpException(`Product with ID ${item.productId} not found`, HttpStatus.NOT_FOUND);
 
         let quantityChange = 0;
-        let stockHistoryType: StockHistoryType = StockHistoryType.ADJUSTMENT; // Default value
+        let stockHistoryType: StockHistoryType = StockHistoryType.ADJUSTMENT;
         let description: string = 'Reverted transaction';
 
         switch (transaction.type) {
@@ -249,10 +249,8 @@ export class TransactionService {
         });
       }
 
-      // Delete old transaction items
       await tx.transactionItem.deleteMany({ where: { transactionId: id } });
 
-      // Apply new transaction effects
       let total = 0;
       const items = updateTransactionDto.items ?? transaction.items.map(item => ({
         productId: item.productId,
@@ -298,7 +296,7 @@ export class TransactionService {
         if (!product) throw new HttpException(`Product with ID ${item.productId} not found`, HttpStatus.NOT_FOUND);
 
         let quantityChange = 0;
-        let stockHistoryType: StockHistoryType = StockHistoryType.ADJUSTMENT; // Default value
+        let stockHistoryType: StockHistoryType = StockHistoryType.ADJUSTMENT;
         let description: string = 'Updated transaction';
 
         const newType = updateTransactionDto.type ?? transaction.type;
@@ -383,7 +381,7 @@ export class TransactionService {
         if (!product) throw new HttpException(`Product with ID ${item.productId} not found`, HttpStatus.NOT_FOUND);
 
         let quantityChange = 0;
-        let stockHistoryType: StockHistoryType = StockHistoryType.ADJUSTMENT; // Default value
+        let stockHistoryType: StockHistoryType = StockHistoryType.ADJUSTMENT;
         let description: string = 'Reverted transaction';
 
         switch (transaction.type) {
