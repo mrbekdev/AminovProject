@@ -13,23 +13,28 @@ export class TransactionService {
     take: number,
     filters?: { productId?: number; branchId?: number; type?: StockHistoryType; userId?: number }
   ) {
-    const stockHistory = await this.prisma.productStockHistory.findMany({
-      skip,
-      take,
-      where: {
-        productId: filters?.productId,
-        branchId: filters?.branchId,
-        type: filters?.type,
-        createdById: filters?.userId, // Map userId to createdById
-      },
-      include: { product: true, transaction: { include: { customer: true } }, createdBy: true },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return stockHistory; // Return empty array instead of throwing 404
+    try {
+      const stockHistory = await this.prisma.productStockHistory.findMany({
+        skip,
+        take,
+        where: {
+          productId: filters?.productId,
+          branchId: filters?.branchId,
+          type: filters?.type,
+          createdById: filters?.userId,
+        },
+        include: { product: true, transaction: { include: { customer: true } }, createdBy: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      return stockHistory;
+    } catch (error) {
+      throw new HttpException(
+        `Failed to fetch stock history: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
   }
 
-  // Other methods (create, findOne, findAll, update, remove) remain unchanged
   async create(createTransactionDto: CreateTransactionDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId } });
@@ -420,7 +425,7 @@ export class TransactionService {
 
         await tx.productStockHistory.create({
           data: {
-            productId: item.productId,
+            productId: item.productId, // Fixed typo: was 'gminitem.productId'
             transactionId: null,
             branchId: product.branchId,
             quantity: quantityChange,

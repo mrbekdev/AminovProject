@@ -19,10 +19,16 @@ export class TransactionController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   async create(@Body() createTransactionDto: CreateTransactionDto, @Request() req) {
     try {
-      const userId = req.user.id; // Extract user ID from JWT
+      const userId = req.user?.id;
+      if (!userId) {
+        throw new HttpException('Unauthorized: User ID not found in request', HttpStatus.UNAUTHORIZED);
+      }
       return await this.transactionService.create(createTransactionDto, userId);
     } catch (error) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        error.message || 'Failed to create transaction',
+        error.status || HttpStatus.BAD_REQUEST
+      );
     }
   }
 
@@ -32,11 +38,17 @@ export class TransactionController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   async createSale(@Body() createTransactionDto: CreateTransactionDto, @Request() req) {
     try {
-      const userId = req.user.id; // Extract user ID from JWT
-      createTransactionDto.type = TransactionType.SALE; // Enforce SALE type
+      const userId = req.user?.id;
+      if (!userId) {
+        throw new HttpException('Unauthorized: User ID not found in request', HttpStatus.UNAUTHORIZED);
+      }
+      createTransactionDto.type = TransactionType.SALE;
       return await this.transactionService.create(createTransactionDto, userId);
     } catch (error) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        error.message || 'Failed to create sale transaction',
+        error.status || HttpStatus.BAD_REQUEST
+      );
     }
   }
 
@@ -50,38 +62,55 @@ export class TransactionController {
   @ApiQuery({ name: 'userId', required: false, type: Number, description: 'Filter by user ID who created the stock history' })
   @ApiResponse({ status: 200, description: 'Stock history retrieved successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-async findStockHistory(
-  @Query('skip') skip = '0',
-  @Query('take') take = '100',
-  @Query('productId') productId?: string,
-  @Query('branchId') branchId?: string,
-  @Query('type') type?: StockHistoryType,
-  @Query('userId') userId?: string,
-  @Request() req?// Error: Required parameter follows optional parameters
-){
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async findStockHistory(
+    @Query('skip') skip = '0',
+    @Query('take') take = '100',
+    @Query('productId') productId?: string,
+    @Query('branchId') branchId?: string,
+    @Query('type') type?: StockHistoryType,
+    @Query('userId') userId?: string,
+    @Request() req?: any
+  ) {
     try {
-      // Validate the 'type' parameter to ensure it's a valid StockHistoryType
+      // Validate query parameters
+      const parsedSkip = parseInt(skip, 10);
+      const parsedTake = parseInt(take, 10);
+      if (isNaN(parsedSkip) || parsedSkip < 0) {
+        throw new HttpException('Invalid skip parameter', HttpStatus.BAD_REQUEST);
+      }
+      if (isNaN(parsedTake) || parsedTake <= 0) {
+        throw new HttpException('Invalid take parameter', HttpStatus.BAD_REQUEST);
+      }
+
+      // Validate type parameter
       if (type && !Object.values(StockHistoryType).includes(type)) {
         throw new HttpException(`Invalid stock history type: ${type}`, HttpStatus.BAD_REQUEST);
       }
 
       // Extract authenticated user ID from JWT
-      const authUserId = req.user?.id;
+      const authUserId = req?.user?.id;
       if (!authUserId) {
         throw new HttpException('Unauthorized: User ID not found in request', HttpStatus.UNAUTHORIZED);
       }
 
-      // Use query userId if provided, otherwise fall back to authenticated user ID
-      const filterUserId = userId ? +userId : authUserId;
+      // Parse userId if provided
+      const filterUserId = userId ? parseInt(userId, 10) : authUserId;
+      if (userId && isNaN(filterUserId)) {
+        throw new HttpException('Invalid userId parameter', HttpStatus.BAD_REQUEST);
+      }
 
-      return await this.transactionService.findStockHistory(+skip, +take, {
-        productId: productId ? +productId : undefined,
-        branchId: branchId ? +branchId : undefined,
+      return await this.transactionService.findStockHistory(parsedSkip, parsedTake, {
+        productId: productId ? parseInt(productId, 10) : undefined,
+        branchId: branchId ? parseInt(branchId, 10) : undefined,
         type,
         userId: filterUserId,
       });
     } catch (error) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        error.message || 'Failed to retrieve stock history',
+        error.status || HttpStatus.BAD_REQUEST
+      );
     }
   }
 
@@ -91,9 +120,12 @@ async findStockHistory(
   @ApiResponse({ status: 404, description: 'Not found' })
   async findOne(@Param('id') id: string) {
     try {
-      return await this.transactionService.findOne(+id);
+      return await this.transactionService.findOne(parseInt(id, 10));
     } catch (error) {
-      throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      throw new HttpException(
+        error.message || 'Transaction not found',
+        error.status || HttpStatus.NOT_FOUND
+      );
     }
   }
 
@@ -111,11 +143,26 @@ async findStockHistory(
     @Query('userId') userId?: string,
     @Query('type') type?: TransactionType,
   ) {
-    return this.transactionService.findAll(+skip, +take, {
-      customerId: customerId ? +customerId : undefined,
-      userId: userId ? +userId : undefined,
-      type,
-    });
+    try {
+      const parsedSkip = parseInt(skip, 10);
+      const parsedTake = parseInt(take, 10);
+      if (isNaN(parsedSkip) || parsedSkip < 0) {
+        throw new HttpException('Invalid skip parameter', HttpStatus.BAD_REQUEST);
+      }
+      if (isNaN(parsedTake) || parsedTake <= 0) {
+        throw new HttpException('Invalid take parameter', HttpStatus.BAD_REQUEST);
+      }
+      return await this.transactionService.findAll(parsedSkip, parsedTake, {
+        customerId: customerId ? parseInt(customerId, 10) : undefined,
+        userId: userId ? parseInt(userId, 10) : undefined,
+        type,
+      });
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Failed to retrieve transactions',
+        error.status || HttpStatus.BAD_REQUEST
+      );
+    }
   }
 
   @Put(':id')
@@ -124,10 +171,16 @@ async findStockHistory(
   @ApiResponse({ status: 400, description: 'Bad request' })
   async update(@Param('id') id: string, @Body() updateTransactionDto: UpdateTransactionDto, @Request() req) {
     try {
-      const userId = req.user.id; // Extract user ID from JWT
-      return await this.transactionService.update(+id, updateTransactionDto, userId);
+      const userId = req.user?.id;
+      if (!userId) {
+        throw new HttpException('Unauthorized: User ID not found in request', HttpStatus.UNAUTHORIZED);
+      }
+      return await this.transactionService.update(parseInt(id, 10), updateTransactionDto, userId);
     } catch (error) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        error.message || 'Failed to update transaction',
+        error.status || HttpStatus.BAD_REQUEST
+      );
     }
   }
 
@@ -137,10 +190,16 @@ async findStockHistory(
   @ApiResponse({ status: 400, description: 'Bad request' })
   async remove(@Param('id') id: string, @Request() req) {
     try {
-      const userId = req.user.id; // Extract user ID from JWT
-      return await this.transactionService.remove(+id, userId);
+      const userId = req.user?.id;
+      if (!userId) {
+        throw new HttpException('Unauthorized: User ID not found in request', HttpStatus.UNAUTHORIZED);
+      }
+      return await this.transactionService.remove(parseInt(id, 10), userId);
     } catch (error) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        error.message || 'Failed to delete transaction',
+        error.status || HttpStatus.BAD_REQUEST
+      );
     }
   }
 }
