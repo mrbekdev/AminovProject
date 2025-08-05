@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface UserLocationWithUser {
@@ -23,10 +23,16 @@ export interface UserLocationWithUser {
 
 @Injectable()
 export class LocationService {
+  private logger = new Logger('LocationService');
+
   constructor(private prisma: PrismaService) {}
 
   validateCoordinates(latitude: number, longitude: number): boolean {
-    return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+    const isValid = latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+    if (!isValid) {
+      this.logger.warn(`Invalid coordinates: lat=${latitude}, lng=${longitude}`);
+    }
+    return isValid;
   }
 
   async updateUserLocation(
@@ -34,156 +40,218 @@ export class LocationService {
     data: { userId: number; latitude: number; longitude: number; address?: string; isOnline?: boolean },
   ): Promise<UserLocationWithUser> {
     if (!this.validateCoordinates(data.latitude, data.longitude)) {
-      console.warn(`Invalid coordinates for user ${userId}:`, { latitude: data.latitude, longitude: data.longitude });
+      this.logger.error(`Invalid coordinates for user ${userId}:`, { 
+        latitude: data.latitude, 
+        longitude: data.longitude 
+      });
       throw new Error('Invalid coordinates');
     }
 
-    const updatedLocation = await this.prisma.userLocation.upsert({
-      where: { userId },
-      update: {
-        latitude: data.latitude,
-        longitude: data.longitude,
-        address: data.address,
-        isOnline: data.isOnline ?? true,
-        lastSeen: new Date(),
-        updatedAt: new Date(),
-      },
-      create: {
-        userId,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        address: data.address,
-        isOnline: data.isOnline ?? true,
-        lastSeen: new Date(),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            branch: {
-              select: {
-                id: true,
-                name: true,
+    try {
+      const updatedLocation = await this.prisma.userLocation.upsert({
+        where: { userId },
+        update: {
+          latitude: data.latitude,
+          longitude: data.longitude,
+          address: data.address,
+          isOnline: data.isOnline ?? true,
+          lastSeen: new Date(),
+          updatedAt: new Date(),
+        },
+        create: {
+          userId,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          address: data.address,
+          isOnline: data.isOnline ?? true,
+          lastSeen: new Date(),
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              branch: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-    });
-    console.log('Updated location for user:', userId, updatedLocation);
-    return updatedLocation as unknown as UserLocationWithUser;
+      });
+
+      this.logger.log(`Updated location for user ${userId}:`, {
+        lat: updatedLocation.latitude,
+        lng: updatedLocation.longitude,
+        isOnline: updatedLocation.isOnline,
+        address: updatedLocation.address
+      });
+
+      return updatedLocation as unknown as UserLocationWithUser;
+    } catch (error) {
+      this.logger.error(`Failed to update location for user ${userId}:`, error);
+      throw new Error(`Failed to update location: ${error.message}`);
+    }
   }
 
   async getUserLocation(userId: number): Promise<UserLocationWithUser> {
-    const location = await this.prisma.userLocation.findUnique({
-      where: { userId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            branch: {
-              select: {
-                id: true,
-                name: true,
+    try {
+      const location = await this.prisma.userLocation.findUnique({
+        where: { userId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              branch: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    if (!location) {
-      throw new NotFoundException(`Location for user ${userId} not found`);
+      if (!location) {
+        this.logger.warn(`Location for user ${userId} not found`);
+        throw new NotFoundException(`Location for user ${userId} not found`);
+      }
+
+      this.logger.log(`Fetched location for user ${userId}`);
+      return location as unknown as UserLocationWithUser;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Failed to get location for user ${userId}:`, error);
+      throw new Error(`Failed to get user location: ${error.message}`);
     }
-    console.log('Fetched location for user:', userId, location);
-    return location as unknown as UserLocationWithUser;
   }
 
   async getAllOnlineUsers(branchId?: number): Promise<UserLocationWithUser[]> {
-    const users = await this.prisma.userLocation.findMany({
-      where: {
+    try {
+      const whereCondition: any = {
         isOnline: true,
-        ...(branchId && { user: { branchId } }),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            branch: {
-              select: {
-                id: true,
-                name: true,
+      };
+
+      if (branchId) {
+        whereCondition.user = { branchId };
+      }
+
+      const users = await this.prisma.userLocation.findMany({
+        where: whereCondition,
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              branch: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-    });
-    console.log('Fetched all online users:', users);
-    return users as unknown as UserLocationWithUser[];
+        orderBy: {
+          lastSeen: 'desc',
+        },
+      });
+
+      this.logger.log(`Fetched ${users.length} online users${branchId ? ` for branch ${branchId}` : ''}`);
+      return users as unknown as UserLocationWithUser[];
+    } catch (error) {
+      this.logger.error('Failed to get all online users:', error);
+      throw new Error(`Failed to get online users: ${error.message}`);
+    }
   }
 
   async getNearbyUsers(userId: number, radius: number): Promise<UserLocationWithUser[]> {
-    const userLocation = await this.getUserLocation(userId);
-    const allLocations = await this.prisma.userLocation.findMany({
-      where: {
-        isOnline: true,
-        userId: { not: userId },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            branch: {
-              select: {
-                id: true,
-                name: true,
+    try {
+      const userLocation = await this.getUserLocation(userId);
+      
+      const allLocations = await this.prisma.userLocation.findMany({
+        where: {
+          isOnline: true,
+          userId: { not: userId },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              branch: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    const nearbyUsers = allLocations
-      .map((loc) => {
-        const distance = this.calculateDistance(
-          userLocation.latitude,
-          userLocation.longitude,
-          loc.latitude,
-          loc.longitude,
-        );
-        if (distance <= radius) {
-          return { ...(loc as unknown as UserLocationWithUser), distance };
-        }
-        return null;
-      })
-      .filter((loc): loc is UserLocationWithUser & { distance: number } => loc !== null);
-    console.log('Nearby users for userId:', userId, nearbyUsers);
-    return nearbyUsers;
+      const nearbyUsers = allLocations
+        .map((loc) => {
+          const distance = this.calculateDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            loc.latitude,
+            loc.longitude,
+          );
+          if (distance <= radius) {
+            return { 
+              ...(loc as unknown as UserLocationWithUser), 
+              distance: Math.round(distance * 100) / 100 // 2 decimal places
+            };
+          }
+          return null;
+        })
+        .filter((loc): loc is UserLocationWithUser & { distance: number } => loc !== null)
+        .sort((a, b) => a.distance - b.distance); // Distance bo'yicha tartiblab
+
+      this.logger.log(`Found ${nearbyUsers.length} nearby users for user ${userId} within ${radius}km`);
+      return nearbyUsers;
+    } catch (error) {
+      this.logger.error(`Failed to get nearby users for user ${userId}:`, error);
+      throw new Error(`Failed to get nearby users: ${error.message}`);
+    }
   }
 
   async setUserOffline(userId: number): Promise<void> {
     try {
-      await this.prisma.userLocation.update({
+      const result = await this.prisma.userLocation.updateMany({
         where: { userId },
-        data: { isOnline: false, updatedAt: new Date() },
+        data: { 
+          isOnline: false, 
+          lastSeen: new Date(),
+          updatedAt: new Date() 
+        },
       });
-      console.log('Set user offline:', userId);
+
+      if (result.count === 0) {
+        this.logger.warn(`No location record found for user ${userId} to set offline`);
+        // Throw qilmaslik, chunki user location mavjud bo'lmasligi mumkin
+        return;
+      }
+
+      this.logger.log(`Set user ${userId} offline`);
     } catch (error) {
-      throw new NotFoundException(`Location for user ${userId} not found`);
+      this.logger.error(`Failed to set user ${userId} offline:`, error);
+      // Throw qilmaslik, chunki disconnect da ishlatiladi
     }
   }
 
@@ -192,20 +260,80 @@ export class LocationService {
       await this.prisma.userLocation.delete({
         where: { userId },
       });
-      console.log('Deleted location for user:', userId);
+      this.logger.log(`Deleted location for user ${userId}`);
     } catch (error) {
+      this.logger.error(`Failed to delete location for user ${userId}:`, error);
       throw new NotFoundException(`Location for user ${userId} not found`);
     }
   }
 
+  // Haversine formula - ikki geografik nuqta orasidagi masofani hisoblash
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const R = 6371; // Yer radiusi km da
+    const dLat = this.toRadians(lat2 - lat1);
+    const dLon = this.toRadians(lon2 - lon1);
+    
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      Math.cos(this.toRadians(lat1)) * Math.cos(this.toRadians(lat2)) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    const distance = R * c;
+    
+    return distance;
+  }
+
+  private toRadians(degrees: number): number {
+    return degrees * (Math.PI / 180);
+  }
+
+  // Test va debug uchun
+  async getLocationStats(): Promise<{
+    totalUsers: number;
+    onlineUsers: number;
+    offlineUsers: number;
+  }> {
+    try {
+      const totalUsers = await this.prisma.userLocation.count();
+      const onlineUsers = await this.prisma.userLocation.count({
+        where: { isOnline: true }
+      });
+      
+      const stats = {
+        totalUsers,
+        onlineUsers,
+        offlineUsers: totalUsers - onlineUsers
+      };
+      
+      this.logger.log('Location stats:', stats);
+      return stats;
+    } catch (error) {
+      this.logger.error('Failed to get location stats:', error);
+      throw new Error('Failed to get location statistics');
+    }
+  }
+
+  // Barcha offline userlarni tozalash (optional)
+  async cleanupOfflineUsers(olderThanHours: number = 24): Promise<number> {
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setHours(cutoffDate.getHours() - olderThanHours);
+
+      const result = await this.prisma.userLocation.deleteMany({
+        where: {
+          isOnline: false,
+          lastSeen: {
+            lt: cutoffDate
+          }
+        }
+      });
+
+      this.logger.log(`Cleaned up ${result.count} offline user locations older than ${olderThanHours} hours`);
+      return result.count;
+    } catch (error) {
+      this.logger.error('Failed to cleanup offline users:', error);
+      throw new Error('Failed to cleanup offline users');
+    }
   }
 }
