@@ -34,6 +34,7 @@ export class LocationService {
     data: { userId: number; latitude: number; longitude: number; address?: string; isOnline?: boolean },
   ): Promise<UserLocationWithUser> {
     if (!this.validateCoordinates(data.latitude, data.longitude)) {
+      console.warn(`Invalid coordinates for user ${userId}:`, { latitude: data.latitude, longitude: data.longitude });
       throw new Error('Invalid coordinates');
     }
 
@@ -100,7 +101,7 @@ export class LocationService {
     if (!location) {
       throw new NotFoundException(`Location for user ${userId} not found`);
     }
-
+    console.log('Fetched location for user:', userId, location);
     return location as unknown as UserLocationWithUser;
   }
 
@@ -109,7 +110,8 @@ export class LocationService {
       where: {
         isOnline: true,
         user: {
-          role: 'AUDITOR',
+          // Temporarily remove role filter for debugging
+          // role: 'AUDITOR',
           ...(branchId && { branchId }),
         },
       },
@@ -131,7 +133,10 @@ export class LocationService {
       },
     });
     console.log('Fetched online users:', users);
-    return users as unknown as UserLocationWithUser[];
+    // Filter AUDITOR users after logging raw data
+    const filteredUsers = users.filter(user => user.user?.role === 'AUDITOR');
+    console.log('Filtered online users (AUDITOR only):', filteredUsers);
+    return filteredUsers as unknown as UserLocationWithUser[];
   }
 
   async getNearbyUsers(userId: number, radius: number): Promise<UserLocationWithUser[]> {

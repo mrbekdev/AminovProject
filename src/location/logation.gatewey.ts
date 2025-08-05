@@ -203,7 +203,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     try {
       const onlineUsers = await this.locationService.getAllOnlineUsers(data.branchId);
-      client.emit('onlineUsers', onlineUsers.filter(user => user.user?.role === 'AUDITOR'));
+      client.emit('onlineUsers', onlineUsers);
       this.logger.log(`Sent onlineUsers to user ${client.userId}:`, onlineUsers);
     } catch (error) {
       this.handleSocketError(client, error, 'Get online users error');
@@ -235,7 +235,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   private async emitOnlineUsers() {
     try {
       const onlineUsers = await this.locationService.getAllOnlineUsers();
-      this.server.emit('onlineUsersUpdated', onlineUsers.filter(user => user.user?.role === 'AUDITOR'));
+      this.server.emit('onlineUsersUpdated', onlineUsers);
       this.logger.log('Emitted onlineUsersUpdated:', onlineUsers);
     } catch (error) {
       this.logger.error('Emit online users error:', error);
