@@ -1,4 +1,3 @@
-// location.gateway.ts
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -58,7 +57,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   constructor(
     private locationService: LocationService,
     private jwtService: JwtService,
-  ) { }
+  ) {}
 
   async handleConnection(client: AuthenticatedSocket) {
     try {
@@ -99,7 +98,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       // Send all current locations to admin on connection
       if (client.userData?.role === 'ADMIN') {
         const onlineUsers = await this.locationService.getAllOnlineUsers();
-        client.emit('adminAllLocations', onlineUsers);
+        client.emit('adminAllLocations', onlineUsers.filter(user => user.user?.role === 'AUDITOR'));
       }
     } catch (error) {
       this.handleSocketError(client, error, 'Connection error');
@@ -137,7 +136,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         isOnline: true,
       });
 
-      // Use the explicit type for destructuring, cast through unknown to avoid linter error
       const { latitude, longitude, address, lastSeen, user } = updatedLocation as unknown as UserLocationWithUser;
       this.server.emit('locationUpdated', {
         userId: client.userId,
@@ -148,8 +146,8 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         user,
       });
 
-      // Notify admins with detailed user info
-      if (client.userData?.role !== 'ADMIN') {
+      // Notify admins with detailed user info if the user is an AUDITOR
+      if (client.userData?.role === 'AUDITOR') {
         this.emitLocationToAdmins({
           ...updatedLocation,
           user: {
@@ -193,20 +191,22 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   @SubscribeMessage('getAllOnlineUsers')
-  async handleGetAllOnlineUsers(@ConnectedSocket() client: AuthenticatedSocket) {
+  async handleGetAllOnlineUsers(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { branchId?: number },
+  ) {
     if (typeof client.userId !== 'number') {
       return this.handleSocketError(client, new UnauthorizedException('User not authenticated'), 'Authentication error');
     }
 
     try {
-      const onlineUsers = await this.locationService.getAllOnlineUsers();
-      client.emit('onlineUsers', onlineUsers);
+      const onlineUsers = await this.locationService.getAllOnlineUsers(data.branchId);
+      client.emit('onlineUsers', onlineUsers.filter(user => user.user?.role === 'AUDITOR'));
     } catch (error) {
       this.handleSocketError(client, error, 'Get online users error');
     }
   }
 
-  // New event to get specific user location
   @SubscribeMessage('getUserLocation')
   async handleGetUserLocation(
     @ConnectedSocket() client: AuthenticatedSocket,
@@ -231,7 +231,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   private async emitOnlineUsers() {
     try {
       const onlineUsers = await this.locationService.getAllOnlineUsers();
-      this.server.emit('onlineUsersUpdated', onlineUsers);
+      this.server.emit('onlineUsersUpdated', onlineUsers.filter(user => user.user?.role === 'AUDITOR'));
     } catch (error) {
       this.logger.error('Emit online users error:', error);
     }

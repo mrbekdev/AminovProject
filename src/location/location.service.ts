@@ -23,14 +23,12 @@ export interface UserLocationWithUser {
 
 @Injectable()
 export class LocationService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
-  // Validate coordinates
   validateCoordinates(latitude: number, longitude: number): boolean {
     return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
   }
 
-  // Update or create a user's location
   async updateUserLocation(
     userId: number,
     data: { userId: number; latitude: number; longitude: number; address?: string; isOnline?: boolean },
@@ -76,7 +74,6 @@ export class LocationService {
     }) as unknown as UserLocationWithUser;
   }
 
-  // Get a specific user's location
   async getUserLocation(userId: number): Promise<UserLocationWithUser> {
     const location = await this.prisma.userLocation.findUnique({
       where: { userId },
@@ -105,10 +102,15 @@ export class LocationService {
     return location as unknown as UserLocationWithUser;
   }
 
-  // Get all online users' locations
-  async getAllOnlineUsers(): Promise<UserLocationWithUser[]> {
+  async getAllOnlineUsers(branchId?: number): Promise<UserLocationWithUser[]> {
     return (await this.prisma.userLocation.findMany({
-      where: { isOnline: true },
+      where: {
+        isOnline: true,
+        user: {
+          role: 'AUDITOR', // Only fetch AUDITOR users
+          ...(branchId && { branchId }), // Filter by branchId if provided
+        },
+      },
       include: {
         user: {
           select: {
@@ -128,13 +130,13 @@ export class LocationService {
     })) as unknown as UserLocationWithUser[];
   }
 
-  // Get nearby users within a specified radius (in kilometers)
   async getNearbyUsers(userId: number, radius: number): Promise<UserLocationWithUser[]> {
     const userLocation = await this.getUserLocation(userId);
     const allLocations = await this.prisma.userLocation.findMany({
       where: {
         isOnline: true,
-        userId: { not: userId }, // Exclude the requesting user
+        userId: { not: userId },
+        user: { role: 'AUDITOR' }, // Only fetch AUDITOR users
       },
       include: {
         user: {
@@ -170,7 +172,6 @@ export class LocationService {
       .filter((loc): loc is UserLocationWithUser & { distance: number } => loc !== null);
   }
 
-  // Set a user offline
   async setUserOffline(userId: number): Promise<void> {
     try {
       await this.prisma.userLocation.update({
@@ -182,7 +183,6 @@ export class LocationService {
     }
   }
 
-  // Delete a user's location
   async deleteUserLocation(userId: number): Promise<void> {
     try {
       await this.prisma.userLocation.delete({
@@ -193,7 +193,6 @@ export class LocationService {
     }
   }
 
-  // Calculate distance between two coordinates using Haversine formula (in kilometers)
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371; // Earth's radius in kilometers
     const dLat = (lat2 - lat1) * (Math.PI / 180);

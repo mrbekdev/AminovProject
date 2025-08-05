@@ -1,4 +1,3 @@
-// location.controller.ts
 import {
   Controller,
   Get,
@@ -26,7 +25,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class LocationController {
-  constructor(private readonly locationService: LocationService) { }
+  constructor(private readonly locationService: LocationService) {}
 
   @Post('update')
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
@@ -36,7 +35,6 @@ export class LocationController {
   async updateLocation(@Request() req, @Body() updateLocationDto: UpdateLocationDto): Promise<UserLocationWithUser> {
     try {
       const userId = req.user.sub;
-      // Ensure latitude and longitude are always numbers
       const latitude = typeof updateLocationDto.latitude === 'number' ? updateLocationDto.latitude : 0;
       const longitude = typeof updateLocationDto.longitude === 'number' ? updateLocationDto.longitude : 0;
       return await this.locationService.updateUserLocation(userId, {
@@ -86,12 +84,12 @@ export class LocationController {
   @ApiOperation({ summary: 'Get all online users (admin only)' })
   @ApiResponse({ status: 200, description: 'List of online users' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  async getOnlineUsers(@Request() req): Promise<UserLocationWithUser[]> {
+  async getOnlineUsers(@Request() req, @Query('branchId') branchId?: string): Promise<UserLocationWithUser[]> {
     try {
       if (req.user.role !== 'ADMIN') {
         throw new ForbiddenException('Only admins can view all online users');
       }
-      return await this.locationService.getAllOnlineUsers();
+      return await this.locationService.getAllOnlineUsers(branchId ? +branchId : undefined);
     } catch (error) {
       if (error instanceof ForbiddenException) {
         throw error;

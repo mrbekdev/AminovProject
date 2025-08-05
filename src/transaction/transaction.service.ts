@@ -174,11 +174,22 @@ export class TransactionService {
     return transaction;
   }
 
-  async findAll(skip: number, take: number, filters?: { customerId?: number; userId?: number; type?: TransactionType }) {
-    return this.prisma.transaction.findMany({
+// transaction.service.ts
+async findAll(
+  skip: number,
+  take: number,
+  filters?: { customerId?: number; userId?: number; type?: TransactionType; createdAt?: any },
+) {
+  try {
+    return await this.prisma.transaction.findMany({
       skip,
       take,
-      where: filters,
+      where: {
+        customerId: filters?.customerId,
+        userId: filters?.userId,
+        type: filters?.type,
+        createdAt: filters?.createdAt,
+      },
       include: {
         customer: true,
         user: true,
@@ -187,7 +198,13 @@ export class TransactionService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  } catch (error) {
+    throw new HttpException(
+      `Failed to retrieve transactions: ${error.message}`,
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
   }
+}
 
   async update(id: number, updateTransactionDto: UpdateTransactionDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
