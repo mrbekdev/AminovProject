@@ -51,7 +51,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   server: Server;
 
   private logger = new Logger('LocationGateway');
-  private connectedUsers = new Map<number, string>(); // userId -> socketId
+  private connectedUsers = new Map<number, string>();
   private emitOnlineUsersDebounced = debounce(this.emitOnlineUsers.bind(this), 1000);
 
   constructor(
@@ -95,10 +95,10 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
       this.emitOnlineUsersDebounced();
 
-      // Send all current locations to admin on connection
       if (client.userData?.role === 'ADMIN') {
         const onlineUsers = await this.locationService.getAllOnlineUsers();
         client.emit('adminAllLocations', onlineUsers.filter(user => user.user?.role === 'AUDITOR'));
+        this.logger.log(`Sent adminAllLocations to admin ${client.userId}:`, onlineUsers);
       }
     } catch (error) {
       this.handleSocketError(client, error, 'Connection error');
@@ -136,17 +136,16 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         isOnline: true,
       });
 
-      const { latitude, longitude, address, lastSeen, user } = updatedLocation as unknown as UserLocationWithUser;
       this.server.emit('locationUpdated', {
         userId: client.userId,
-        latitude,
-        longitude,
-        address,
-        lastSeen,
-        user,
+        latitude: updatedLocation.latitude,
+        longitude: updatedLocation.longitude,
+        address: updatedLocation.address,
+        lastSeen: updatedLocation.lastSeen,
+        user: updatedLocation.user,
       });
+      this.logger.log(`Emitted locationUpdated for user ${client.userId}:`, updatedLocation);
 
-      // Notify admins with detailed user info if the user is an AUDITOR
       if (client.userData?.role === 'AUDITOR') {
         this.emitLocationToAdmins({
           ...updatedLocation,
@@ -164,9 +163,11 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         success: true,
         location: updatedLocation,
       });
+      this.logger.log(`Sent locationUpdateConfirmed to user ${client.userId}`);
 
       const nearbyUsers = await this.locationService.getNearbyUsers(client.userId, 5);
       client.emit('nearbyUsers', nearbyUsers);
+      this.logger.log(`Sent nearbyUsers to user ${client.userId}:`, nearbyUsers);
     } catch (error) {
       this.handleSocketError(client, error, 'Location update error');
     }
@@ -185,6 +186,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       const radius = Math.min(Math.max(data.radius || 5, 0), 100);
       const nearbyUsers = await this.locationService.getNearbyUsers(client.userId, radius);
       client.emit('nearbyUsers', nearbyUsers);
+      this.logger.log(`Sent nearbyUsers to user ${client.userId}:`, nearbyUsers);
     } catch (error) {
       this.handleSocketError(client, error, 'Get nearby users error');
     }
@@ -202,6 +204,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     try {
       const onlineUsers = await this.locationService.getAllOnlineUsers(data.branchId);
       client.emit('onlineUsers', onlineUsers.filter(user => user.user?.role === 'AUDITOR'));
+      this.logger.log(`Sent onlineUsers to user ${client.userId}:`, onlineUsers);
     } catch (error) {
       this.handleSocketError(client, error, 'Get online users error');
     }
@@ -223,6 +226,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     try {
       const location = await this.locationService.getUserLocation(data.targetUserId);
       client.emit('userLocation', location);
+      this.logger.log(`Sent userLocation for user ${data.targetUserId} to admin ${client.userId}`);
     } catch (error) {
       this.handleSocketError(client, error, 'Get user location error');
     }
@@ -232,6 +236,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     try {
       const onlineUsers = await this.locationService.getAllOnlineUsers();
       this.server.emit('onlineUsersUpdated', onlineUsers.filter(user => user.user?.role === 'AUDITOR'));
+      this.logger.log('Emitted onlineUsersUpdated:', onlineUsers);
     } catch (error) {
       this.logger.error('Emit online users error:', error);
     }
@@ -247,6 +252,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     adminSockets.forEach((socketId) => {
       this.server.to(socketId).emit('adminLocationUpdate', location);
+      this.logger.log(`Sent adminLocationUpdate to socket ${socketId}:`, location);
     });
   }
 

@@ -37,7 +37,7 @@ export class LocationService {
       throw new Error('Invalid coordinates');
     }
 
-    return await this.prisma.userLocation.upsert({
+    const updatedLocation = await this.prisma.userLocation.upsert({
       where: { userId },
       update: {
         latitude: data.latitude,
@@ -71,7 +71,9 @@ export class LocationService {
           },
         },
       },
-    }) as unknown as UserLocationWithUser;
+    });
+    console.log('Updated location for user:', userId, updatedLocation);
+    return updatedLocation as unknown as UserLocationWithUser;
   }
 
   async getUserLocation(userId: number): Promise<UserLocationWithUser> {
@@ -103,12 +105,12 @@ export class LocationService {
   }
 
   async getAllOnlineUsers(branchId?: number): Promise<UserLocationWithUser[]> {
-    return (await this.prisma.userLocation.findMany({
+    const users = await this.prisma.userLocation.findMany({
       where: {
         isOnline: true,
         user: {
-          role: 'AUDITOR', // Only fetch AUDITOR users
-          ...(branchId && { branchId }), // Filter by branchId if provided
+          role: 'AUDITOR',
+          ...(branchId && { branchId }),
         },
       },
       include: {
@@ -127,7 +129,9 @@ export class LocationService {
           },
         },
       },
-    })) as unknown as UserLocationWithUser[];
+    });
+    console.log('Fetched online users:', users);
+    return users as unknown as UserLocationWithUser[];
   }
 
   async getNearbyUsers(userId: number, radius: number): Promise<UserLocationWithUser[]> {
@@ -136,7 +140,7 @@ export class LocationService {
       where: {
         isOnline: true,
         userId: { not: userId },
-        user: { role: 'AUDITOR' }, // Only fetch AUDITOR users
+        user: { role: 'AUDITOR' },
       },
       include: {
         user: {
@@ -156,7 +160,7 @@ export class LocationService {
       },
     });
 
-    return allLocations
+    const nearbyUsers = allLocations
       .map((loc) => {
         const distance = this.calculateDistance(
           userLocation.latitude,
@@ -170,6 +174,8 @@ export class LocationService {
         return null;
       })
       .filter((loc): loc is UserLocationWithUser & { distance: number } => loc !== null);
+    console.log('Nearby users for userId:', userId, nearbyUsers);
+    return nearbyUsers;
   }
 
   async setUserOffline(userId: number): Promise<void> {
@@ -178,6 +184,7 @@ export class LocationService {
         where: { userId },
         data: { isOnline: false, updatedAt: new Date() },
       });
+      console.log('Set user offline:', userId);
     } catch (error) {
       throw new NotFoundException(`Location for user ${userId} not found`);
     }
@@ -188,13 +195,14 @@ export class LocationService {
       await this.prisma.userLocation.delete({
         where: { userId },
       });
+      console.log('Deleted location for user:', userId);
     } catch (error) {
       throw new NotFoundException(`Location for user ${userId} not found`);
     }
   }
 
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371; // Earth's radius in kilometers
+    const R = 6371;
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a =
