@@ -109,10 +109,7 @@ export class LocationService {
     const users = await this.prisma.userLocation.findMany({
       where: {
         isOnline: true,
-        user: {
-          role: 'AUDITOR',
-          ...(branchId && { branchId }),
-        },
+        ...(branchId && { user: { branchId } }),
       },
       include: {
         user: {
@@ -131,30 +128,7 @@ export class LocationService {
         },
       },
     });
-    console.log('Fetched online users:', users);
-    if (users.length === 0) {
-      console.warn('No online AUDITOR users found. Checking all online users...');
-      const allUsers = await this.prisma.userLocation.findMany({
-        where: { isOnline: true },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              role: true,
-              branch: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-            },
-          },
-        },
-      });
-      console.log('All online users (no role filter):', allUsers);
-    }
+    console.log('Fetched all online users:', users);
     return users as unknown as UserLocationWithUser[];
   }
 
@@ -164,7 +138,6 @@ export class LocationService {
       where: {
         isOnline: true,
         userId: { not: userId },
-        user: { role: 'AUDITOR' },
       },
       include: {
         user: {

@@ -147,18 +147,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       });
       this.logger.log(`Emitted locationUpdated for user ${client.userId}:`, updatedLocation);
 
-      if (client.userData?.role === 'AUDITOR') {
-        this.emitLocationToAdmins({
-          ...updatedLocation,
-          user: {
-            id: client.userId,
-            name: client.userData?.name,
-            email: client.userData?.email,
-            role: client.userData?.role,
-            branch: client.userData?.branch,
-          },
-        });
-      }
+      this.emitLocationToAdmins(updatedLocation);
 
       client.emit('locationUpdateConfirmed', {
         success: true,
