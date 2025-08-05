@@ -1,42 +1,55 @@
-import { IsString, IsEnum, IsInt, IsPositive, MaxLength, IsNumber, IsOptional } from 'class-validator';
+
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNumber, IsOptional, IsEnum, IsNotEmpty } from 'class-validator';
 import { ProductStatus } from '@prisma/client';
 
 export class CreateProductDto {
+  @ApiProperty()
   @IsString()
-  @MaxLength(100)
+  @IsNotEmpty()
   name: string;
-  @IsString()
-  @MaxLength(100)
-  model?: string;
 
+  @ApiProperty()
   @IsString()
-  @MaxLength(50)
+  @IsNotEmpty()
   barcode: string;
 
-  @IsOptional()
+  @ApiProperty({ required: false })
   @IsString()
-  @MaxLength(255)
+  @IsOptional()
   description?: string;
 
-  @IsInt()
-  @IsPositive()
+  @ApiProperty()
+  @IsNumber()
   categoryId: number;
 
-  @IsEnum(ProductStatus)
-  status: ProductStatus;
-
-  @IsInt()
-  @IsPositive()
+  @ApiProperty()
+  @IsNumber()
+  @IsNotEmpty()
   branchId: number;
 
-  @IsNumber()
-  @IsPositive()
-  price: number;
-  @IsNumber()
-  @IsPositive()
-  marketPrice: number;
+  @ApiProperty({ enum: ProductStatus })
+  @IsEnum(ProductStatus)
+  @IsNotEmpty()
+  status: ProductStatus;
 
-  @IsInt()
-  @IsPositive()
+  @ApiProperty()
+  @IsNumber()
+  @IsNotEmpty()
+  price: number;
+
+  @ApiProperty({ required: false })
+  @IsNumber()
+  @IsOptional()
+  marketPrice?: number;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  model?: string;
+
+  @ApiProperty()
+  @IsNumber()
+  @IsNotEmpty()
   quantity: number;
 }

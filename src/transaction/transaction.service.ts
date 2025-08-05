@@ -1,4 +1,5 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
@@ -8,9 +9,9 @@ import { TransactionStatus, TransactionType, StockHistoryType, PaymentType, Prod
 export class TransactionService {
   constructor(private prisma: PrismaService) {}
 
-async create(createTransactionDto: CreateTransactionDto) {
+  async create(createTransactionDto: CreateTransactionDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({ where: { id: createTransactionDto.userId } });
+      const user = await tx.user.findUnique({ where: { id: userId } });
       if (!user) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
 
       let customer;
@@ -37,7 +38,7 @@ async create(createTransactionDto: CreateTransactionDto) {
       const transaction = await tx.transaction.create({
         data: {
           customerId: createTransactionDto.customerId,
-          userId: createTransactionDto.userId,
+          userId,
           type: createTransactionDto.type,
           status: TransactionStatus.COMPLETED,
           discount,
@@ -69,10 +70,14 @@ async create(createTransactionDto: CreateTransactionDto) {
             description = createTransactionDto.type === TransactionType.SALE ? 'Product sold' : 'Product written off';
             break;
           case TransactionType.RETURN:
+            quantityChange = item.quantity;
+            stockHistoryType = StockHistoryType.RETURN;
+            description = 'Product returned';
+            break;
           case TransactionType.TRANSFER:
             quantityChange = item.quantity;
             stockHistoryType = StockHistoryType.INFLOW;
-            description = createTransactionDto.type === TransactionType.RETURN ? 'Product returned' : 'Product transferred';
+            description = 'Product transferred';
             break;
           case TransactionType.STOCK_ADJUSTMENT:
             quantityChange = item.quantity;
@@ -118,7 +123,7 @@ async create(createTransactionDto: CreateTransactionDto) {
             quantity: quantityChange,
             type: stockHistoryType,
             description,
-            createdById: createTransactionDto.userId,
+            createdById: userId,
             createdAt: new Date(),
             updatedAt: new Date(),
           },
@@ -128,6 +133,7 @@ async create(createTransactionDto: CreateTransactionDto) {
       return transaction;
     });
   }
+
   async findOne(id: number) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },
@@ -138,7 +144,7 @@ async create(createTransactionDto: CreateTransactionDto) {
         stockHistory: { include: { product: true } },
       },
     });
-    if (!transaction) throw new Error('Transaction not found');
+    if (!transaction) throw new HttpException('Transaction not found', HttpStatus.NOT_FOUND);
     return transaction;
   }
 
@@ -153,6 +159,7 @@ async create(createTransactionDto: CreateTransactionDto) {
         items: { include: { product: true } },
         stockHistory: { include: { product: true } },
       },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -170,41 +177,75 @@ async create(createTransactionDto: CreateTransactionDto) {
     });
 
     if (!stockHistory || stockHistory.length === 0) {
-      throw new Error('No stock history found');
+      throw new HttpException('No stock history found', HttpStatus.NOT_FOUND);
     }
 
     return stockHistory;
   }
 
-  async update(id: number, updateTransactionDto: UpdateTransactionDto) {
+  async update(id: number, updateTransactionDto: UpdateTransactionDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({
         where: { id },
         include: { items: { include: { product: true } } },
       });
-      if (!transaction) throw new Error('Transaction not found');
+      if (!transaction) throw new HttpException('Transaction not found', HttpStatus.NOT_FOUND);
 
       // Revert previous transaction effects
-      const itemsToRevert = transaction.items ?? [];
-      for (const item of itemsToRevert) {
+      for (const item of transaction.items) {
         const product = item.product;
-        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+        if (!product) throw new HttpException(`Product with ID ${item.productId} not found`, HttpStatus.NOT_FOUND);
 
         let quantityChange = 0;
-        if (transaction.type === TransactionType.SALE || transaction.type === TransactionType.WRITE_OFF) {
-          quantityChange = item.quantity;
-        } else if (transaction.type === TransactionType.RETURN || transaction.type === TransactionType.TRANSFER) {
-          quantityChange = -item.quantity;
-        } else if (transaction.type === TransactionType.STOCK_ADJUSTMENT) {
-          quantityChange = -item.quantity;
+        let stockHistoryType: StockHistoryType = StockHistoryType.ADJUSTMENT; // Default value
+        let description: string = 'Reverted transaction';
+
+        switch (transaction.type) {
+          case TransactionType.SALE:
+          case TransactionType.WRITE_OFF:
+            quantityChange = item.quantity;
+            stockHistoryType = StockHistoryType.INFLOW;
+            description = `Reversed ${transaction.type.toLowerCase()}`;
+            break;
+          case TransactionType.RETURN:
+            quantityChange = -item.quantity;
+            stockHistoryType = StockHistoryType.ADJUSTMENT;
+            description = 'Reversed return';
+            break;
+          case TransactionType.TRANSFER:
+            quantityChange = -item.quantity;
+            stockHistoryType = StockHistoryType.ADJUSTMENT;
+            description = 'Reversed transfer';
+            break;
+          case TransactionType.STOCK_ADJUSTMENT:
+            quantityChange = -item.quantity;
+            stockHistoryType = StockHistoryType.ADJUSTMENT;
+            description = 'Reversed stock adjustment';
+            break;
+          default:
+            throw new HttpException('Invalid transaction type', HttpStatus.BAD_REQUEST);
         }
 
         const newQuantity = product.quantity + quantityChange;
-        if (newQuantity < 0) throw new Error(`Resulting stock for product ${product.name} cannot be negative`);
+        if (newQuantity < 0) throw new HttpException(`Resulting stock for product ${product.name} cannot be negative`, HttpStatus.BAD_REQUEST);
 
         await tx.product.update({
           where: { id: item.productId },
           data: { quantity: newQuantity, updatedAt: new Date() },
+        });
+
+        await tx.productStockHistory.create({
+          data: {
+            productId: item.productId,
+            transactionId: null,
+            branchId: product.branchId,
+            quantity: quantityChange,
+            type: stockHistoryType,
+            description,
+            createdById: userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
         });
       }
 
@@ -217,13 +258,16 @@ async create(createTransactionDto: CreateTransactionDto) {
         productId: item.productId,
         quantity: item.quantity,
         price: item.price,
+        creditMonth: item.creditMonth,
+        creditPercent: item.creditPercent,
+        monthlyPayment: item.monthlyPayment,
       }));
 
       for (const item of items) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+        if (!product) throw new HttpException(`Product with ID ${item.productId} not found`, HttpStatus.NOT_FOUND);
         if ((updateTransactionDto.type ?? transaction.type) === TransactionType.SALE && product.quantity < item.quantity) {
-          throw new Error(`Insufficient stock for product ${product.name}`);
+          throw new HttpException(`Insufficient stock for product ${product.name}`, HttpStatus.BAD_REQUEST);
         }
         total += item.quantity * item.price;
       }
@@ -241,17 +285,21 @@ async create(createTransactionDto: CreateTransactionDto) {
           total,
           finalTotal,
           paymentType: updateTransactionDto.paymentType ?? transaction.paymentType,
+          deliveryMethod: updateTransactionDto.deliveryMethod ?? transaction.deliveryMethod,
+          amountPaid: updateTransactionDto.amountPaid ?? transaction.amountPaid,
+          remainingBalance: updateTransactionDto.remainingBalance ?? transaction.remainingBalance,
+          receiptId: updateTransactionDto.receiptId ?? transaction.receiptId,
           updatedAt: new Date(),
         },
       });
 
       for (const item of items) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+        if (!product) throw new HttpException(`Product with ID ${item.productId} not found`, HttpStatus.NOT_FOUND);
 
         let quantityChange = 0;
-        let stockHistoryType: StockHistoryType;
-        let description: string;
+        let stockHistoryType: StockHistoryType = StockHistoryType.ADJUSTMENT; // Default value
+        let description: string = 'Updated transaction';
 
         const newType = updateTransactionDto.type ?? transaction.type;
         switch (newType) {
@@ -262,10 +310,14 @@ async create(createTransactionDto: CreateTransactionDto) {
             description = newType === TransactionType.SALE ? 'Updated sale' : 'Updated write-off';
             break;
           case TransactionType.RETURN:
+            quantityChange = item.quantity;
+            stockHistoryType = StockHistoryType.RETURN;
+            description = 'Updated return';
+            break;
           case TransactionType.TRANSFER:
             quantityChange = item.quantity;
             stockHistoryType = StockHistoryType.INFLOW;
-            description = newType === TransactionType.RETURN ? 'Updated return' : 'Updated transfer';
+            description = 'Updated transfer';
             break;
           case TransactionType.STOCK_ADJUSTMENT:
             quantityChange = item.quantity;
@@ -273,11 +325,11 @@ async create(createTransactionDto: CreateTransactionDto) {
             description = 'Updated stock adjustment';
             break;
           default:
-            throw new Error('Invalid transaction type');
+            throw new HttpException('Invalid transaction type', HttpStatus.BAD_REQUEST);
         }
 
         const newQuantity = product.quantity + quantityChange;
-        if (newQuantity < 0) throw new Error(`Resulting stock for product ${product.name} cannot be negative`);
+        if (newQuantity < 0) throw new HttpException(`Resulting stock for product ${product.name} cannot be negative`, HttpStatus.BAD_REQUEST);
 
         await tx.product.update({
           where: { id: item.productId },
@@ -291,6 +343,9 @@ async create(createTransactionDto: CreateTransactionDto) {
             quantity: item.quantity,
             price: item.price,
             total: item.quantity * item.price,
+            creditMonth: item.creditMonth,
+            creditPercent: item.creditPercent,
+            monthlyPayment: item.monthlyPayment,
             createdAt: new Date(),
             updatedAt: new Date(),
           },
@@ -304,8 +359,9 @@ async create(createTransactionDto: CreateTransactionDto) {
             quantity: quantityChange,
             type: stockHistoryType,
             description,
-            createdById: updatedTransaction.userId,
+            createdById: userId,
             createdAt: new Date(),
+            updatedAt: new Date(),
           },
         });
       }
@@ -314,30 +370,50 @@ async create(createTransactionDto: CreateTransactionDto) {
     });
   }
 
-  async remove(id: number) {
+  async remove(id: number, userId: number) {
     return this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({
         where: { id },
         include: { items: { include: { product: true } } },
       });
-      if (!transaction) throw new Error('Transaction not found');
+      if (!transaction) throw new HttpException('Transaction not found', HttpStatus.NOT_FOUND);
 
-      const itemsToRevert = transaction.items ?? [];
-      for (const item of itemsToRevert) {
+      for (const item of transaction.items) {
         const product = item.product;
-        if (!product) throw new Error(`Product with ID ${item.productId} not found`);
+        if (!product) throw new HttpException(`Product with ID ${item.productId} not found`, HttpStatus.NOT_FOUND);
 
         let quantityChange = 0;
-        if (transaction.type === TransactionType.SALE || transaction.type === TransactionType.WRITE_OFF) {
-          quantityChange = item.quantity;
-        } else if (transaction.type === TransactionType.RETURN || transaction.type === TransactionType.TRANSFER) {
-          quantityChange = -item.quantity;
-        } else if (transaction.type === TransactionType.STOCK_ADJUSTMENT) {
-          quantityChange = -item.quantity;
+        let stockHistoryType: StockHistoryType = StockHistoryType.ADJUSTMENT; // Default value
+        let description: string = 'Reverted transaction';
+
+        switch (transaction.type) {
+          case TransactionType.SALE:
+          case TransactionType.WRITE_OFF:
+            quantityChange = item.quantity;
+            stockHistoryType = StockHistoryType.INFLOW;
+            description = `Reversed ${transaction.type.toLowerCase()}`;
+            break;
+          case TransactionType.RETURN:
+            quantityChange = -item.quantity;
+            stockHistoryType = StockHistoryType.ADJUSTMENT;
+            description = 'Reversed return';
+            break;
+          case TransactionType.TRANSFER:
+            quantityChange = -item.quantity;
+            stockHistoryType = StockHistoryType.ADJUSTMENT;
+            description = 'Reversed transfer';
+            break;
+          case TransactionType.STOCK_ADJUSTMENT:
+            quantityChange = -item.quantity;
+            stockHistoryType = StockHistoryType.ADJUSTMENT;
+            description = 'Reversed stock adjustment';
+            break;
+          default:
+            throw new HttpException('Invalid transaction type', HttpStatus.BAD_REQUEST);
         }
 
         const newQuantity = product.quantity + quantityChange;
-        if (newQuantity < 0) throw new Error(`Resulting stock for product ${product.name} cannot be negative`);
+        if (newQuantity < 0) throw new HttpException(`Resulting stock for product ${product.name} cannot be negative`, HttpStatus.BAD_REQUEST);
 
         await tx.product.update({
           where: { id: item.productId },
@@ -350,10 +426,11 @@ async create(createTransactionDto: CreateTransactionDto) {
             transactionId: null,
             branchId: product.branchId,
             quantity: quantityChange,
-            type: StockHistoryType.ADJUSTMENT,
-            description: `Reversed transaction of type ${transaction.type}`,
-            createdById: transaction.userId,
+            type: stockHistoryType,
+            description,
+            createdById: userId,
             createdAt: new Date(),
+            updatedAt: new Date(),
           },
         });
       }

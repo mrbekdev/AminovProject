@@ -1,7 +1,8 @@
+
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PaymentType } from '@prisma/client';
 import { CreateReceiptDto } from './dto/create-receipt.dto';
+import { PaymentType } from '@prisma/client';
 
 @Injectable()
 export class ReceiptService {
@@ -13,6 +14,13 @@ export class ReceiptService {
       if (createReceiptDto.customerId) {
         customer = await tx.customer.findUnique({ where: { id: createReceiptDto.customerId } });
         if (!customer) throw new HttpException('Customer not found', HttpStatus.NOT_FOUND);
+      }
+
+      if (createReceiptDto.id) {
+        const existingTransaction = await tx.transaction.findUnique({
+          where: { receiptId: createReceiptDto.id },
+        });
+        if (!existingTransaction) throw new HttpException('Associated transaction not found', HttpStatus.BAD_REQUEST);
       }
 
       const receipt = await tx.receipt.create({

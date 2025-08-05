@@ -1,90 +1,98 @@
+
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, IsEnum, IsArray, IsOptional, IsString, IsInt, IsPositive, IsNumberString } from 'class-validator';
+import { IsNumber, IsOptional, IsEnum, IsString, IsArray, IsNotEmpty } from 'class-validator';
 import { TransactionType, PaymentType } from '@prisma/client';
 
-export class CreateTransactionItemDto {
+export class TransactionItemDto {
   @ApiProperty()
-  @IsInt()
+  @IsNumber()
+  @IsNotEmpty()
   productId: number;
 
   @ApiProperty()
-  @IsInt()
-  @IsPositive()
+  @IsNumber()
+  @IsNotEmpty()
   quantity: number;
 
   @ApiProperty()
   @IsNumber()
+  @IsNotEmpty()
   price: number;
 
   @ApiProperty({ required: false })
+  @IsNumber()
   @IsOptional()
-  @IsInt()
   creditMonth?: number;
 
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsNumber()
+  @IsOptional()
   creditPercent?: number;
 
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsNumber()
+  @IsOptional()
   monthlyPayment?: number;
 }
 
 export class CreateTransactionDto {
   @ApiProperty({ required: false })
+  @IsNumber()
   @IsOptional()
-  @IsInt()
   customerId?: number;
 
   @ApiProperty()
-  @IsInt()
+  @IsNumber()
+  @IsNotEmpty()
   userId: number;
 
   @ApiProperty({ enum: TransactionType })
   @IsEnum(TransactionType)
+  @IsNotEmpty()
   type: TransactionType;
 
+  @ApiProperty({ type: [TransactionItemDto] })
+  @IsArray()
+  @IsNotEmpty()
+  items: TransactionItemDto[];
+
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsNumber()
+  @IsOptional()
   discount?: number;
 
   @ApiProperty()
   @IsNumber()
+  @IsNotEmpty()
   total: number;
 
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsNumber()
+  @IsOptional()
   finalTotal?: number;
 
-  @ApiProperty({ enum: PaymentType })
+  @ApiProperty({ enum: PaymentType, required: false })
   @IsEnum(PaymentType)
-  paymentType: PaymentType;
-
-  @ApiProperty()
-  @IsArray()
-  items: CreateTransactionItemDto[];
+  @IsOptional()
+  paymentType?: PaymentType;
 
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsString()
+  @IsOptional()
   deliveryMethod?: string;
 
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsNumber()
+  @IsOptional()
   amountPaid?: number;
 
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsNumber()
+  @IsOptional()
   remainingBalance?: number;
 
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsString()
+  @IsOptional()
   receiptId?: string;
 }

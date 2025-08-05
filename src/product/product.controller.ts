@@ -1,11 +1,11 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus, UseGuards, UseInterceptors, UploadedFile, Request } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-
 
 @ApiTags('Products')
 @Controller('products')
@@ -18,9 +18,10 @@ export class ProductController {
   @ApiOperation({ summary: 'Yangi mahsulot yaratish' })
   @ApiResponse({ status: 201, description: 'Mahsulot yaratildi' })
   @ApiResponse({ status: 400, description: "Xato so'rov" })
-  async create(@Body() createProductDto: CreateProductDto) {
+  async create(@Body() createProductDto: CreateProductDto, @Request() req) {
     try {
-      return await this.productService.create(createProductDto);
+      const userId = req.user.id; // Extract user ID from JWT
+      return await this.productService.create(createProductDto, userId);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
@@ -40,9 +41,10 @@ export class ProductController {
   @ApiResponse({ status: 201, description: 'Mahsulotlar muvaffaqiyatli yuklandi' })
   @ApiResponse({ status: 400, description: "Xato so'rov" })
   @UseInterceptors(FileInterceptor('file'))
-  async uploadExcel(@UploadedFile() file: Express.Multer.File) {
+  async uploadExcel(@UploadedFile() file: Express.Multer.File, @Request() req) {
     try {
-      return await this.productService.uploadExcel(file);
+      const userId = req.user.id; // Extract user ID from JWT
+      return await this.productService.uploadExcel(file, userId);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
@@ -83,9 +85,10 @@ export class ProductController {
   @ApiOperation({ summary: 'Mahsulotni tahrirlash' })
   @ApiResponse({ status: 200, description: 'Mahsulot tahrirlandi' })
   @ApiResponse({ status: 400, description: 'Xato so\'rov' })
-  async update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto, @Body ()userId: string) {
+  async update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto, @Request() req) {
     try {
-      return await this.productService.update(+id, updateProductDto, +userId);
+      const userId = req.user.id; // Extract user ID from JWT
+      return await this.productService.update(+id, updateProductDto, userId);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
@@ -95,9 +98,10 @@ export class ProductController {
   @ApiOperation({ summary: "Mahsulotni o'chirish" })
   @ApiResponse({ status: 200, description: 'Mahsulot o\'chirildi' })
   @ApiResponse({ status: 400, description: 'Xato so\'rov' })
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string, @Request() req) {
     try {
-      return await this.productService.remove(+id);
+      const userId = req.user.id; // Extract user ID from JWT
+      return await this.productService.remove(+id, userId);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }

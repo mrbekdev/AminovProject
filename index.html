@@ -1,316 +1,1012 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Transaction & Customer Tester</title>
+  <title>CRM API Test Page</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 20px;
-      background-color: #f4f4f4;
-    }
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-    h2 {
-      color: #333;
-    }
-    .form-group {
-      margin-bottom: 15px;
-    }
-    label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: bold;
-    }
-    input, select, button {
-      padding: 8px;
-      margin-bottom: 10px;
-      width: 100%;
-      max-width: 300px;
-      box-sizing: border-box;
-    }
-    button {
-      background-color: #4CAF50;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-    th, td {
-      border: 1px solid #ddd;
-      padding: 8px;
-      text-align: left;
-    }
-    th {
-      background-color: #4CAF50;
-      color: white;
-    }
-    .tab {
-      overflow-x: auto;
-    }
-    .error {
-      color: red;
-      margin-top: 10px;
-    }
-    .success {
-      color: green;
-      margin-top: 10px;
-    }
+    body { padding: 20px; }
+    .section { margin-bottom: 30px; }
+    .response { margin-top: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+    .error { color: red; }
+    .success { color: green; }
+    pre { background: #f8f9fa; padding: 10px; border-radius: 5px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>Create Customer</h2>
-    <div class="form-group">
-      <label for="firstName">First Name:</label>
-      <input type="text" id="firstName" required>
-    </div>
-    <div class="form-group">
-      <label for="lastName">Last Name:</label>
-      <input type="text" id="lastName" required>
-    </div>
-    <div class="form-group">
-      <label for="phone">Phone:</label>
-      <input type="text" id="phone">
-    </div>
-    <div class="form-group">
-      <label for="address">Address:</label>
-      <input type="text" id="address">
-    </div>
-    <div class="form-group">
-      <label for="email">Email:</label>
-      <input type="email" id="email">
-    </div>
-    <button onclick="createCustomer()">Create Customer</button>
-    <div id="customerMessage"></div>
+    <h1 class="mb-4">CRM API Test Page</h1>
 
-    <h2>Create Transaction</h2>
-    <div class="form-group">
-      <label for="userId">User ID:</label>
-      <input type="number" id="userId" required>
-    </div>
-    <div class="form-group">
-      <label for="customerId">Customer ID:</label>
-      <input type="number" id="customerId">
-    </div>
-    <div class="form-group">
-      <label for="type">Transaction Type:</label>
-      <select id="type" required>
-        <option value="SALE">SALE</option>
-        <option value="RETURN">RETURN</option>
-        <option value="TRANSFER">TRANSFER</option>
-        <option value="WRITE_OFF">WRITE_OFF</option>
-        <option value="STOCK_ADJUSTMENT">STOCK_ADJUSTMENT</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label for="discount">Discount:</label>
-      <input type="number" id="discount" step="0.01">
-    </div>
-    <div class="form-group">
-      <label for="paymentType">Payment Type:</label>
-      <select id="paymentType">
-        <option value="CASH">CASH</option>
-        <option value="CARD">CARD</option>
-        <option value="CREDIT">CREDIT</option>
-      </select>
-    </div>
-    <div id="itemsContainer">
-      <h3>Items</h3>
-      <div class="form-group" id="itemTemplate" style="display: none;">
-        <label>Product ID:</label><input type="number" class="item-productId" required>
-        <label>Quantity:</label><input type="number" class="item-quantity" required>
-        <label>Price:</label><input type="number" class="item-price" step="0.01" required>
-        <button type="button" class="remove-item">Remove</button>
+    <!-- JWT Token Input -->
+    <div class="section">
+      <h3>JWT Token</h3>
+      <div class="mb-3">
+        <label for="jwtToken" class="form-label">Enter JWT Token</label>
+        <input type="text" class="form-control" id="jwtToken" placeholder="Bearer <your-token>">
       </div>
-      <div id="itemsList"></div>
-      <button type="button" onclick="addItem()">Add Item</button>
-    </div>
-    <button onclick="createTransaction()">Create Transaction</button>
-    <div id="transactionMessage"></div>
-
-    <h2>Customers</h2>
-    <div class="tab">
-      <table id="customersTable">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>First Name</th>
-            <th>Last Name</th>
-            <th>Phone</th>
-            <th>Address</th>
-            <th>Email</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
     </div>
 
-    <h2>Transactions</h2>
-    <div class="tab">
-      <table id="transactionsTable">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Customer ID</th>
-            <th>User ID</th>
-            <th>Type</th>
-            <th>Total</th>
-            <th>Items</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+    <!-- Create Product -->
+    <div class="section">
+      <h3>Create Product</h3>
+      <form id="createProductForm">
+        <div class="mb-3">
+          <label for="productName" class="form-label">Name</label>
+          <input type="text" class="form-control" id="productName" required>
+        </div>
+        <div class="mb-3">
+          <label for="productBarcode" class="form-label">Barcode</label>
+          <input type="text" class="form-control" id="productBarcode" required>
+        </div>
+        <div class="mb-3">
+          <label for="productCategoryId" class="form-label">Category ID</label>
+          <input type="number" class="form-control" id="productCategoryId" required>
+        </div>
+        <div class="mb-3">
+          <label for="productBranchId" class="form-label">Branch ID</label>
+          <input type="number" class="form-control" id="productBranchId" required>
+        </div>
+        <div class="mb-3">
+          <label for="productPrice" class="form-label">Price</label>
+          <input type="number" step="0.01" class="form-control" id="productPrice" required>
+        </div>
+        <div class="mb-3">
+          <label for="productQuantity" class="form-label">Quantity</label>
+          <input type="number" class="form-control" id="productQuantity" required>
+        </div>
+        <div class="mb-3">
+          <label for="productStatus" class="form-label">Status</label>
+          <select class="form-select" id="productStatus" required>
+            <option value="IN_WAREHOUSE">IN_WAREHOUSE</option>
+            <option value="IN_STORE">IN_STORE</option>
+            <option value="SOLD">SOLD</option>
+            <option value="DEFECTIVE">DEFECTIVE</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="productDescription" class="form-label">Description (optional)</label>
+          <input type="text" class="form-control" id="productDescription">
+        </div>
+        <div class="mb-3">
+          <label for="productMarketPrice" class="form-label">Market Price (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="productMarketPrice">
+        </div>
+        <div class="mb-3">
+          <label for="productModel" class="form-label">Model (optional)</label>
+          <input type="text" class="form-control" id="productModel">
+        </div>
+        <button type="submit" class="btn btn-primary">Create Product</button>
+      </form>
+      <div id="createProductResponse" class="response"></div>
+    </div>
+
+    <!-- Upload Excel -->
+    <div class="section">
+      <h3>Upload Excel</h3>
+      <form id="uploadExcelForm" enctype="multipart/form-data">
+        <div class="mb-3">
+          <label for="excelFile" class="form-label">Select Excel File</label>
+          <input type="file" class="form-control" id="excelFile" accept=".xlsx,.xls" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Upload Excel</button>
+      </form>
+      <div id="uploadExcelResponse" class="response"></div>
+    </div>
+
+    <!-- Find Product by ID -->
+    <div class="section">
+      <h3>Find Product by ID</h3>
+      <form id="findProductByIdForm">
+        <div class="mb-3">
+          <label for="productId" class="form-label">Product ID</label>
+          <input type="number" class="form-control" id="productId" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Find Product</button>
+      </form>
+      <div id="findProductByIdResponse" class="response"></div>
+    </div>
+
+    <!-- Find Product by Barcode -->
+    <div class="section">
+      <h3>Find Product by Barcode</h3>
+      <form id="findProductByBarcodeForm">
+        <div class="mb-3">
+          <label for="productBarcodeSearch" class="form-label">Barcode</label>
+          <input type="text" class="form-control" id="productBarcodeSearch" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Find Product</button>
+      </form>
+      <div id="findProductByBarcodeResponse" class="response"></div>
+    </div>
+
+    <!-- Find All Products -->
+    <div class="section">
+      <h3>Find All Products</h3>
+      <form id="findAllProductsForm">
+        <div class="mb-3">
+          <label for="branchIdFilter" class="form-label">Branch ID (optional)</label>
+          <input type="number" class="form-control" id="branchIdFilter">
+        </div>
+        <button type="submit" class="btn btn-primary">Find All Products</button>
+      </form>
+      <div id="findAllProductsResponse" class="response"></div>
+    </div>
+
+    <!-- Update Product -->
+    <div class="section">
+      <h3>Update Product</h3>
+      <form id="updateProductForm">
+        <div class="mb-3">
+          <label for="updateProductId" class="form-label">Product ID</label>
+          <input type="number" class="form-control" id="updateProductId" required>
+        </div>
+        <div class="mb-3">
+          <label for="updateProductName" class="form-label">Name (optional)</label>
+          <input type="text" class="form-control" id="updateProductName">
+        </div>
+        <div class="mb-3">
+          <label for="updateProductBarcode" class="form-label">Barcode (optional)</label>
+          <input type="text" class="form-control" id="updateProductBarcode">
+        </div>
+        <div class="mb-3">
+          <label for="updateProductCategoryId" class="form-label">Category ID (optional)</label>
+          <input type="number" class="form-control" id="updateProductCategoryId">
+        </div>
+        <div class="mb-3">
+          <label for="updateProductBranchId" class="form-label">Branch ID (optional)</label>
+          <input type="number" class="form-control" id="updateProductBranchId">
+        </div>
+        <div class="mb-3">
+          <label for="updateProductPrice" class="form-label">Price (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="updateProductPrice">
+        </div>
+        <div class="mb-3">
+          <label for="updateProductQuantity" class="form-label">Quantity (optional)</label>
+          <input type="number" class="form-control" id="updateProductQuantity">
+        </div>
+        <div class="mb-3">
+          <label for="updateProductStatus" class="form-label">Status (optional)</label>
+          <select class="form-select" id="updateProductStatus">
+            <option value="">Select Status</option>
+            <option value="IN_WAREHOUSE">IN_WAREHOUSE</option>
+            <option value="IN_STORE">IN_STORE</option>
+            <option value="SOLD">SOLD</option>
+            <option value="DEFECTIVE">DEFECTIVE</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="updateProductDescription" class="form-label">Description (optional)</label>
+          <input type="text" class="form-control" id="updateProductDescription">
+        </div>
+        <div class="mb-3">
+          <label for="updateProductMarketPrice" class="form-label">Market Price (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="updateProductMarketPrice">
+        </div>
+        <div class="mb-3">
+          <label for="updateProductModel" class="form-label">Model (optional)</label>
+          <input type="text" class="form-control" id="updateProductModel">
+        </div>
+        <button type="submit" class="btn btn-primary">Update Product</button>
+      </form>
+      <div id="updateProductResponse" class="response"></div>
+    </div>
+
+    <!-- Delete Product -->
+    <div class="section">
+      <h3>Delete Product (Mark as Defective)</h3>
+      <form id="deleteProductForm">
+        <div class="mb-3">
+          <label for="deleteProductId" class="form-label">Product ID</label>
+          <input type="number" class="form-control" id="deleteProductId" required>
+        </div>
+        <button type="submit" class="btn btn-danger">Delete Product</button>
+      </form>
+      <div id="deleteProductResponse" class="response"></div>
+    </div>
+
+    <!-- Create Transaction -->
+    <div class="section">
+      <h3>Create Transaction</h3>
+      <form id="createTransactionForm">
+        <div class="mb-3">
+          <label for="transactionType" class="form-label">Type</label>
+          <select class="form-select" id="transactionType" required>
+            <option value="SALE">SALE</option>
+            <option value="RETURN">RETURN</option>
+            <option value="TRANSFER">TRANSFER</option>
+            <option value="WRITE_OFF">WRITE_OFF</option>
+            <option value="STOCK_ADJUSTMENT">STOCK_ADJUSTMENT</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="transactionCustomerId" class="form-label">Customer ID (optional)</label>
+          <input type="number" class="form-control" id="transactionCustomerId">
+        </div>
+        <div class="mb-3">
+          <label for="transactionItems" class="form-label">Items (JSON array, e.g., [{"productId": 1, "quantity": 5, "price": 999.99}])</label>
+          <textarea class="form-control" id="transactionItems" required></textarea>
+        </div>
+        <div class="mb-3">
+          <label for="transactionTotal" class="form-label">Total</label>
+          <input type="number" step="0.01" class="form-control" id="transactionTotal" required>
+        </div>
+        <div class="mb-3">
+          <label for="transactionDiscount" class="form-label">Discount (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="transactionDiscount">
+        </div>
+        <div class="mb-3">
+          <label for="transactionPaymentType" class="form-label">Payment Type (optional)</label>
+          <select class="form-select" id="transactionPaymentType">
+            <option value="">Select Payment Type</option>
+            <option value="CASH">CASH</option>
+            <option value="CARD">CARD</option>
+            <option value="CREDIT">CREDIT</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="transactionDeliveryMethod" class="form-label">Delivery Method (optional)</label>
+          <input type="text" class="form-control" id="transactionDeliveryMethod">
+        </div>
+        <div class="mb-3">
+          <label for="transactionAmountPaid" class="form-label">Amount Paid (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="transactionAmountPaid">
+        </div>
+        <div class="mb-3">
+          <label for="transactionRemainingBalance" class="form-label">Remaining Balance (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="transactionRemainingBalance">
+        </div>
+        <div class="mb-3">
+          <label for="transactionReceiptId" class="form-label">Receipt ID (optional)</label>
+          <input type="text" class="form-control" id="transactionReceiptId">
+        </div>
+        <button type="submit" class="btn btn-primary">Create Transaction</button>
+      </form>
+      <div id="createTransactionResponse" class="response"></div>
+    </div>
+
+    <!-- Create Sale Transaction -->
+    <div class="section">
+      <h3>Create Sale Transaction</h3>
+      <form id="createSaleForm">
+        <div class="mb-3">
+          <label for="saleCustomerId" class="form-label">Customer ID (optional)</label>
+          <input type="number" class="form-control" id="saleCustomerId">
+        </div>
+        <div class="mb-3">
+          <label for="saleItems" class="form-label">Items (JSON array, e.g., [{"productId": 1, "quantity": 5, "price": 999.99}])</label>
+          <textarea class="form-control" id="saleItems" required></textarea>
+        </div>
+        <div class="mb-3">
+          <label for="saleTotal" class="form-label">Total</label>
+          <input type="number" step="0.01" class="form-control" id="saleTotal" required>
+        </div>
+        <div class="mb-3">
+          <label for="saleDiscount" class="form-label">Discount (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="saleDiscount">
+        </div>
+        <div class="mb-3">
+          <label for="salePaymentType" class="form-label">Payment Type (optional)</label>
+          <select class="form-select" id="salePaymentType">
+            <option value="">Select Payment Type</option>
+            <option value="CASH">CASH</option>
+            <option value="CARD">CARD</option>
+            <option value="CREDIT">CREDIT</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="saleDeliveryMethod" class="form-label">Delivery Method (optional)</label>
+          <input type="text" class="form-control" id="saleDeliveryMethod">
+        </div>
+        <div class="mb-3">
+          <label for="saleAmountPaid" class="form-label">Amount Paid (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="saleAmountPaid">
+        </div>
+        <div class="mb-3">
+          <label for="saleRemainingBalance" class="form-label">Remaining Balance (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="saleRemainingBalance">
+        </div>
+        <div class="mb-3">
+          <label for="saleReceiptId" class="form-label">Receipt ID (optional)</label>
+          <input type="text" class="form-control" id="saleReceiptId">
+        </div>
+        <button type="submit" class="btn btn-primary">Create Sale</button>
+      </form>
+      <div id="createSaleResponse" class="response"></div>
+    </div>
+
+    <!-- Find Transaction by ID -->
+    <div class="section">
+      <h3>Find Transaction by ID</h3>
+      <form id="findTransactionByIdForm">
+        <div class="mb-3">
+          <label for="transactionId" class="form-label">Transaction ID</label>
+          <input type="number" class="form-control" id="transactionId" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Find Transaction</button>
+      </form>
+      <div id="findTransactionByIdResponse" class="response"></div>
+    </div>
+
+    <!-- Find All Transactions -->
+    <div class="section">
+      <h3>Find All Transactions</h3>
+      <form id="findAllTransactionsForm">
+        <div class="mb-3">
+          <label for="transactionSkip" class="form-label">Skip</label>
+          <input type="number" class="form-control" id="transactionSkip" value="0">
+        </div>
+        <div class="mb-3">
+          <label for="transactionTake" class="form-label">Take</label>
+          <input type="number" class="form-control" id="transactionTake" value="10">
+        </div>
+        <div class="mb-3">
+          <label for="transactionCustomerIdFilter" class="form-label">Customer ID (optional)</label>
+          <input type="number" class="form-control" id="transactionCustomerIdFilter">
+        </div>
+        <div class="mb-3">
+          <label for="transactionUserIdFilter" class="form-label">User ID (optional)</label>
+          <input type="number" class="form-control" id="transactionUserIdFilter">
+        </div>
+        <div class="mb-3">
+          <label for="transactionTypeFilter" class="form-label">Type (optional)</label>
+          <select class="form-select" id="transactionTypeFilter">
+            <option value="">Select Type</option>
+            <option value="SALE">SALE</option>
+            <option value="RETURN">RETURN</option>
+            <option value="TRANSFER">TRANSFER</option>
+            <option value="WRITE_OFF">WRITE_OFF</option>
+            <option value="STOCK_ADJUSTMENT">STOCK_ADJUSTMENT</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Find Transactions</button>
+      </form>
+      <div id="findAllTransactionsResponse" class="response"></div>
+    </div>
+
+    <!-- Find Stock History -->
+    <div class="section">
+      <h3>Find Stock History</h3>
+      <form id="findStockHistoryForm">
+        <div class="mb-3">
+          <label for="stockHistorySkip" class="form-label">Skip</label>
+          <input type="number" class="form-control" id="stockHistorySkip" value="0">
+        </div>
+        <div class="mb-3">
+          <label for="stockHistoryTake" class="form-label">Take</label>
+          <input type="number" class="form-control" id="stockHistoryTake" value="10">
+        </div>
+        <div class="mb-3">
+          <label for="stockHistoryProductId" class="form-label">Product ID (optional)</label>
+          <input type="number" class="form-control" id="stockHistoryProductId">
+        </div>
+        <div class="mb-3">
+          <label for="stockHistoryBranchId" class="form-label">Branch ID (optional)</label>
+          <input type="number" class="form-control" id="stockHistoryBranchId">
+        </div>
+        <div class="mb-3">
+          <label for="stockHistoryType" class="form-label">Type (optional)</label>
+          <select class="form-select" id="stockHistoryType">
+            <option value="">Select Type</option>
+            <option value="INFLOW">INFLOW</option>
+            <option value="OUTFLOW">OUTFLOW</option>
+            <option value="RETURN">RETURN</option>
+            <option value="ADJUSTMENT">ADJUSTMENT</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Find Stock History</button>
+      </form>
+      <div id="findStockHistoryResponse" class="response"></div>
+    </div>
+
+    <!-- Update Transaction -->
+    <div class="section">
+      <h3>Update Transaction</h3>
+      <form id="updateTransactionForm">
+        <div class="mb-3">
+          <label for="updateTransactionId" class="form-label">Transaction ID</label>
+          <input type="number" class="form-control" id="updateTransactionId" required>
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionType" class="form-label">Type (optional)</label>
+          <select class="form-select" id="updateTransactionType">
+            <option value="">Select Type</option>
+            <option value="SALE">SALE</option>
+            <option value="RETURN">RETURN</option>
+            <option value="TRANSFER">TRANSFER</option>
+            <option value="WRITE_OFF">WRITE_OFF</option>
+            <option value="STOCK_ADJUSTMENT">STOCK_ADJUSTMENT</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionCustomerId" class="form-label">Customer ID (optional)</label>
+          <input type="number" class="form-control" id="updateTransactionCustomerId">
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionItems" class="form-label">Items (JSON array, optional)</label>
+          <textarea class="form-control" id="updateTransactionItems"></textarea>
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionTotal" class="form-label">Total (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="updateTransactionTotal">
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionDiscount" class="form-label">Discount (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="updateTransactionDiscount">
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionPaymentType" class="form-label">Payment Type (optional)</label>
+          <select class="form-select" id="updateTransactionPaymentType">
+            <option value="">Select Payment Type</option>
+            <option value="CASH">CASH</option>
+            <option value="CARD">CARD</option>
+            <option value="CREDIT">CREDIT</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionDeliveryMethod" class="form-label">Delivery Method (optional)</label>
+          <input type="text" class="form-control" id="updateTransactionDeliveryMethod">
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionAmountPaid" class="form-label">Amount Paid (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="updateTransactionAmountPaid">
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionRemainingBalance" class="form-label">Remaining Balance (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="updateTransactionRemainingBalance">
+        </div>
+        <div class="mb-3">
+          <label for="updateTransactionReceiptId" class="form-label">Receipt ID (optional)</label>
+          <input type="text" class="form-control" id="updateTransactionReceiptId">
+        </div>
+        <button type="submit" class="btn btn-primary">Update Transaction</button>
+      </form>
+      <div id="updateTransactionResponse" class="response"></div>
+    </div>
+
+    <!-- Delete Transaction -->
+    <div class="section">
+      <h3>Delete Transaction</h3>
+      <form id="deleteTransactionForm">
+        <div class="mb-3">
+          <label for="deleteTransactionId" class="form-label">Transaction ID</label>
+          <input type="number" class="form-control" id="deleteTransactionId" required>
+        </div>
+        <button type="submit" class="btn btn-danger">Delete Transaction</button>
+      </form>
+      <div id="deleteTransactionResponse" class="response"></div>
+    </div>
+
+    <!-- Create Receipt -->
+    <div class="section">
+      <h3>Create Receipt</h3>
+      <form id="createReceiptForm">
+        <div class="mb-3">
+          <label for="receiptId" class="form-label">Receipt ID</label>
+          <input type="text" class="form-control" id="receiptId" required>
+        </div>
+        <div class="mb-3">
+          <label for="receiptCustomerId" class="form-label">Customer ID (optional)</label>
+          <input type="number" class="form-control" id="receiptCustomerId">
+        </div>
+        <div class="mb-3">
+          <label for="receiptCashier" class="form-label">Cashier</label>
+          <input type="text" class="form-control" id="receiptCashier" required>
+        </div>
+        <div class="mb-3">
+          <label for="receiptDate" class="form-label">Date (YYYY-MM-DD)</label>
+          <input type="date" class="form-control" id="receiptDate" required>
+        </div>
+        <div class="mb-3">
+          <label for="receiptItems" class="form-label">Items (JSON object)</label>
+          <textarea class="form-control" id="receiptItems" required></textarea>
+        </div>
+        <div class="mb-3">
+          <label for="receiptTotal" class="form-label">Total</label>
+          <input type="number" step="0.01" class="form-control" id="receiptTotal" required>
+        </div>
+        <div class="mb-3">
+          <label for="receiptCreditTotal" class="form-label">Credit Total (optional)</label>
+          <input type="number" step="0.01" class="form-control" id="receiptCreditTotal">
+        </div>
+        <div class="mb-3">
+          <label for="receiptAmountPaid" class="form-label">Amount Paid</label>
+          <input type="number" step="0.01" class="form-control" id="receiptAmountPaid" required>
+        </div>
+        <div class="mb-3">
+          <label for="receiptRemainingBalance" class="form-label">Remaining Balance</label>
+          <input type="number" step="0.01" class="form-control" id="receiptRemainingBalance" required>
+        </div>
+        <div class="mb-3">
+          <label for="receiptReturnCode" class="form-label">Return Code</label>
+          <input type="text" class="form-control" id="receiptReturnCode" required>
+        </div>
+        <div class="mb-3">
+          <label for="receiptBranchId" class="form-label">Branch ID (optional)</label>
+          <input type="number" class="form-control" id="receiptBranchId">
+        </div>
+        <div class="mb-3">
+          <label for="receiptDeliveryMethod" class="form-label">Delivery Method</label>
+          <input type="text" class="form-control" id="receiptDeliveryMethod" required>
+        </div>
+        <div class="mb-3">
+          <label for="receiptPaymentMethod" class="form-label">Payment Method</label>
+          <select class="form-select" id="receiptPaymentMethod" required>
+            <option value="CASH">CASH</option>
+            <option value="CARD">CARD</option>
+            <option value="CREDIT">CREDIT</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Create Receipt</button>
+      </form>
+      <div id="createReceiptResponse" class="response"></div>
     </div>
   </div>
 
   <script>
-    const API_BASE_URL = 'http://localhost:4000'; // Replace with your backend URL
-    const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNhbG9tIiwic3ViIjoxLCJyb2xlIjoiQURNSU4iLCJpYXQiOjE3NTM1NjMwNzEsImV4cCI6MTc1MzY0OTQ3MX0.zpOFkck_iTUp9kj3wiOd-v7Km6EXNU2GhFswKOGPbvg'; // Replace with a valid JWT token
+    // Helper function to get JWT token
+    function getToken() {
+      const token = document.getElementById('jwtToken').value;
+      if (!token) {
+        alert('Please enter a JWT token');
+        return null;
+      }
+      return token;
+    }
 
-    async function createCustomer() {
-      const customerData = {
-        firstName: document.getElementById('firstName').value,
-        lastName: document.getElementById('lastName').value,
-        phone: document.getElementById('phone').value || undefined,
-        address: document.getElementById('address').value || undefined,
-        email: document.getElementById('email').value || undefined,
-      };
+    // Helper function to display response
+    function displayResponse(elementId, data, error = false) {
+      const element = document.getElementById(elementId);
+      element.innerHTML = '';
+      const pre = document.createElement('pre');
+      pre.className = error ? 'error' : 'success';
+      pre.textContent = JSON.stringify(data, null, 2);
+      element.appendChild(pre);
+    }
 
+    // Helper function to handle fetch errors
+    async function handleFetch(url, options) {
       try {
-        const response = await fetch(`${API_BASE_URL}/customers`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${TOKEN}`,
-          },
-          body: JSON.stringify(customerData),
-        });
+        const response = await fetch(url, options);
         const data = await response.json();
-        if (response.ok) {
-          document.getElementById('customerMessage').innerHTML = '<div class="success">Customer created successfully!</div>';
-          loadCustomers();
-        } else {
-          throw new Error(data.message || 'Failed to create customer');
+        if (!response.ok) {
+          throw new Error(data.message || 'Request failed');
         }
+        return data;
       } catch (error) {
-        document.getElementById('customerMessage').innerHTML = `<div class="error">${error.message}</div>`;
+        throw error;
       }
     }
 
-    async function createTransaction() {
-      const items = [];
-      document.querySelectorAll('#itemsList .item-row').forEach(row => {
-        items.push({
-          productId: +row.querySelector('.item-productId').value,
-          quantity: +row.querySelector('.item-quantity').value,
-          price: +row.querySelector('.item-price').value,
-        });
-      });
+    // Create Product
+    document.getElementById('createProductForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
 
-      const transactionData = {
-        userId: +document.getElementById('userId').value,
-        customerId: document.getElementById('customerId').value ? +document.getElementById('customerId').value : undefined,
-        type: document.getElementById('type').value,
-        discount: document.getElementById('discount').value ? +document.getElementById('discount').value : undefined,
-        paymentType: document.getElementById('paymentType').value || undefined,
+      const data = {
+        name: document.getElementById('productName').value,
+        barcode: document.getElementById('productBarcode').value,
+        categoryId: parseInt(document.getElementById('productCategoryId').value),
+        branchId: parseInt(document.getElementById('productBranchId').value),
+        price: parseFloat(document.getElementById('productPrice').value),
+        quantity: parseInt(document.getElementById('productQuantity').value),
+        status: document.getElementById('productStatus').value,
+        description: document.getElementById('productDescription').value || undefined,
+        marketPrice: document.getElementById('productMarketPrice').value ? parseFloat(document.getElementById('productMarketPrice').value) : undefined,
+        model: document.getElementById('productModel').value || undefined,
+      };
+
+      try {
+        const response = await handleFetch('http://localhost:3000/products', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token,
+          },
+          body: JSON.stringify(data),
+        });
+        displayResponse('createProductResponse', response);
+      } catch (error) {
+        displayResponse('createProductResponse', { error: error.message }, true);
+      }
+    });
+
+    // Upload Excel
+    document.getElementById('uploadExcelForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const file = document.getElementById('excelFile').files[0];
+      if (!file) {
+        displayResponse('uploadExcelResponse', { error: 'No file selected' }, true);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await handleFetch('http://localhost:3000/products/upload-excel', {
+          method: 'POST',
+          headers: { 'Authorization': token },
+          body: formData,
+        });
+        displayResponse('uploadExcelResponse', response);
+      } catch (error) {
+        displayResponse('uploadExcelResponse', { error: error.message }, true);
+      }
+    });
+
+    // Find Product by ID
+    document.getElementById('findProductByIdForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const id = document.getElementById('productId').value;
+
+      try {
+        const response = await handleFetch(`http://localhost:3000/products/${id}`, {
+          method: 'GET',
+          headers: { 'Authorization': token },
+        });
+        displayResponse('findProductByIdResponse', response);
+      } catch (error) {
+        displayResponse('findProductByIdResponse', { error: error.message }, true);
+      }
+    });
+
+    // Find Product by Barcode
+    document.getElementById('findProductByBarcodeForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const barcode = document.getElementById('productBarcodeSearch').value;
+
+      try {
+        const response = await handleFetch(`http://localhost:3000/products/barcode/${barcode}`, {
+          method: 'GET',
+          headers: { 'Authorization': token },
+        });
+        displayResponse('findProductByBarcodeResponse', response);
+      } catch (error) {
+        displayResponse('findProductByBarcodeResponse', { error: error.message }, true);
+      }
+    });
+
+    // Find All Products
+    document.getElementById('findAllProductsForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const branchId = document.getElementById('branchIdFilter').value;
+      const url = branchId ? `http://localhost:3000/products?branchId=${branchId}` : 'http://localhost:3000/products';
+
+      try {
+        const response = await handleFetch(url, {
+          method: 'GET',
+          headers: { 'Authorization': token },
+        });
+        displayResponse('findAllProductsResponse', response);
+      } catch (error) {
+        displayResponse('findAllProductsResponse', { error: error.message }, true);
+      }
+    });
+
+    // Update Product
+    document.getElementById('updateProductForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const data = {};
+      if (document.getElementById('updateProductName').value) data.name = document.getElementById('updateProductName').value;
+      if (document.getElementById('updateProductBarcode').value) data.barcode = document.getElementById('updateProductBarcode').value;
+      if (document.getElementById('updateProductCategoryId').value) data.categoryId = parseInt(document.getElementById('updateProductCategoryId').value);
+      if (document.getElementById('updateProductBranchId').value) data.branchId = parseInt(document.getElementById('updateProductBranchId').value);
+      if (document.getElementById('updateProductPrice').value) data.price = parseFloat(document.getElementById('updateProductPrice').value);
+      if (document.getElementById('updateProductQuantity').value) data.quantity = parseInt(document.getElementById('updateProductQuantity').value);
+      if (document.getElementById('updateProductStatus').value) data.status = document.getElementById('updateProductStatus').value;
+      if (document.getElementById('updateProductDescription').value) data.description = document.getElementById('updateProductDescription').value;
+      if (document.getElementById('updateProductMarketPrice').value) data.marketPrice = parseFloat(document.getElementById('updateProductMarketPrice').value);
+      if (document.getElementById('updateProductModel').value) data.model = document.getElementById('updateProductModel').value;
+
+      const id = document.getElementById('updateProductId').value;
+
+      try {
+        const response = await handleFetch(`http://localhost:3000/products/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token,
+          },
+          body: JSON.stringify(data),
+        });
+        displayResponse('updateProductResponse', response);
+      } catch (error) {
+        displayResponse('updateProductResponse', { error: error.message }, true);
+      }
+    });
+
+    // Delete Product
+    document.getElementById('deleteProductForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const id = document.getElementById('deleteProductId').value;
+
+      try {
+        const response = await handleFetch(`http://localhost:3000/products/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': token },
+        });
+        displayResponse('deleteProductResponse', response);
+      } catch (error) {
+        displayResponse('deleteProductResponse', { error: error.message }, true);
+      }
+    });
+
+    // Create Transaction
+    document.getElementById('createTransactionForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      let items;
+      try {
+        items = JSON.parse(document.getElementById('transactionItems').value);
+      } catch (error) {
+        displayResponse('createTransactionResponse', { error: 'Invalid JSON in items' }, true);
+        return;
+      }
+
+      const data = {
+        type: document.getElementById('transactionType').value,
         items,
+        total: parseFloat(document.getElementById('transactionTotal').value),
       };
+      if (document.getElementById('transactionCustomerId').value) data.customerId = parseInt(document.getElementById('transactionCustomerId').value);
+      if (document.getElementById('transactionDiscount').value) data.discount = parseFloat(document.getElementById('transactionDiscount').value);
+      if (document.getElementById('transactionPaymentType').value) data.paymentType = document.getElementById('transactionPaymentType').value;
+      if (document.getElementById('transactionDeliveryMethod').value) data.deliveryMethod = document.getElementById('transactionDeliveryMethod').value;
+      if (document.getElementById('transactionAmountPaid').value) data.amountPaid = parseFloat(document.getElementById('transactionAmountPaid').value);
+      if (document.getElementById('transactionRemainingBalance').value) data.remainingBalance = parseFloat(document.getElementById('transactionRemainingBalance').value);
+      if (document.getElementById('transactionReceiptId').value) data.receiptId = document.getElementById('transactionReceiptId').value;
 
       try {
-        const response = await fetch(`${API_BASE_URL}/transactions`, {
+        const response = await handleFetch('http://localhost:3000/transactions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${TOKEN}`,
+            'Authorization': token,
           },
-          body: JSON.stringify(transactionData),
+          body: JSON.stringify(data),
         });
-        const data = await response.json();
-        if (response.ok) {
-          document.getElementById('transactionMessage').innerHTML = '<div class="success">Transaction created successfully!</div>';
-          loadTransactions();
-        } else {
-          throw new Error(data.message || 'Failed to create transaction');
+        displayResponse('createTransactionResponse', response);
+      } catch (error) {
+        displayResponse('createTransactionResponse', { error: error.message }, true);
+      }
+    });
+
+    // Create Sale Transaction
+    document.getElementById('createSaleForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      let items;
+      try {
+        items = JSON.parse(document.getElementById('saleItems').value);
+      } catch (error) {
+        displayResponse('createSaleResponse', { error: 'Invalid JSON in items' }, true);
+        return;
+      }
+
+      const data = {
+        items,
+        total: parseFloat(document.getElementById('saleTotal').value),
+      };
+      if (document.getElementById('saleCustomerId').value) data.customerId = parseInt(document.getElementById('saleCustomerId').value);
+      if (document.getElementById('saleDiscount').value) data.discount = parseFloat(document.getElementById('saleDiscount').value);
+      if (document.getElementById('salePaymentType').value) data.paymentType = document.getElementById('salePaymentType').value;
+      if (document.getElementById('saleDeliveryMethod').value) data.deliveryMethod = document.getElementById('saleDeliveryMethod').value;
+      if (document.getElementById('saleAmountPaid').value) data.amountPaid = parseFloat(document.getElementById('saleAmountPaid').value);
+      if (document.getElementById('saleRemainingBalance').value) data.remainingBalance = parseFloat(document.getElementById('saleRemainingBalance').value);
+      if (document.getElementById('saleReceiptId').value) data.receiptId = document.getElementById('saleReceiptId').value;
+
+      try {
+        const response = await handleFetch('http://localhost:3000/transactions/api/sales', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token,
+          },
+          body: JSON.stringify(data),
+        });
+        displayResponse('createSaleResponse', response);
+      } catch (error) {
+        displayResponse('createSaleResponse', { error: error.message }, true);
+      }
+    });
+
+    // Find Transaction by ID
+    document.getElementById('findTransactionByIdForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const id = document.getElementById('transactionId').value;
+
+      try {
+        const response = await handleFetch(`http://localhost:3000/transactions/${id}`, {
+          method: 'GET',
+          headers: { 'Authorization': token },
+        });
+        displayResponse('findTransactionByIdResponse', response);
+      } catch (error) {
+        displayResponse('findTransactionByIdResponse', { error: error.message }, true);
+      }
+    });
+
+    // Find All Transactions
+    document.getElementById('findAllTransactionsForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const params = new URLSearchParams();
+      params.append('skip', document.getElementById('transactionSkip').value);
+      params.append('take', document.getElementById('transactionTake').value);
+      if (document.getElementById('transactionCustomerIdFilter').value) params.append('customerId', document.getElementById('transactionCustomerIdFilter').value);
+      if (document.getElementById('transactionUserIdFilter').value) params.append('userId', document.getElementById('transactionUserIdFilter').value);
+      if (document.getElementById('transactionTypeFilter').value) params.append('type', document.getElementById('transactionTypeFilter').value);
+
+      try {
+        const response = await handleFetch(`http://localhost:3000/transactions?${params.toString()}`, {
+          method: 'GET',
+          headers: { 'Authorization': token },
+        });
+        displayResponse('findAllTransactionsResponse', response);
+      } catch (error) {
+        displayResponse('findAllTransactionsResponse', { error: error.message }, true);
+      }
+    });
+
+    // Find Stock History
+    document.getElementById('findStockHistoryForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const params = new URLSearchParams();
+      params.append('skip', document.getElementById('stockHistorySkip').value);
+      params.append('take', document.getElementById('stockHistoryTake').value);
+      if (document.getElementById('stockHistoryProductId').value) params.append('productId', document.getElementById('stockHistoryProductId').value);
+      if (document.getElementById('stockHistoryBranchId').value) params.append('branchId', document.getElementById('stockHistoryBranchId').value);
+      if (document.getElementById('stockHistoryType').value) params.append('type', document.getElementById('stockHistoryType').value);
+
+      try {
+        const response = await handleFetch(`http://localhost:3000/transactions/stock-history?${params.toString()}`, {
+          method: 'GET',
+          headers: { 'Authorization': token },
+        });
+        displayResponse('findStockHistoryResponse', response);
+      } catch (error) {
+        displayResponse('findStockHistoryResponse', { error: error.message }, true);
+      }
+    });
+
+    // Update Transaction
+    document.getElementById('updateTransactionForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const data = {};
+      if (document.getElementById('updateTransactionType').value) data.type = document.getElementById('updateTransactionType').value;
+      if (document.getElementById('updateTransactionCustomerId').value) data.customerId = parseInt(document.getElementById('updateTransactionCustomerId').value);
+      if (document.getElementById('updateTransactionItems').value) {
+        try {
+          data.items = JSON.parse(document.getElementById('updateTransactionItems').value);
+        } catch (error) {
+          displayResponse('updateTransactionResponse', { error: 'Invalid JSON in items' }, true);
+          return;
         }
-      } catch (error) {
-        document.getElementById('transactionMessage').innerHTML = `<div class="error">${error.message}</div>`;
       }
-    }
+      if (document.getElementById('updateTransactionTotal').value) data.total = parseFloat(document.getElementById('updateTransactionTotal').value);
+      if (document.getElementById('updateTransactionDiscount').value) data.discount = parseFloat(document.getElementById('updateTransactionDiscount').value);
+      if (document.getElementById('updateTransactionPaymentType').value) data.paymentType = document.getElementById('updateTransactionPaymentType').value;
+      if (document.getElementById('updateTransactionDeliveryMethod').value) data.deliveryMethod = document.getElementById('updateTransactionDeliveryMethod').value;
+      if (document.getElementById('updateTransactionAmountPaid').value) data.amountPaid = parseFloat(document.getElementById('updateTransactionAmountPaid').value);
+      if (document.getElementById('updateTransactionRemainingBalance').value) data.remainingBalance = parseFloat(document.getElementById('updateTransactionRemainingBalance').value);
+      if (document.getElementById('updateTransactionReceiptId').value) data.receiptId = document.getElementById('updateTransactionReceiptId').value;
 
-    function addItem() {
-      const template = document.getElementById('itemTemplate').cloneNode(true);
-      template.style.display = 'block';
-      template.classList.add('item-row');
-      template.querySelector('.remove-item').addEventListener('click', () => template.remove());
-      document.getElementById('itemsList').appendChild(template);
-    }
+      const id = document.getElementById('updateTransactionId').value;
 
-    async function loadCustomers() {
       try {
-        const response = await fetch(`${API_BASE_URL}/customers?skip=0&take=10`, {
+        const response = await handleFetch(`http://localhost:3000/transactions/${id}`, {
+          method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${TOKEN}`,
+            'Content-Type': 'application/json',
+            'Authorization': token,
           },
+          body: JSON.stringify(data),
         });
-        const customers = await response.json();
-        const tbody = document.querySelector('#customersTable tbody');
-        tbody.innerHTML = '';
-        customers.forEach(customer => {
-          const row = tbody.insertRow();
-          row.insertCell(0).textContent = customer.id;
-          row.insertCell(1).textContent = customer.firstName;
-          row.insertCell(2).textContent = customer.lastName;
-          row.insertCell(3).textContent = customer.phone || 'N/A';
-          row.insertCell(4).textContent = customer.address || 'N/A';
-          row.insertCell(5).textContent = customer.email || 'N/A';
-        });
+        displayResponse('updateTransactionResponse', response);
       } catch (error) {
-        console.error('Error loading customers:', error);
+        displayResponse('updateTransactionResponse', { error: error.message }, true);
       }
-    }
+    });
 
-    async function loadTransactions() {
+    // Delete Transaction
+    document.getElementById('deleteTransactionForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      const id = document.getElementById('deleteTransactionId').value;
+
       try {
-        const response = await fetch(`${API_BASE_URL}/transactions?skip=0&take=10`, {
-          headers: {
-            'Authorization': `Bearer ${TOKEN}`,
-          },
+        const response = await handleFetch(`http://localhost:3000/transactions/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': token },
         });
-        const transactions = await response.json();
-        const tbody = document.querySelector('#transactionsTable tbody');
-        tbody.innerHTML = '';
-        transactions.forEach(transaction => {
-          const row = tbody.insertRow();
-          row.insertCell(0).textContent = transaction.id;
-          row.insertCell(1).textContent = transaction.customerId || 'N/A';
-          row.insertCell(2).textContent = transaction.userId;
-          row.insertCell(3).textContent = transaction.type;
-          row.insertCell(4).textContent = transaction.finalTotal || transaction.total;
-          row.insertCell(5).textContent = transaction.items.map(i => `${i.product.name} (x${i.quantity})`).join(', ') || 'N/A';
-        });
+        displayResponse('deleteTransactionResponse', response);
       } catch (error) {
-        console.error('Error loading transactions:', error);
+        displayResponse('deleteTransactionResponse', { error: error.message }, true);
       }
-    }
+    });
 
-    // Load data on page load
-    window.onload = () => {
-      loadCustomers();
-      loadTransactions();
-      addItem(); // Add one item by default
-    };
+    // Create Receipt
+    document.getElementById('createReceiptForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = getToken();
+      if (!token) return;
+
+      let items;
+      try {
+        items = JSON.parse(document.getElementById('receiptItems').value);
+      } catch (error) {
+        displayResponse('createReceiptResponse', { error: 'Invalid JSON in items' }, true);
+        return;
+      }
+
+      const data = {
+        id: document.getElementById('receiptId').value,
+        cashier: document.getElementById('receiptCashier').value,
+        date: document.getElementById('receiptDate').value,
+        items,
+        total: parseFloat(document.getElementById('receiptTotal').value),
+        amountPaid: parseFloat(document.getElementById('receiptAmountPaid').value),
+        remainingBalance: parseFloat(document.getElementById('receiptRemainingBalance').value),
+        returnCode: document.getElementById('receiptReturnCode').value,
+        deliveryMethod: document.getElementById('receiptDeliveryMethod').value,
+        paymentMethod: document.getElementById('receiptPaymentMethod').value,
+      };
+      if (document.getElementById('receiptCustomerId').value) data.customerId = parseInt(document.getElementById('receiptCustomerId').value);
+      if (document.getElementById('receiptCreditTotal').value) data.creditTotal = parseFloat(document.getElementById('receiptCreditTotal').value);
+      if (document.getElementById('receiptBranchId').value) data.branchId = parseInt(document.getElementById('receiptBranchId').value);
+
+      try {
+        const response = await handleFetch('http://localhost:3000/api/receipts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token,
+          },
+          body: JSON.stringify(data),
+        });
+        displayResponse('createReceiptResponse', response);
+      } catch (error) {
+        displayResponse('createReceiptResponse', { error: error.message }, true);
+      }
+    });
   </script>
 </body>
 </html>

@@ -16,7 +16,7 @@ model Branch {
   users      User[]     @relation("BranchUsers")
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
-  categories Category[] // Changed from Category to categories for clarity
+  categories Category[]
 
   @@unique([name, location])
   @@index([location])
@@ -77,23 +77,24 @@ model Category {
 }
 
 model Product {
-  id           Int                   @id @default(autoincrement())
-  name         String                @db.VarChar(100)
-  barcode      String                @unique @db.VarChar(50)
-  description  String?               @db.VarChar(255)
-  category     Category              @relation("CategoryProducts", fields: [categoryId], references: [id], onDelete: Restrict)
-  categoryId   Int
-  status       ProductStatus
-  branch       Branch                @relation("BranchProducts", fields: [branchId], references: [id], onDelete: Restrict)
-  branchId     Int
-  price        Float
-  marketPrice  Float?
-  model        String?
-  quantity     Int                   @default(0)
-  transactions TransactionItem[]     @relation("ProductTransactions")
-  stockHistory ProductStockHistory[] @relation("ProductStockHistory")
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  id              Int                   @id @default(autoincrement())
+  name            String                @db.VarChar(100)
+  barcode         String                @unique @db.VarChar(50)
+  description     String?               @db.VarChar(255)
+  category        Category              @relation("CategoryProducts", fields: [categoryId], references: [id], onDelete: Restrict)
+  categoryId      Int
+  status          ProductStatus
+  branch          Branch                @relation("BranchProducts", fields: [branchId], references: [id], onDelete: Restrict)
+  branchId        Int
+  price           Float
+  marketPrice     Float?
+  model           String?
+  initialQuantity Int                   @default(0) // Tracks initial stock at creation
+  quantity        Int                   @default(0) // Tracks current stock
+  transactions    TransactionItem[]     @relation("ProductTransactions")
+  stockHistory    ProductStockHistory[] @relation("ProductStockHistory")
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   @@index([barcode, branchId, categoryId])
 }
@@ -135,15 +136,14 @@ model Transaction {
   total            Float
   finalTotal       Float?
   paymentType      PaymentType?
-  deliveryMethod   String? // Added for frontend compatibility
-  amountPaid       Float? // Added for frontend compatibility
-  remainingBalance Float? // Added for frontend compatibility
-  receiptId        String?           @unique // Link to Receipt
-
-  stockHistory ProductStockHistory[] @relation("TransactionStockHistory")
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  Receipt      Receipt[]
+  deliveryMethod   String?
+  amountPaid       Float?
+  remainingBalance Float?
+  receiptId        String?           @unique
+  stockHistory     ProductStockHistory[] @relation("TransactionStockHistory")
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  Receipt          Receipt[]
 
   @@index([customerId, userId, type, receiptId])
 }
@@ -157,9 +157,9 @@ model TransactionItem {
   quantity       Int
   price          Float
   total          Float
-  creditMonth    Int? // Added for frontend credit terms
-  creditPercent  Float? // Added for frontend credit terms
-  monthlyPayment Float? // Added for frontend credit terms
+  creditMonth    Int?
+  creditPercent  Float?
+  monthlyPayment Float?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -190,7 +190,7 @@ model ProductStockHistory {
   id            Int              @id @default(autoincrement())
   product       Product          @relation("ProductStockHistory", fields: [productId], references: [id], onDelete: Restrict)
   productId     Int
-  transaction   Transaction?     @relation("TransactionStockHistory", fields: [transactionId], references: [id], onDelete: SetNull)
+  transaction   Transaction?      @relation("TransactionStockHistory", fields: [transactionId], references: [id], onDelete: SetNull)
   transactionId Int?
   branchId      Int
   quantity      Int // Positive for inflow, negative for outflow
@@ -208,6 +208,7 @@ enum StockHistoryType {
   INFLOW
   OUTFLOW
   ADJUSTMENT
+  RETURN // Added to explicitly track returns
 }
 
 model Receipt {
@@ -216,7 +217,7 @@ model Receipt {
   customerId       Int?
   cashier          String       @db.VarChar(100)
   date             DateTime
-  items            Json // Store items as JSON for simplicity
+  items            Json
   total            Float
   creditTotal      Float?
   amountPaid       Float
@@ -225,7 +226,7 @@ model Receipt {
   branchId         Int?
   deliveryMethod   String       @db.VarChar(50)
   paymentMethod    PaymentType
-  transaction      Transaction? @relation(fields: [id], references: [receiptId], onDelete: SetNull)
+  transaction      Transaction? @relation(fields: [id], references: [receiptId], onDelete: Cascade)
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 

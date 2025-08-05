@@ -1,3 +1,4 @@
+
 import { Controller, Post, Body, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ReceiptService } from './receipt.service';
@@ -22,5 +23,4 @@ export class ReceiptController {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
-  
 }

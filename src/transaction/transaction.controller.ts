@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { TransactionService } from './transaction.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -17,24 +18,24 @@ export class TransactionController {
   @ApiOperation({ summary: 'Create a new transaction' })
   @ApiResponse({ status: 201, description: 'Transaction created' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  async create(@Body() createTransactionDto: CreateTransactionDto) {
+  async create(@Body() createTransactionDto: CreateTransactionDto, @Request() req) {
     try {
-      return await this.transactionService.create(createTransactionDto);
+      const userId = req.user.id; // Extract user ID from JWT
+      return await this.transactionService.create(createTransactionDto, userId);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
+
   @Post('api/sales')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new sale transaction' })
   @ApiResponse({ status: 201, description: 'Transaction created' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  async createe(@Body() createTransactionDto: CreateTransactionDto, @Body() userId:string) {
+  async createSale(@Body() createTransactionDto: CreateTransactionDto, @Request() req) {
     try {
-      // Ensure userId is set from JWT
-      createTransactionDto.userId = +userId;
-      return await this.transactionService.create(createTransactionDto);
+      const userId = req.user.id; // Extract user ID from JWT
+      createTransactionDto.type = TransactionType.SALE; // Enforce SALE type
+      return await this.transactionService.create(createTransactionDto, userId);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
@@ -56,6 +57,9 @@ export class TransactionController {
   @ApiOperation({ summary: 'Get all transactions' })
   @ApiQuery({ name: 'skip', required: false })
   @ApiQuery({ name: 'take', required: false })
+  @ApiQuery({ name: 'customerId', required: false })
+  @ApiQuery({ name: 'userId', required: false })
+  @ApiQuery({ name: 'type', required: false, enum: TransactionType })
   async findAll(
     @Query('skip') skip = '0',
     @Query('take') take = '10',
@@ -99,9 +103,10 @@ export class TransactionController {
   @ApiOperation({ summary: 'Update transaction' })
   @ApiResponse({ status: 200, description: 'Transaction updated' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  async update(@Param('id') id: string, @Body() updateTransactionDto: UpdateTransactionDto) {
+  async update(@Param('id') id: string, @Body() updateTransactionDto: UpdateTransactionDto, @Request() req) {
     try {
-      return await this.transactionService.update(+id, updateTransactionDto);
+      const userId = req.user.id; // Extract user ID from JWT
+      return await this.transactionService.update(+id, updateTransactionDto, userId);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
@@ -111,9 +116,10 @@ export class TransactionController {
   @ApiOperation({ summary: 'Delete transaction' })
   @ApiResponse({ status: 200, description: 'Transaction deleted' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string, @Request() req) {
     try {
-      return await this.transactionService.remove(+id);
+      const userId = req.user.id; // Extract user ID from JWT
+      return await this.transactionService.remove(+id, userId);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }

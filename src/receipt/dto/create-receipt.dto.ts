@@ -1,59 +1,70 @@
+
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNumber, IsEnum, IsDateString, IsOptional, IsInt } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsNotEmpty, IsEnum, IsDateString } from 'class-validator';
 import { PaymentType } from '@prisma/client';
 
 export class CreateReceiptDto {
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   id: string;
 
   @ApiProperty({ required: false })
+  @IsNumber()
   @IsOptional()
-  @IsInt()
   customerId?: number;
 
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   cashier: string;
 
   @ApiProperty()
   @IsDateString()
+  @IsNotEmpty()
   date: string;
 
   @ApiProperty()
-  items: any; // JSON type for items array
+  @IsNotEmpty()
+  items: object; // JSON type
 
   @ApiProperty()
   @IsNumber()
+  @IsNotEmpty()
   total: number;
 
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsNumber()
+  @IsOptional()
   creditTotal?: number;
 
   @ApiProperty()
   @IsNumber()
+  @IsNotEmpty()
   amountPaid: number;
 
   @ApiProperty()
   @IsNumber()
+  @IsNotEmpty()
   remainingBalance: number;
 
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   returnCode: string;
 
   @ApiProperty({ required: false })
+  @IsNumber()
   @IsOptional()
-  @IsInt()
   branchId?: number;
 
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   deliveryMethod: string;
 
   @ApiProperty({ enum: PaymentType })
   @IsEnum(PaymentType)
+  @IsNotEmpty()
   paymentMethod: PaymentType;
 }
