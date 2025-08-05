@@ -23,8 +23,8 @@
     <div class="section">
       <h3>JWT Token</h3>
       <div class="mb-3">
-        <label for="jwtToken" class="form-label">Enter JWT Token</label>
-        <input type="text" class="form-control" id="jwtToken" placeholder="Bearer <your-token>">
+        <label for="jwtToken" class="form-label">Enter JWT Token (without Bearer prefix)</label>
+        <input type="text" class="form-control" id="jwtToken" placeholder="Enter token without 'Bearer '">
       </div>
     </div>
 
@@ -545,12 +545,16 @@
   </div>
 
   <script>
-    // Helper function to get JWT token
+    // Helper function to get JWT token and format as Bearer token
     function getToken() {
-      const token = document.getElementById('jwtToken').value;
+      let token ='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNhbG9tQGdtYWlsLmNvbSIsInN1YiI6MTgsInJvbGUiOiJDQVNISUVSIiwiaWF0IjoxNzU0Mzc5NTcyLCJleHAiOjE3NTQ0NjU5NzJ9.5d8vSoi_3ihmQJ9_6Y4Ngl6D9gZcU_dls2xyVEjInyg';
       if (!token) {
         alert('Please enter a JWT token');
         return null;
+      }
+      // Prepend 'Bearer ' if not already present
+      if (!token.startsWith('Bearer ')) {
+        token = `Bearer ${token}`;
       }
       return token;
     }
@@ -599,7 +603,7 @@
       };
 
       try {
-        const response = await handleFetch('http://localhost:3000/products', {
+        const response = await handleFetch('https://suddocs.uz/products', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -629,7 +633,7 @@
       formData.append('file', file);
 
       try {
-        const response = await handleFetch('http://localhost:3000/products/upload-excel', {
+        const response = await handleFetch('https://suddocs.uz/products/upload-excel', {
           method: 'POST',
           headers: { 'Authorization': token },
           body: formData,
@@ -649,7 +653,7 @@
       const id = document.getElementById('productId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:3000/products/${id}`, {
+        const response = await handleFetch(`https://suddocs.uz/products/${id}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -668,7 +672,7 @@
       const barcode = document.getElementById('productBarcodeSearch').value;
 
       try {
-        const response = await handleFetch(`http://localhost:3000/products/barcode/${barcode}`, {
+        const response = await handleFetch(`https://suddocs.uz/products/barcode/${barcode}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -685,7 +689,7 @@
       if (!token) return;
 
       const branchId = document.getElementById('branchIdFilter').value;
-      const url = branchId ? `http://localhost:3000/products?branchId=${branchId}` : 'http://localhost:3000/products';
+      const url = branchId ? `https://suddocs.uz/products?branchId=${branchId}` : 'https://suddocs.uz/products';
 
       try {
         const response = await handleFetch(url, {
@@ -719,7 +723,7 @@
       const id = document.getElementById('updateProductId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:3000/products/${id}`, {
+        const response = await handleFetch(`https://suddocs.uz/products/${id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -742,7 +746,7 @@
       const id = document.getElementById('deleteProductId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:3000/products/${id}`, {
+        const response = await handleFetch(`https://suddocs.uz/products/${id}`, {
           method: 'DELETE',
           headers: { 'Authorization': token },
         });
@@ -780,7 +784,7 @@
       if (document.getElementById('transactionReceiptId').value) data.receiptId = document.getElementById('transactionReceiptId').value;
 
       try {
-        const response = await handleFetch('http://localhost:3000/transactions', {
+        const response = await handleFetch('https://suddocs.uz/transactions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -821,7 +825,7 @@
       if (document.getElementById('saleReceiptId').value) data.receiptId = document.getElementById('saleReceiptId').value;
 
       try {
-        const response = await handleFetch('http://localhost:3000/transactions/api/sales', {
+        const response = await handleFetch('https://suddocs.uz/transactions/api/sales', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -844,7 +848,7 @@
       const id = document.getElementById('transactionId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:3000/transactions/${id}`, {
+        const response = await handleFetch(`https://suddocs.uz/transactions/${id}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -868,7 +872,7 @@
       if (document.getElementById('transactionTypeFilter').value) params.append('type', document.getElementById('transactionTypeFilter').value);
 
       try {
-        const response = await handleFetch(`http://localhost:3000/transactions?${params.toString()}`, {
+        const response = await handleFetch(`https://suddocs.uz/transactions?${params.toString()}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -892,7 +896,7 @@
       if (document.getElementById('stockHistoryType').value) params.append('type', document.getElementById('stockHistoryType').value);
 
       try {
-        const response = await handleFetch(`http://localhost:3000/transactions/stock-history?${params.toString()}`, {
+        const response = await handleFetch(`https://suddocs.uz/transactions/stock-history?${params.toString()}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -930,7 +934,7 @@
       const id = document.getElementById('updateTransactionId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:3000/transactions/${id}`, {
+        const response = await handleFetch(`https://suddocs.uz/transactions/${id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -953,7 +957,7 @@
       const id = document.getElementById('deleteTransactionId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:3000/transactions/${id}`, {
+        const response = await handleFetch(`https://suddocs.uz/transactions/${id}`, {
           method: 'DELETE',
           headers: { 'Authorization': token },
         });
@@ -994,7 +998,7 @@
       if (document.getElementById('receiptBranchId').value) data.branchId = parseInt(document.getElementById('receiptBranchId').value);
 
       try {
-        const response = await handleFetch('http://localhost:3000/api/receipts', {
+        const response = await handleFetch('https://suddocs.uz/api/receipts', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

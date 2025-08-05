@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -89,8 +90,8 @@ model Product {
   price           Float
   marketPrice     Float?
   model           String?
-  initialQuantity Int                   @default(0) // Tracks initial stock at creation
-  quantity        Int                   @default(0) // Tracks current stock
+  initialQuantity Int                   @default(0)
+  quantity        Int                   @default(0)
   transactions    TransactionItem[]     @relation("ProductTransactions")
   stockHistory    ProductStockHistory[] @relation("ProductStockHistory")
   createdAt       DateTime              @default(now())
@@ -193,11 +194,11 @@ model ProductStockHistory {
   transaction   Transaction?      @relation("TransactionStockHistory", fields: [transactionId], references: [id], onDelete: SetNull)
   transactionId Int?
   branchId      Int
-  quantity      Int // Positive for inflow, negative for outflow
+  quantity      Int
   type          StockHistoryType
   description   String?          @db.VarChar(255)
-  createdBy     User             @relation("ProductStockHistory", fields: [createdById], references: [id], onDelete: Restrict)
-  createdById   Int
+  createdBy     User?            @relation("ProductStockHistory", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById   Int?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
@@ -208,7 +209,7 @@ enum StockHistoryType {
   INFLOW
   OUTFLOW
   ADJUSTMENT
-  RETURN // Added to explicitly track returns
+  RETURN
 }
 
 model Receipt {
