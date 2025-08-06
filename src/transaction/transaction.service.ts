@@ -135,42 +135,7 @@ export class TransactionService {
   }
 
   // Updated findAll method with sorting parameters
-  async findAll(
-    skip: number,
-    take: number,
-    filters?: { customerId?: number; userId?: number; type?: TransactionType; createdAt?: any },
-    sortBy: string = 'createdAt',
-    sortOrder: 'asc' | 'desc' = 'desc',
-  ) {
-    try {
-      // Build orderBy object dynamically
-      const orderBy: any = {};
-      orderBy[sortBy] = sortOrder;
 
-      return await this.prisma.transaction.findMany({
-        skip,
-        take,
-        where: {
-          customerId: filters?.customerId,
-          userId: filters?.userId,
-          type: filters?.type,
-          createdAt: filters?.createdAt,
-        },
-        include: {
-          customer: true,
-          user: true,
-          items: { include: { product: true } },
-          stockHistory: { include: { product: true } },
-        },
-        orderBy,
-      });
-    } catch (error) {
-      throw new HttpException(
-        `Failed to retrieve transactions: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
 
   async countTransactions(
     filters?: { customerId?: number; userId?: number; type?: TransactionType; createdAt?: any },
@@ -520,6 +485,48 @@ export class TransactionService {
       return stockHistory;
     } catch (error) {
       throw new HttpException(`Failed to fetch stock history: ${error.message}`, HttpStatus.NOT_FOUND);
+    }
+  }
+
+  async findAll(userId: number) {
+    try {
+      return await this.prisma.transaction.findMany({
+        where: { userId },
+        include: {
+          customer: true,
+          user: true,
+          items: { include: { product: true } },
+          stockHistory: { include: { product: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      throw new HttpException(
+        `Failed to retrieve transactions: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async findStockHistoryByTransaction(transactionId: number, userId: number) {
+    try {
+      return await this.prisma.productStockHistory.findMany({
+        where: {
+          transactionId,
+          createdById: userId,
+        },
+        include: {
+          product: true,
+          transaction: { include: { customer: true } },
+          createdBy: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      throw new HttpException(
+        `Failed to fetch stock history: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }

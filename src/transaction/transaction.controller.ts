@@ -13,116 +13,116 @@ export class TransactionController {
   constructor(private readonly transactionService: TransactionService) {}
 
   // Yangi endpoint - oddiy ro'yxat olish uchun (query parametrlarsiz)
-  @Get('list/:skip/:take')
-  @ApiOperation({ summary: 'Get transactions list with simple pagination (no filters)' })
-  @ApiParam({ name: 'skip', type: Number, description: 'Number of records to skip', example: 0 })
-  @ApiParam({ name: 'take', type: Number, description: 'Number of records to take', example: 20 })
-  @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getTransactionsList(
-    @Param('skip') skip: string,
-    @Param('take') take: string,
-    @Request() req,
-  ) {
-    try {
-      const skipNum = parseInt(skip, 10);
-      const takeNum = parseInt(take, 10);
+  // @Get('list/:skip/:take')
+  // @ApiOperation({ summary: 'Get transactions list with simple pagination (no filters)' })
+  // @ApiParam({ name: 'skip', type: Number, description: 'Number of records to skip', example: 0 })
+  // @ApiParam({ name: 'take', type: Number, description: 'Number of records to take', example: 20 })
+  // @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
+  // @ApiResponse({ status: 400, description: 'Bad request' })
+  // @ApiResponse({ status: 401, description: 'Unauthorized' })
+  // async getTransactionsList(
+  //   @Param('skip') skip: string,
+  //   @Param('take') take: string,
+  //   @Request() req,
+  // ) {
+  //   try {
+  //     const skipNum = parseInt(skip, 10);
+  //     const takeNum = parseInt(take, 10);
 
-      if (isNaN(skipNum) || isNaN(takeNum) || skipNum < 0 || takeNum <= 0) {
-        throw new HttpException('Invalid skip or take parameters', HttpStatus.BAD_REQUEST);
-      }
+  //     if (isNaN(skipNum) || isNaN(takeNum) || skipNum < 0 || takeNum <= 0) {
+  //       throw new HttpException('Invalid skip or take parameters', HttpStatus.BAD_REQUEST);
+  //     }
 
-      const authUserId = req.user?.userId;
-      if (!authUserId) {
-        console.error('JWT token validation failed: User ID not found in token payload');
-        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
-      }
+  //     const authUserId = req.user?.userId;
+  //     if (!authUserId) {
+  //       console.error('JWT token validation failed: User ID not found in token payload');
+  //       throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
+  //     }
 
-      // Faqat foydalanuvchining o'z ma'lumotlarini qaytarish
-      const filters = { userId: authUserId };
-      const transactions = await this.transactionService.findAll(skipNum, takeNum, filters);
-      const total = await this.transactionService.countTransactions(filters);
+  //     // Faqat foydalanuvchining o'z ma'lumotlarini qaytarish
+  //     const filters = { userId: authUserId };
+  //     const transactions = await this.transactionService.findAll(skipNum, takeNum, filters);
+  //     const total = await this.transactionService.countTransactions(filters);
 
-      return { transactions, total };
-    } catch (error) {
-      console.error('Error in getTransactionsList:', error.message);
-      throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
-    }
-  }
+  //     return { transactions, total };
+  //   } catch (error) {
+  //     console.error('Error in getTransactionsList:', error.message);
+  //     throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
+  //   }
+  // }
 
   // Mavjud endpoint - filter bilan (optional query parameters)
-  @Get('search')
-  @ApiOperation({ summary: 'Get transactions with optional filters and pagination' })
-  @ApiQuery({ name: 'userId', type: Number, required: false, description: 'Filter by user ID' })
-  @ApiQuery({ name: 'customerId', type: Number, required: false, description: 'Filter by customer ID' })
-  @ApiQuery({ name: 'type', enum: TransactionType, required: false, description: 'Filter by transaction type' })
-  @ApiQuery({ name: 'startDate', type: String, required: false, description: 'Filter by start date (ISO format)' })
-  @ApiQuery({ name: 'endDate', type: String, required: false, description: 'Filter by end date (ISO format)' })
-  @ApiQuery({ name: 'sortBy', type: String, required: false, description: 'Sort by field (e.g., createdAt)', example: 'createdAt' })
-  @ApiQuery({ name: 'sortOrder', enum: ['asc', 'desc'], required: false, description: 'Sort order', example: 'desc' })
-  @ApiQuery({ name: 'skip', type: Number, required: false, description: 'Number of records to skip', example: 0 })
-  @ApiQuery({ name: 'take', type: Number, required: false, description: 'Number of records to take', example: 20 })
-  @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async searchTransactions(
-    @Query('userId') userId?: string,
-    @Query('customerId') customerId?: string,
-    @Query('type') type?: TransactionType,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('sortBy') sortBy: string = 'createdAt',
-    @Query('sortOrder') sortOrder: 'asc' | 'desc' = 'desc',
-    @Query('skip') skip: string = '0',
-    @Query('take') take: string = '20',
-    @Request() req?: any, // Request object to access JWT token
-  ) {
-    try {
-      const userIdNum = userId ? parseInt(userId, 10) : undefined;
-      const customerIdNum = customerId ? parseInt(customerId, 10) : undefined;
-      const skipNum = parseInt(skip, 10);
-      const takeNum = parseInt(take, 10);
+  // @Get('search')
+  // @ApiOperation({ summary: 'Get transactions with optional filters and pagination' })
+  // @ApiQuery({ name: 'userId', type: Number, required: false, description: 'Filter by user ID' })
+  // @ApiQuery({ name: 'customerId', type: Number, required: false, description: 'Filter by customer ID' })
+  // @ApiQuery({ name: 'type', enum: TransactionType, required: false, description: 'Filter by transaction type' })
+  // @ApiQuery({ name: 'startDate', type: String, required: false, description: 'Filter by start date (ISO format)' })
+  // @ApiQuery({ name: 'endDate', type: String, required: false, description: 'Filter by end date (ISO format)' })
+  // @ApiQuery({ name: 'sortBy', type: String, required: false, description: 'Sort by field (e.g., createdAt)', example: 'createdAt' })
+  // @ApiQuery({ name: 'sortOrder', enum: ['asc', 'desc'], required: false, description: 'Sort order', example: 'desc' })
+  // @ApiQuery({ name: 'skip', type: Number, required: false, description: 'Number of records to skip', example: 0 })
+  // @ApiQuery({ name: 'take', type: Number, required: false, description: 'Number of records to take', example: 20 })
+  // @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
+  // @ApiResponse({ status: 400, description: 'Bad request' })
+  // @ApiResponse({ status: 401, description: 'Unauthorized' })
+  // async searchTransactions(
+  //   @Query('userId') userId?: string,
+  //   @Query('customerId') customerId?: string,
+  //   @Query('type') type?: TransactionType,
+  //   @Query('startDate') startDate?: string,
+  //   @Query('endDate') endDate?: string,
+  //   @Query('sortBy') sortBy: string = 'createdAt',
+  //   @Query('sortOrder') sortOrder: 'asc' | 'desc' = 'desc',
+  //   @Query('skip') skip: string = '0',
+  //   @Query('take') take: string = '20',
+  //   @Request() req?: any, // Request object to access JWT token
+  // ) {
+  //   try {
+  //     const userIdNum = userId ? parseInt(userId, 10) : undefined;
+  //     const customerIdNum = customerId ? parseInt(customerId, 10) : undefined;
+  //     const skipNum = parseInt(skip, 10);
+  //     const takeNum = parseInt(take, 10);
 
-      // Validation fix: check for parsing errors properly
-      if ((userId && userIdNum) || (customerId && customerIdNum) || 
-          isNaN(skipNum) || isNaN(takeNum) || skipNum < 0 || takeNum <= 0) {
-        throw new HttpException('Invalid query parameters', HttpStatus.BAD_REQUEST);
-      }
+  //     // Validation fix: check for parsing errors properly
+  //     if ((userId && userIdNum) || (customerId && customerIdNum) || 
+  //         isNaN(skipNum) || isNaN(takeNum) || skipNum < 0 || takeNum <= 0) {
+  //       throw new HttpException('Invalid query parameters', HttpStatus.BAD_REQUEST);
+  //     }
 
-      const authUserId = req.user?.userId;
-      if (!authUserId) {
-        console.error('JWT token validation failed: User ID not found in token payload');
-        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
-      }
+  //     const authUserId = req.user?.userId;
+  //     if (!authUserId) {
+  //       console.error('JWT token validation failed: User ID not found in token payload');
+  //       throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
+  //     }
 
-      // Restrict to authenticated user's data
-      if (userIdNum && userIdNum !== authUserId) {
-        console.warn(`User ${authUserId} attempted to access transactions for user ${userIdNum}`);
-        throw new HttpException('Forbidden: Cannot access other users\' data', HttpStatus.FORBIDDEN);
-      }
+  //     // Restrict to authenticated user's data
+  //     if (userIdNum && userIdNum !== authUserId) {
+  //       console.warn(`User ${authUserId} attempted to access transactions for user ${userIdNum}`);
+  //       throw new HttpException('Forbidden: Cannot access other users\' data', HttpStatus.FORBIDDEN);
+  //     }
 
-      const filters: any = {
-        userId: userIdNum || authUserId,
-        customerId: customerIdNum,
-        type,
-      };
+  //     const filters: any = {
+  //       userId: userIdNum || authUserId,
+  //       customerId: customerIdNum,
+  //       type,
+  //     };
 
-      if (startDate || endDate) {
-        filters.createdAt = {};
-        if (startDate) filters.createdAt.gte = new Date(startDate);
-        if (endDate) filters.createdAt.lte = new Date(endDate);
-      }
+  //     if (startDate || endDate) {
+  //       filters.createdAt = {};
+  //       if (startDate) filters.createdAt.gte = new Date(startDate);
+  //       if (endDate) filters.createdAt.lte = new Date(endDate);
+  //     }
 
-      const transactions = await this.transactionService.findAll(skipNum, takeNum, filters, sortBy, sortOrder);
-      const total = await this.transactionService.countTransactions(filters);
+  //     const transactions = await this.transactionService.findAll(skipNum, takeNum, filters, sortBy, sortOrder);
+  //     const total = await this.transactionService.countTransactions(filters);
 
-      return { transactions, total };
-    } catch (error) {
-      console.error('Error in searchTransactions:', error.message);
-      throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
-    }
-  }
+  //     return { transactions, total };
+  //   } catch (error) {
+  //     console.error('Error in searchTransactions:', error.message);
+  //     throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
+  //   }
+  // }
 
   // Bitta transaction olish uchun
   @Get(':id')
@@ -365,6 +365,57 @@ export class TransactionController {
       return stockHistory;
     } catch (error) {
       console.error('Error in findStockHistoryById:', error.message);
+      throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
+    }
+  }
+  @Get('/api/transactions')
+  @ApiOperation({ summary: 'Get all transactions with pagination' })
+  @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async findAllTransactions(
+    @Request() req,
+  ) {
+    try {
+      const authUserId = req.user?.userId;
+      if (!authUserId) {
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
+      }
+
+      const transactions = await this.transactionService.findAll(authUserId);
+      return { transactions };
+    } catch (error) {
+      console.error('Error in findAllTransactions:', error.message);
+      throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  @Get('stock-history/by-transaction/:transactionId')
+  @ApiOperation({ summary: 'Get stock history by transaction ID' })
+  @ApiParam({ name: 'transactionId', type: Number, description: 'Transaction ID' })
+  @ApiResponse({ status: 200, description: 'Stock history retrieved successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async findStockHistoryByTransaction(
+    @Param('transactionId') transactionId: string,
+    @Request() req,
+  ) {
+    try {
+      const transactionIdNum = parseInt(transactionId, 10);
+      if (isNaN(transactionIdNum)) {
+        throw new HttpException('Invalid transaction ID', HttpStatus.BAD_REQUEST);
+      }
+
+      const authUserId = req.user?.userId;
+      if (!authUserId) {
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
+      }
+
+      const stockHistory = await this.transactionService.findStockHistoryByTransaction(transactionIdNum, authUserId);
+      return { stockHistory };
+    } catch (error) {
+      console.error('Error in findStockHistoryByTransaction:', error.message);
       throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
     }
   }
