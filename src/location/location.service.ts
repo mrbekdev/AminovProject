@@ -47,6 +47,11 @@ export class LocationService {
       throw new Error('Invalid coordinates');
     }
 
+    if (Math.abs(data.latitude - 41.3111) < 0.01 && Math.abs(data.longitude - 69.2797) < 0.01) {
+      this.logger.warn(`Default Tashkent coordinates for user ${userId}, rejecting update`);
+      throw new Error('Default Tashkent coordinates are not allowed');
+    }
+
     try {
       const updatedLocation = await this.prisma.userLocation.upsert({
         where: { userId },
@@ -123,6 +128,11 @@ export class LocationService {
       if (!location) {
         this.logger.warn(`Location for user ${userId} not found`);
         throw new NotFoundException(`Location for user ${userId} not found`);
+      }
+
+      if (Math.abs(location.latitude - 41.3111) < 0.01 && Math.abs(location.longitude - 69.2797) < 0.01) {
+        this.logger.warn(`User ${userId} has default Tashkent coordinates`);
+        throw new NotFoundException(`User ${userId} has default Tashkent coordinates`);
       }
 
       this.logger.log(`Fetched location for user ${userId}`);
@@ -206,6 +216,9 @@ export class LocationService {
 
       const nearbyUsers = allLocations
         .map((loc) => {
+          if (Math.abs(loc.latitude - 41.3111) < 0.01 && Math.abs(loc.longitude - 69.2797) < 0.01) {
+            return null;
+          }
           const distance = this.calculateDistance(
             userLocation.latitude,
             userLocation.longitude,
@@ -215,13 +228,13 @@ export class LocationService {
           if (distance <= radius) {
             return { 
               ...(loc as unknown as UserLocationWithUser), 
-              distance: Math.round(distance * 100) / 100 // 2 decimal places
+              distance: Math.round(distance * 100) / 100
             };
           }
           return null;
         })
         .filter((loc): loc is UserLocationWithUser & { distance: number } => loc !== null)
-        .sort((a, b) => a.distance - b.distance); // Distance bo'yicha tartiblab
+        .sort((a, b) => a.distance - b.distance);
 
       this.logger.log(`Found ${nearbyUsers.length} nearby users for user ${userId} within ${radius}km`);
       return nearbyUsers;
@@ -244,14 +257,12 @@ export class LocationService {
 
       if (result.count === 0) {
         this.logger.warn(`No location record found for user ${userId} to set offline`);
-        // Throw qilmaslik, chunki user location mavjud bo'lmasligi mumkin
         return;
       }
 
       this.logger.log(`Set user ${userId} offline`);
     } catch (error) {
       this.logger.error(`Failed to set user ${userId} offline:`, error);
-      // Throw qilmaslik, chunki disconnect da ishlatiladi
     }
   }
 
@@ -267,9 +278,8 @@ export class LocationService {
     }
   }
 
-  // Haversine formula - ikki geografik nuqta orasidagi masofani hisoblash
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371; // Yer radiusi km da
+    const R = 6371;
     const dLat = this.toRadians(lat2 - lat1);
     const dLon = this.toRadians(lon2 - lon1);
     
@@ -288,7 +298,6 @@ export class LocationService {
     return degrees * (Math.PI / 180);
   }
 
-  // Test va debug uchun
   async getLocationStats(): Promise<{
     totalUsers: number;
     onlineUsers: number;
@@ -314,7 +323,6 @@ export class LocationService {
     }
   }
 
-  // Barcha offline userlarni tozalash (optional)
   async cleanupOfflineUsers(olderThanHours: number = 24): Promise<number> {
     try {
       const cutoffDate = new Date();

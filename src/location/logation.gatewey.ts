@@ -40,7 +40,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     private jwtService: JwtService,
   ) {}
 
-  // Check if coordinates are Tashkent defaults
   private isTashkentLocation(latitude: number, longitude: number, address?: string): boolean {
     return (
       Math.abs(latitude - 41.3111) < 0.01 &&
@@ -79,10 +78,8 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.connectedUsers.set(client.userId, client.id);
       this.logger.log(`User ${client.userId} (${payload.role}) connected: ${client.id}`);
 
-      // Emit updated data
       this.emitOnlineUsersDebounced();
 
-      // Send admin-specific data if user is admin
       if (client.userData?.role === 'ADMIN') {
         const onlineUsers = await this.locationService.getAllOnlineUsers();
         const validUsers = onlineUsers.filter(
@@ -92,11 +89,9 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         this.logger.log(`Sent adminAllLocations to admin ${client.userId}: ${validUsers.length} users`);
       }
 
-      // Send user's own location
       const myLocation = await this.locationService.getUserLocation(client.userId);
       client.emit('myLocationUpdated', myLocation);
 
-      // Send success connection event
       client.emit('connectionSuccess', {
         userId: client.userId,
         role: client.userData.role,
@@ -115,7 +110,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         await this.locationService.setUserOffline(client.userId);
         this.logger.log(`User ${client.userId} disconnected: ${client.id}`);
 
-        // Emit updates
         this.emitOnlineUsersDebounced();
         this.emitAllLocationsDebounced();
       } catch (error) {
@@ -133,13 +127,11 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       return this.handleSocketError(client, new UnauthorizedException('User not authenticated'), 'Authentication error');
     }
 
-    // Validate that user can only update their own location
     if (data.userId && client.userId !== data.userId) {
       return this.handleSocketError(client, new UnauthorizedException('Cannot update other user location'), 'Authorization error');
     }
 
     try {
-      // Validate coordinates
       if (!this.isValidCoordinate(data.latitude) || !this.isValidCoordinate(data.longitude)) {
         throw new Error(`Invalid coordinates: lat=${data.latitude}, lng=${data.longitude}`);
       }
@@ -148,7 +140,10 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         throw new Error('Coordinates out of valid range');
       }
 
-      // Log incoming update for debugging
+      if (this.isTashkentLocation(data.latitude, data.longitude, data.address)) {
+        throw new Error('Default Tashkent coordinates are not allowed');
+      }
+
       this.logger.log(`Received updateLocation for user ${client.userId}:`, {
         latitude: data.latitude,
         longitude: data.longitude,
@@ -164,19 +159,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         isOnline: data.isOnline ?? true,
       });
 
-      // Skip emitting if location is Tashkent
-      if (this.isTashkentLocation(updatedLocation.latitude, updatedLocation.longitude, updatedLocation.address)) {
-        this.logger.warn(`Skipping emit for Tashkent location for user ${client.userId}`);
-        client.emit('locationUpdateConfirmed', {
-          success: false,
-          message: 'Tashkent default location not broadcasted',
-          location: updatedLocation,
-          timestamp: new Date(),
-        });
-        return;
-      }
-
-      // Emit to all clients
       this.server.emit('locationUpdated', {
         userId: client.userId,
         latitude: updatedLocation.latitude,
@@ -187,17 +169,14 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         user: updatedLocation.user,
       });
 
-      // Emit to admins
       await this.emitLocationToAdmins(updatedLocation);
 
-      // Send confirmation to client
       client.emit('locationUpdateConfirmed', {
         success: true,
         location: updatedLocation,
         timestamp: new Date(),
       });
 
-      // Send nearby users if requested
       try {
         const nearbyUsers = await this.locationService.getNearbyUsers(client.userId, 5);
         client.emit('nearbyUsers', nearbyUsers);
@@ -277,6 +256,10 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       }
 
       const location = await this.locationService.getUserLocation(targetUserId);
+      if (this.isTashkentLocation(location.latitude, location.longitude, location.address)) {
+        throw new Error('User has default Tashkent coordinates');
+      }
+
       client.emit('userLocation', location);
       this.logger.log(`Sent userLocation for user ${targetUserId} to admin ${client.userId}`);
     } catch (error) {
@@ -351,7 +334,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   private async emitLocationToAdmins(location: UserLocationWithUser) {
     try {
-      // Only emit if location has valid coordinates
       if (!this.isValidCoordinate(location.latitude) || !this.isValidCoordinate(location.longitude)) {
         this.logger.warn(`Skipping emit to admins for invalid coordinates: ${location.latitude}, ${location.longitude}`);
         return;
@@ -402,7 +384,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     return typeof coord === 'number' && !isNaN(coord) && isFinite(coord) && coord !== 0;
   }
 
-  // Public methods for external calls
   async forceEmitAllLocations() {
     await this.emitAllLocationsToAdmins();
     await this.emitOnlineUsers();
