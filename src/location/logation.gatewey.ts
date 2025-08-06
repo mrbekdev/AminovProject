@@ -9,7 +9,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { LocationService } from './location.service';
+import { LocationService, UserLocationWithUser } from './location.service';
 import { JwtService } from '@nestjs/jwt';
 import { debounce } from 'lodash';
 
@@ -18,29 +18,9 @@ interface AuthenticatedSocket extends Socket {
   userData?: { sub: number; role: string; name?: string; email?: string; branch?: string };
 }
 
-interface UserLocationWithUser {
-  userId: number;
-  latitude: number;
-  longitude: number;
-  address?: string;
-  isOnline: boolean;
-  lastSeen: Date;
-  updatedAt: Date;
-  user: {
-    id: number;
-    name: string;
-    email: string;
-    role: string;
-    branch?: {
-      id: number;
-      name: string;
-    };
-  };
-}
-
 @WebSocketGateway({
   cors: {
-    origin: "*", // Frontend URLlarini qo'shing
+    origin: '*',
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -60,6 +40,15 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     private jwtService: JwtService,
   ) {}
 
+  // Check if coordinates are Tashkent defaults
+  private isTashkentLocation(latitude: number, longitude: number, address?: string): boolean {
+    return (
+      Math.abs(latitude - 41.3111) < 0.01 &&
+      Math.abs(longitude - 69.2797) < 0.01 ||
+      address === 'Initial connection - Tashkent'
+    );
+  }
+
   async handleConnection(client: AuthenticatedSocket) {
     try {
       const token = client.handshake.auth.token || client.handshake.headers.authorization?.replace('Bearer ', '');
@@ -67,12 +56,18 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         throw new UnauthorizedException('Token not provided');
       }
 
-      const payload = this.jwtService.verify(token);
+      let payload;
+      try {
+        payload = this.jwtService.verify(token);
+      } catch (error) {
+        throw new UnauthorizedException('Invalid token');
+      }
+
       if (typeof payload.sub !== 'number' || !payload.sub || typeof payload.role !== 'string') {
         throw new UnauthorizedException('Invalid token payload');
       }
 
-      client.userId = payload.sub;
+      client.userId = payload.sub as number;
       client.userData = {
         sub: payload.sub,
         role: payload.role,
@@ -81,35 +76,32 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         branch: payload.branch,
       };
 
-      if (client.userId === undefined) {
-        throw new Error('userId is undefined');
-      }
-
       this.connectedUsers.set(client.userId, client.id);
-      this.logger.log(`User ${client.userId} connected: ${client.id}`);
+      this.logger.log(`User ${client.userId} (${payload.role}) connected: ${client.id}`);
 
-      // User default location bilan online qilish
-      await this.locationService.updateUserLocation(client.userId, {
-        userId: client.userId,
-        isOnline: true,
-        latitude: 41.3111,
-        longitude: 69.2797,
-        address: 'Initial connection - Toshkent',
-      });
-
-      // Online userlar ro'yxatini yangilash
+      // Emit updated data
       this.emitOnlineUsersDebounced();
 
-      // Agar admin bo'lsa, barcha online userlarning locationini yuborish
+      // Send admin-specific data if user is admin
       if (client.userData?.role === 'ADMIN') {
         const onlineUsers = await this.locationService.getAllOnlineUsers();
-        client.emit('adminAllLocations', onlineUsers);
-        this.logger.log(`Sent adminAllLocations to admin ${client.userId}:`, onlineUsers.length + ' users');
+        const validUsers = onlineUsers.filter(
+          (user) => !this.isTashkentLocation(user.latitude, user.longitude, user.address),
+        );
+        client.emit('adminAllLocations', validUsers);
+        this.logger.log(`Sent adminAllLocations to admin ${client.userId}: ${validUsers.length} users`);
       }
 
-      // Client o'zining locationini olish
+      // Send user's own location
       const myLocation = await this.locationService.getUserLocation(client.userId);
       client.emit('myLocationUpdated', myLocation);
+
+      // Send success connection event
+      client.emit('connectionSuccess', {
+        userId: client.userId,
+        role: client.userData.role,
+        message: 'Successfully connected to location service',
+      });
 
     } catch (error) {
       this.handleSocketError(client, error, 'Connection error');
@@ -118,51 +110,73 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   async handleDisconnect(client: AuthenticatedSocket) {
     if (typeof client.userId === 'number') {
-      this.connectedUsers.delete(client.userId);
-      await this.locationService.setUserOffline(client.userId);
-      this.logger.log(`User ${client.userId} disconnected: ${client.id}`);
-      
-      // Online userlar ro'yxatini yangilash
-      this.emitOnlineUsersDebounced();
-      // Adminlarga yangi locationlar ro'yxatini yuborish
-      this.emitAllLocationsDebounced();
+      try {
+        this.connectedUsers.delete(client.userId);
+        await this.locationService.setUserOffline(client.userId);
+        this.logger.log(`User ${client.userId} disconnected: ${client.id}`);
+
+        // Emit updates
+        this.emitOnlineUsersDebounced();
+        this.emitAllLocationsDebounced();
+      } catch (error) {
+        this.logger.error(`Error during disconnect for user ${client.userId}:`, error);
+      }
     }
   }
 
   @SubscribeMessage('updateLocation')
   async handleLocationUpdate(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { 
-      userId?: number; 
-      latitude: number; 
-      longitude: number; 
-      address?: string; 
-      isOnline?: boolean 
-    },
+    @MessageBody() data: { userId?: number; latitude: number; longitude: number; address?: string; isOnline?: boolean },
   ) {
     if (typeof client.userId !== 'number') {
       return this.handleSocketError(client, new UnauthorizedException('User not authenticated'), 'Authentication error');
     }
 
-    // Agar userId berilgan bo'lsa, faqat o'z userId bilan update qilishga ruxsat berish
+    // Validate that user can only update their own location
     if (data.userId && client.userId !== data.userId) {
       return this.handleSocketError(client, new UnauthorizedException('Cannot update other user location'), 'Authorization error');
     }
 
     try {
-      if (!this.locationService.validateCoordinates(data.latitude, data.longitude)) {
-        throw new Error('Invalid coordinates');
+      // Validate coordinates
+      if (!this.isValidCoordinate(data.latitude) || !this.isValidCoordinate(data.longitude)) {
+        throw new Error(`Invalid coordinates: lat=${data.latitude}, lng=${data.longitude}`);
       }
+
+      if (!this.locationService.validateCoordinates(data.latitude, data.longitude)) {
+        throw new Error('Coordinates out of valid range');
+      }
+
+      // Log incoming update for debugging
+      this.logger.log(`Received updateLocation for user ${client.userId}:`, {
+        latitude: data.latitude,
+        longitude: data.longitude,
+        address: data.address,
+        timestamp: new Date().toISOString(),
+      });
 
       const updatedLocation = await this.locationService.updateUserLocation(client.userId, {
         userId: client.userId,
         latitude: data.latitude,
         longitude: data.longitude,
-        address: data.address,
+        address: data.address || 'Updated location',
         isOnline: data.isOnline ?? true,
       });
 
-      // Barcha clientlarga yangi location ma'lumotini yuborish
+      // Skip emitting if location is Tashkent
+      if (this.isTashkentLocation(updatedLocation.latitude, updatedLocation.longitude, updatedLocation.address)) {
+        this.logger.warn(`Skipping emit for Tashkent location for user ${client.userId}`);
+        client.emit('locationUpdateConfirmed', {
+          success: false,
+          message: 'Tashkent default location not broadcasted',
+          location: updatedLocation,
+          timestamp: new Date(),
+        });
+        return;
+      }
+
+      // Emit to all clients
       this.server.emit('locationUpdated', {
         userId: client.userId,
         latitude: updatedLocation.latitude,
@@ -173,21 +187,25 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         user: updatedLocation.user,
       });
 
-      // Adminlarga maxsus locationUpdate yuborish
-      this.emitLocationToAdmins(updatedLocation);
+      // Emit to admins
+      await this.emitLocationToAdmins(updatedLocation);
 
-      // Client o'ziga tasdiqlash yuborish
+      // Send confirmation to client
       client.emit('locationUpdateConfirmed', {
         success: true,
         location: updatedLocation,
+        timestamp: new Date(),
       });
 
-      // Yaqin userlarni topish va yuborish
-      const nearbyUsers = await this.locationService.getNearbyUsers(client.userId, 5);
-      client.emit('nearbyUsers', nearbyUsers);
+      // Send nearby users if requested
+      try {
+        const nearbyUsers = await this.locationService.getNearbyUsers(client.userId, 5);
+        client.emit('nearbyUsers', nearbyUsers);
+      } catch (nearbyError) {
+        this.logger.warn(`Failed to get nearby users for ${client.userId}:`, nearbyError);
+      }
 
-      this.logger.log(`Location updated for user ${client.userId}`);
-
+      this.logger.log(`Location updated for user ${client.userId}: ${data.latitude.toFixed(6)}, ${data.longitude.toFixed(6)}`);
     } catch (error) {
       this.handleSocketError(client, error, 'Location update error');
     }
@@ -203,10 +221,10 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
 
     try {
-      const radius = Math.min(Math.max(data.radius || 5, 0), 100);
+      const radius = Math.min(Math.max(data.radius || 5, 0.1), 100);
       const nearbyUsers = await this.locationService.getNearbyUsers(client.userId, radius);
       client.emit('nearbyUsers', nearbyUsers);
-      this.logger.log(`Sent nearbyUsers to user ${client.userId}: ${nearbyUsers.length} users`);
+      this.logger.log(`Sent nearbyUsers to user ${client.userId}: ${nearbyUsers.length} users within ${radius}km`);
     } catch (error) {
       this.handleSocketError(client, error, 'Get nearby users error');
     }
@@ -222,9 +240,18 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
 
     try {
-      const onlineUsers = await this.locationService.getAllOnlineUsers(data.branchId);
-      client.emit('onlineUsers', onlineUsers);
-      this.logger.log(`Sent onlineUsers to user ${client.userId}: ${onlineUsers.length} users`);
+      const branchId = data?.branchId ? parseInt(data.branchId.toString(), 10) : undefined;
+      if (branchId !== undefined && (isNaN(branchId) || branchId < 1)) {
+        throw new Error('Invalid branchId');
+      }
+
+      const onlineUsers = await this.locationService.getAllOnlineUsers(branchId);
+      const validUsers = onlineUsers.filter(
+        (user) => !this.isTashkentLocation(user.latitude, user.longitude, user.address),
+      );
+
+      client.emit('onlineUsers', validUsers);
+      this.logger.log(`Sent onlineUsers to user ${client.userId}: ${validUsers.length}/${onlineUsers.length} valid users${branchId ? ` for branch ${branchId}` : ''}`);
     } catch (error) {
       this.handleSocketError(client, error, 'Get online users error');
     }
@@ -244,9 +271,14 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
 
     try {
-      const location = await this.locationService.getUserLocation(data.targetUserId);
+      const targetUserId = parseInt(data.targetUserId.toString(), 10);
+      if (isNaN(targetUserId) || targetUserId < 1) {
+        throw new Error('Invalid target user ID');
+      }
+
+      const location = await this.locationService.getUserLocation(targetUserId);
       client.emit('userLocation', location);
-      this.logger.log(`Sent userLocation for user ${data.targetUserId} to admin ${client.userId}`);
+      this.logger.log(`Sent userLocation for user ${targetUserId} to admin ${client.userId}`);
     } catch (error) {
       this.handleSocketError(client, error, 'Get user location error');
     }
@@ -264,81 +296,131 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     try {
       const onlineUsers = await this.locationService.getAllOnlineUsers();
-      client.emit('adminAllLocations', onlineUsers);
-      this.logger.log(`Sent adminAllLocations to admin ${client.userId}: ${onlineUsers.length} users`);
+      const validLocations = onlineUsers.filter(
+        (user) => !this.isTashkentLocation(user.latitude, user.longitude, user.address),
+      );
+
+      client.emit('adminAllLocations', validLocations);
+      this.logger.log(`Sent adminAllLocations to admin ${client.userId}: ${validLocations.length}/${onlineUsers.length} valid locations`);
     } catch (error) {
       this.handleSocketError(client, error, 'Get all locations error');
     }
   }
 
-  // Online userlar haqida ma'lumot yuborish
+  @SubscribeMessage('ping')
+  handlePing(@ConnectedSocket() client: AuthenticatedSocket) {
+    client.emit('pong', {
+      timestamp: new Date(),
+      userId: client.userId,
+      connected: true,
+    });
+  }
+
   private async emitOnlineUsers() {
     try {
       const onlineUsers = await this.locationService.getAllOnlineUsers();
-      this.server.emit('onlineUsersUpdated', onlineUsers);
-      this.logger.log(`Emitted onlineUsersUpdated: ${onlineUsers.length} users`);
+      const validUsers = onlineUsers.filter(
+        (user) => !this.isTashkentLocation(user.latitude, user.longitude, user.address),
+      );
+
+      this.server.emit('onlineUsersUpdated', validUsers);
+      this.logger.log(`Emitted onlineUsersUpdated: ${validUsers.length}/${onlineUsers.length} valid users`);
     } catch (error) {
       this.logger.error('Emit online users error:', error);
     }
   }
 
-  // Adminlarga barcha locationlarni yuborish
   private async emitAllLocationsToAdmins() {
     try {
       const onlineUsers = await this.locationService.getAllOnlineUsers();
+      const validLocations = onlineUsers.filter(
+        (user) => !this.isTashkentLocation(user.latitude, user.longitude, user.address),
+      );
+
       const adminSockets = this.getAdminSockets();
-      
+
       adminSockets.forEach((socketId) => {
-        this.server.to(socketId).emit('adminAllLocations', onlineUsers);
+        this.server.to(socketId).emit('adminAllLocations', validLocations);
       });
-      
-      this.logger.log(`Emitted adminAllLocations to ${adminSockets.length} admins: ${onlineUsers.length} users`);
+
+      this.logger.log(`Emitted adminAllLocations to ${adminSockets.length} admins: ${validLocations.length}/${onlineUsers.length} valid locations`);
     } catch (error) {
       this.logger.error('Emit all locations to admins error:', error);
     }
   }
 
-  // Adminlarga bitta user locationini yuborish
   private async emitLocationToAdmins(location: UserLocationWithUser) {
     try {
+      // Only emit if location has valid coordinates
+      if (!this.isValidCoordinate(location.latitude) || !this.isValidCoordinate(location.longitude)) {
+        this.logger.warn(`Skipping emit to admins for invalid coordinates: ${location.latitude}, ${location.longitude}`);
+        return;
+      }
+
+      if (this.isTashkentLocation(location.latitude, location.longitude, location.address)) {
+        this.logger.warn(`Skipping emit to admins for Tashkent location: user ${location.userId}`);
+        return;
+      }
+
       const adminSockets = this.getAdminSockets();
-      
+
       adminSockets.forEach((socketId) => {
         this.server.to(socketId).emit('adminLocationUpdate', location);
       });
-      
+
       this.logger.log(`Sent adminLocationUpdate to ${adminSockets.length} admins for user ${location.userId}`);
     } catch (error) {
       this.logger.error('Emit location to admins error:', error);
     }
   }
 
-  // Admin socketlarini topish
   private getAdminSockets(): string[] {
     return Array.from(this.connectedUsers.entries())
-      .filter(([userId, socketId]) => {
+      .filter(([_, socketId]) => {
         const socket = this.server.sockets.sockets.get(socketId) as AuthenticatedSocket;
         return socket?.userData?.role === 'ADMIN';
       })
       .map(([_, socketId]) => socketId);
   }
 
-  // Xatolikni qaytarish
   private handleSocketError(client: Socket, error: any, context: string) {
-    this.logger.error(`${context}:`, error);
-    client.emit('error', { 
+    this.logger.error(`${context} for client ${client.id}:`, error);
+
+    client.emit('error', {
       message: error.message || 'An error occurred',
-      context: context 
+      context: context,
+      timestamp: new Date(),
     });
-    
+
     if (error instanceof UnauthorizedException) {
+      this.logger.warn(`Disconnecting unauthorized client: ${client.id}`);
       client.disconnect();
     }
   }
 
-  // Manual ravishda barcha online userlarni emit qilish (test uchun)
+  private isValidCoordinate(coord: number): boolean {
+    return typeof coord === 'number' && !isNaN(coord) && isFinite(coord) && coord !== 0;
+  }
+
+  // Public methods for external calls
   async forceEmitAllLocations() {
     await this.emitAllLocationsToAdmins();
     await this.emitOnlineUsers();
+  }
+
+  async broadcastLocationUpdate(location: UserLocationWithUser) {
+    if (this.isValidCoordinate(location.latitude) && this.isValidCoordinate(location.longitude) &&
+        !this.isTashkentLocation(location.latitude, location.longitude, location.address)) {
+      this.server.emit('locationUpdated', location);
+      await this.emitLocationToAdmins(location);
+    }
+  }
+
+  getConnectedUsersCount(): number {
+    return this.connectedUsers.size;
+  }
+
+  getConnectedAdminsCount(): number {
+    return this.getAdminSockets().length;
   }
 }

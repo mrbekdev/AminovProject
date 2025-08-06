@@ -42,18 +42,14 @@ model User {
 }
 
 model UserLocation {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int         @id
+  user      User        @relation(fields: [userId], references: [id])
   latitude  Float
   longitude Float
-  address   String?  @db.VarChar(500)
-  isOnline  Boolean  @default(true)
-  lastSeen  DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId, isOnline])
+  address   String?
+  isOnline  Boolean     @default(false)
+  lastSeen  DateTime
+  updatedAt DateTime    @updatedAt
 }
 
 enum UserRole {
