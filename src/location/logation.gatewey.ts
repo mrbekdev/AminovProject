@@ -42,8 +42,8 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   private isTashkentLocation(latitude: number, longitude: number, address?: string): boolean {
     return (
-      Math.abs(latitude - 41.3111) < 0.01 &&
-      Math.abs(longitude - 69.2797) < 0.01 ||
+      (Math.abs(latitude - 41.3111) < 0.01 && Math.abs(longitude - 69.2797) < 0.01) ||
+      (Math.abs(latitude - 41.2995) < 0.01 && Math.abs(longitude - 69.2401) < 0.01) ||
       address === 'Initial connection - Tashkent'
     );
   }

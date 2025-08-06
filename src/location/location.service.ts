@@ -47,7 +47,10 @@ export class LocationService {
       throw new Error('Invalid coordinates');
     }
 
-    if (Math.abs(data.latitude - 41.3111) < 0.01 && Math.abs(data.longitude - 69.2797) < 0.01) {
+    if (
+      (Math.abs(data.latitude - 41.3111) < 0.01 && Math.abs(data.longitude - 69.2797) < 0.01) ||
+      (Math.abs(data.latitude - 41.2995) < 0.01 && Math.abs(data.longitude - 69.2401) < 0.01)
+    ) {
       this.logger.warn(`Default Tashkent coordinates for user ${userId}, rejecting update`);
       throw new Error('Default Tashkent coordinates are not allowed');
     }
@@ -130,7 +133,10 @@ export class LocationService {
         throw new NotFoundException(`Location for user ${userId} not found`);
       }
 
-      if (Math.abs(location.latitude - 41.3111) < 0.01 && Math.abs(location.longitude - 69.2797) < 0.01) {
+      if (
+        (Math.abs(location.latitude - 41.3111) < 0.01 && Math.abs(location.longitude - 69.2797) < 0.01) ||
+        (Math.abs(location.latitude - 41.2995) < 0.01 && Math.abs(location.longitude - 69.2401) < 0.01)
+      ) {
         this.logger.warn(`User ${userId} has default Tashkent coordinates`);
         throw new NotFoundException(`User ${userId} has default Tashkent coordinates`);
       }
@@ -179,8 +185,16 @@ export class LocationService {
         },
       });
 
-      this.logger.log(`Fetched ${users.length} online users${branchId ? ` for branch ${branchId}` : ''}`);
-      return users as unknown as UserLocationWithUser[];
+      const validUsers = users.filter(
+        (user) => 
+          !(
+            (Math.abs(user.latitude - 41.3111) < 0.01 && Math.abs(user.longitude - 69.2797) < 0.01) ||
+            (Math.abs(user.latitude - 41.2995) < 0.01 && Math.abs(user.longitude - 69.2401) < 0.01)
+          )
+      );
+
+      this.logger.log(`Fetched ${validUsers.length}/${users.length} valid online users${branchId ? ` for branch ${branchId}` : ''}`);
+      return validUsers as unknown as UserLocationWithUser[];
     } catch (error) {
       this.logger.error('Failed to get all online users:', error);
       throw new Error(`Failed to get online users: ${error.message}`);
@@ -216,7 +230,10 @@ export class LocationService {
 
       const nearbyUsers = allLocations
         .map((loc) => {
-          if (Math.abs(loc.latitude - 41.3111) < 0.01 && Math.abs(loc.longitude - 69.2797) < 0.01) {
+          if (
+            (Math.abs(loc.latitude - 41.3111) < 0.01 && Math.abs(loc.longitude - 69.2797) < 0.01) ||
+            (Math.abs(loc.latitude - 41.2995) < 0.01 && Math.abs(loc.longitude - 69.2401) < 0.01)
+          ) {
             return null;
           }
           const distance = this.calculateDistance(
