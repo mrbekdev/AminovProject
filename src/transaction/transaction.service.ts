@@ -134,12 +134,19 @@ export class TransactionService {
     });
   }
 
+  // Updated findAll method with sorting parameters
   async findAll(
     skip: number,
     take: number,
     filters?: { customerId?: number; userId?: number; type?: TransactionType; createdAt?: any },
+    sortBy: string = 'createdAt',
+    sortOrder: 'asc' | 'desc' = 'desc',
   ) {
     try {
+      // Build orderBy object dynamically
+      const orderBy: any = {};
+      orderBy[sortBy] = sortOrder;
+
       return await this.prisma.transaction.findMany({
         skip,
         take,
@@ -155,7 +162,7 @@ export class TransactionService {
           items: { include: { product: true } },
           stockHistory: { include: { product: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy,
       });
     } catch (error) {
       throw new HttpException(

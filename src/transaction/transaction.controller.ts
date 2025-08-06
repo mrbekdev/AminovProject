@@ -12,8 +12,48 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class TransactionController {
   constructor(private readonly transactionService: TransactionService) {}
 
-  @Get('/api/transactions')
-  @ApiOperation({ summary: 'Get transactions with filters and pagination' })
+  // Yangi endpoint - oddiy ro'yxat olish uchun (query parametrlarsiz)
+  @Get('list/:skip/:take')
+  @ApiOperation({ summary: 'Get transactions list with simple pagination (no filters)' })
+  @ApiParam({ name: 'skip', type: Number, description: 'Number of records to skip', example: 0 })
+  @ApiParam({ name: 'take', type: Number, description: 'Number of records to take', example: 20 })
+  @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getTransactionsList(
+    @Param('skip') skip: string,
+    @Param('take') take: string,
+    @Request() req,
+  ) {
+    try {
+      const skipNum = parseInt(skip, 10);
+      const takeNum = parseInt(take, 10);
+
+      if (isNaN(skipNum) || isNaN(takeNum) || skipNum < 0 || takeNum <= 0) {
+        throw new HttpException('Invalid skip or take parameters', HttpStatus.BAD_REQUEST);
+      }
+
+      const authUserId = req.user?.userId;
+      if (!authUserId) {
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
+      }
+
+      // Faqat foydalanuvchining o'z ma'lumotlarini qaytarish
+      const filters = { userId: authUserId };
+      const transactions = await this.transactionService.findAll(skipNum, takeNum, filters);
+      const total = await this.transactionService.countTransactions(filters);
+
+      return { transactions, total };
+    } catch (error) {
+      console.error('Error in getTransactionsList:', error.message);
+      throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  // Mavjud endpoint - filter bilan (optional query parameters)
+  @Get('search')
+  @ApiOperation({ summary: 'Get transactions with optional filters and pagination' })
   @ApiQuery({ name: 'userId', type: Number, required: false, description: 'Filter by user ID' })
   @ApiQuery({ name: 'customerId', type: Number, required: false, description: 'Filter by customer ID' })
   @ApiQuery({ name: 'type', enum: TransactionType, required: false, description: 'Filter by transaction type' })
@@ -26,17 +66,17 @@ export class TransactionController {
   @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async findTransactions(
-    @Query('userId') userId: string,
-    @Query('customerId') customerId: string,
-    @Query('type') type: TransactionType,
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
+  async searchTransactions(
+    @Query('userId') userId?: string,
+    @Query('customerId') customerId?: string,
+    @Query('type') type?: TransactionType,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
     @Query('sortBy') sortBy: string = 'createdAt',
     @Query('sortOrder') sortOrder: 'asc' | 'desc' = 'desc',
     @Query('skip') skip: string = '0',
     @Query('take') take: string = '20',
-    @Request() req,
+    @Request() req?: any, // Request object to access JWT token
   ) {
     try {
       const userIdNum = userId ? parseInt(userId, 10) : undefined;
@@ -44,11 +84,13 @@ export class TransactionController {
       const skipNum = parseInt(skip, 10);
       const takeNum = parseInt(take, 10);
 
-      if ((userId && userIdNum) || (customerId && customerIdNum) || isNaN(skipNum) || isNaN(takeNum) || skipNum < 0 || takeNum <= 0) {
+      // Validation fix: check for parsing errors properly
+      if ((userId && userIdNum) || (customerId && customerIdNum) || 
+          isNaN(skipNum) || isNaN(takeNum) || skipNum < 0 || takeNum <= 0) {
         throw new HttpException('Invalid query parameters', HttpStatus.BAD_REQUEST);
       }
 
-      const authUserId = req.user?.userId; // Changed from req.user.id to req.user.userId to match JwtStrategy
+      const authUserId = req.user?.userId;
       if (!authUserId) {
         console.error('JWT token validation failed: User ID not found in token payload');
         throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
@@ -72,12 +114,46 @@ export class TransactionController {
         if (endDate) filters.createdAt.lte = new Date(endDate);
       }
 
-      const transactions = await this.transactionService.findAll(skipNum, takeNum, filters);
+      const transactions = await this.transactionService.findAll(skipNum, takeNum, filters, sortBy, sortOrder);
       const total = await this.transactionService.countTransactions(filters);
 
       return { transactions, total };
     } catch (error) {
-      console.error('Error in findTransactions:', error.message);
+      console.error('Error in searchTransactions:', error.message);
+      throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  // Bitta transaction olish uchun
+  @Get(':id')
+  @ApiOperation({ summary: 'Get transaction by ID' })
+  @ApiParam({ name: 'id', type: Number, description: 'Transaction ID' })
+  @ApiResponse({ status: 200, description: 'Transaction retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Transaction not found' })
+  async getTransactionById(@Param('id') id: string, @Request() req) {
+    try {
+      const idNum = parseInt(id, 10);
+      if (isNaN(idNum)) {
+        throw new HttpException('Invalid transaction ID', HttpStatus.BAD_REQUEST);
+      }
+
+      const authUserId = req.user?.userId;
+      if (!authUserId) {
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
+      }
+
+      const transaction = await this.transactionService.findOne(idNum);
+      
+      // Check if user has permission to view this transaction
+      if (transaction.userId !== authUserId) {
+        console.warn(`User ${authUserId} attempted to access transaction ${idNum}`);
+        throw new HttpException('Forbidden: Cannot access other users\' transaction', HttpStatus.FORBIDDEN);
+      }
+
+      return transaction;
+    } catch (error) {
+      console.error('Error in getTransactionById:', error.message);
       throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
     }
   }
@@ -100,7 +176,7 @@ export class TransactionController {
       if (isNaN(skipNum) || isNaN(takeNum) || skipNum < 0 || takeNum <= 0) {
         throw new HttpException('Invalid skip or take parameters', HttpStatus.BAD_REQUEST);
       }
-      const authUserId = req.user?.userId; // Changed to userId
+      const authUserId = req.user?.userId;
       if (!authUserId) {
         console.error('JWT token validation failed: User ID not found in token payload');
         throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
