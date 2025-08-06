@@ -12,32 +12,36 @@ export class AuthService {
         private prisma: PrismaService,
     ) { }
 
-    async login(email: string, password: string) {
-        console.log(email)
-        console.log(password)
-        const user = await this.prisma.user.findUnique({ where: { email: email } });
-        if (!user) {
-            throw new UnauthorizedException('Invalid credentials');
-        }
-        console.log(user);
-    
-        const isPasswordValid = await bcrypt.compare(password, user.password); // Compare plain password with stored hash
-        if (!isPasswordValid) {
-            throw new UnauthorizedException('Invalid credentials');
-        }
-    
-        const payload = { email: user.email, sub: user.id, role: user.role };
-        const token = this.jwtService.sign(payload);
-    
-        return {
-            message: 'Login successful',
-            access_token: token,
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-            },
-        };
+  async validateUserById(userId: number) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+      return user;
+    } catch (error) {
+      console.error('Error validating user by ID:', error.message);
+      return null;
     }
+  }
+
+  async login(username: string, password: string) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { email: username }, // Use email for login
+      });
+      if (!user) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      const payload = { id: user.id, username: user.email };
+      const access_token = this.jwtService.sign(payload);
+      return { access_token, userId: user.id }; // Return userId for localStorage
+    } catch (error) {
+      console.error('Error in login:', error.message);
+      throw new UnauthorizedException(error.message);
+    }
+}
 } 

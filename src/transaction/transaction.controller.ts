@@ -31,12 +31,14 @@ export class TransactionController {
       }
       const authUserId = req.user?.id;
       if (!authUserId) {
-        throw new HttpException('Unauthorized: User ID not found', HttpStatus.UNAUTHORIZED);
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
       }
       const stockHistory = await this.transactionService.findStockHistory(skipNum, takeNum, { userId: authUserId });
       const total = await this.transactionService.countStockHistory({ userId: authUserId });
       return { stockHistory, total };
     } catch (error) {
+      console.error('Error in findAllStockHistory:', error.message);
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
@@ -63,12 +65,19 @@ export class TransactionController {
       }
       const authUserId = req.user?.id;
       if (!authUserId) {
-        throw new HttpException('Unauthorized: User ID not found', HttpStatus.UNAUTHORIZED);
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
+      }
+      // Optionally, restrict access to only the authenticated user's data
+      if (userIdNum !== authUserId) {
+        console.warn(`User ${authUserId} attempted to access stock history for user ${userIdNum}`);
+        throw new HttpException('Forbidden: Cannot access other users\' data', HttpStatus.FORBIDDEN);
       }
       const stockHistory = await this.transactionService.findStockHistory(skipNum, takeNum, { userId: userIdNum });
       const total = await this.transactionService.countStockHistory({ userId: userIdNum });
       return { stockHistory, total };
     } catch (error) {
+      console.error('Error in findStockHistoryByUser:', error.message);
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
@@ -95,7 +104,8 @@ export class TransactionController {
       }
       const authUserId = req.user?.id;
       if (!authUserId) {
-        throw new HttpException('Unauthorized: User ID not found', HttpStatus.UNAUTHORIZED);
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
       }
       const stockHistory = await this.transactionService.findStockHistory(skipNum, takeNum, {
         productId: productIdNum,
@@ -104,6 +114,7 @@ export class TransactionController {
       const total = await this.transactionService.countStockHistory({ productId: productIdNum, userId: authUserId });
       return { stockHistory, total };
     } catch (error) {
+      console.error('Error in findStockHistoryByProduct:', error.message);
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
@@ -130,7 +141,8 @@ export class TransactionController {
       }
       const authUserId = req.user?.id;
       if (!authUserId) {
-        throw new HttpException('Unauthorized: User ID not found', HttpStatus.UNAUTHORIZED);
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
       }
       const stockHistory = await this.transactionService.findStockHistory(skipNum, takeNum, {
         branchId: branchIdNum,
@@ -139,6 +151,7 @@ export class TransactionController {
       const total = await this.transactionService.countStockHistory({ branchId: branchIdNum, userId: authUserId });
       return { stockHistory, total };
     } catch (error) {
+      console.error('Error in findStockHistoryByBranch:', error.message);
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
@@ -167,7 +180,8 @@ export class TransactionController {
       }
       const authUserId = req.user?.id;
       if (!authUserId) {
-        throw new HttpException('Unauthorized: User ID not found', HttpStatus.UNAUTHORIZED);
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
       }
       const stockHistory = await this.transactionService.findStockHistory(skipNum, takeNum, {
         type,
@@ -176,6 +190,7 @@ export class TransactionController {
       const total = await this.transactionService.countStockHistory({ type, userId: authUserId });
       return { stockHistory, total };
     } catch (error) {
+      console.error('Error in findStockHistoryByType:', error.message);
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
@@ -185,15 +200,26 @@ export class TransactionController {
   @ApiParam({ name: 'id', type: Number, description: 'Stock history ID' })
   @ApiResponse({ status: 200, description: 'Stock history retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Stock history not found' })
-  async findStockHistoryById(@Param('id') id: string) {
+  async findStockHistoryById(@Param('id') id: string, @Request() req) {
     try {
       const idNum = parseInt(id, 10);
       if (isNaN(idNum)) {
         throw new HttpException('Invalid stock history ID', HttpStatus.BAD_REQUEST);
       }
-      return await this.transactionService.findStockHistoryById(idNum);
+      const authUserId = req.user?.id;
+      if (!authUserId) {
+        console.error('JWT token validation failed: User ID not found in token payload');
+        throw new HttpException('Unauthorized: User ID not found in token', HttpStatus.UNAUTHORIZED);
+      }
+      const stockHistory = await this.transactionService.findStockHistoryById(idNum);
+      if (stockHistory.createdById !== authUserId) {
+        console.warn(`User ${authUserId} attempted to access stock history ${idNum}`);
+        throw new HttpException('Forbidden: Cannot access other users\' stock history', HttpStatus.FORBIDDEN);
+      }
+      return stockHistory;
     } catch (error) {
+      console.error('Error in findStockHistoryById:', error.message);
       throw new HttpException(error.message, error.status || HttpStatus.BAD_REQUEST);
     }
   }
-}
+} 
