@@ -1,3 +1,4 @@
+// transaction.service.ts
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -7,6 +8,7 @@ import { TransactionStatus, TransactionType, StockHistoryType, PaymentType, Prod
 @Injectable()
 export class TransactionService {
   constructor(private prisma: PrismaService) {}
+
   async create(createTransactionDto: CreateTransactionDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId } });
@@ -132,6 +134,57 @@ export class TransactionService {
     });
   }
 
+  async findAll(
+    skip: number,
+    take: number,
+    filters?: { customerId?: number; userId?: number; type?: TransactionType; createdAt?: any },
+  ) {
+    try {
+      return await this.prisma.transaction.findMany({
+        skip,
+        take,
+        where: {
+          customerId: filters?.customerId,
+          userId: filters?.userId,
+          type: filters?.type,
+          createdAt: filters?.createdAt,
+        },
+        include: {
+          customer: true,
+          user: true,
+          items: { include: { product: true } },
+          stockHistory: { include: { product: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      throw new HttpException(
+        `Failed to retrieve transactions: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async countTransactions(
+    filters?: { customerId?: number; userId?: number; type?: TransactionType; createdAt?: any },
+  ) {
+    try {
+      return await this.prisma.transaction.count({
+        where: {
+          customerId: filters?.customerId,
+          userId: filters?.userId,
+          type: filters?.type,
+          createdAt: filters?.createdAt,
+        },
+      });
+    } catch (error) {
+      throw new HttpException(
+        `Failed to count transactions: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   async findOne(id: number) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },
@@ -145,38 +198,6 @@ export class TransactionService {
     if (!transaction) throw new HttpException('Transaction not found', HttpStatus.NOT_FOUND);
     return transaction;
   }
-
-// transaction.service.ts
-async findAll(
-  skip: number,
-  take: number,
-  filters?: { customerId?: number; userId?: number; type?: TransactionType; createdAt?: any },
-) {
-  try {
-    return await this.prisma.transaction.findMany({
-      skip,
-      take,
-      where: {
-        customerId: filters?.customerId,
-        userId: filters?.userId,
-        type: filters?.type,
-        createdAt: filters?.createdAt,
-      },
-      include: {
-        customer: true,
-        user: true,
-        items: { include: { product: true } },
-        stockHistory: { include: { product: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  } catch (error) {
-    throw new HttpException(
-      `Failed to retrieve transactions: ${error.message}`,
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
-  }
-}
 
   async update(id: number, updateTransactionDto: UpdateTransactionDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
@@ -414,7 +435,7 @@ async findAll(
 
         await tx.productStockHistory.create({
           data: {
-            productId: item.productId, // Fixed typo: was 'gminitem.productId'
+            productId: item.productId,
             transactionId: null,
             branchId: product.branchId,
             quantity: quantityChange,
