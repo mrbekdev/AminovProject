@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto, UpdateTransactionDto, CreateTransactionItemDto } from './dto/create-transaction.dto';
-import { Prisma, Transaction } from '@prisma/client';
+import { Transaction } from '@prisma/client';
 
 @Injectable()
 export class TransactionService {
@@ -17,10 +17,34 @@ export class TransactionService {
         throw new BadRequestException('Invalid user ID');
       }
 
+      // Handle customer (create if provided in payload)
+      let customerId = createTransactionDto.customerId;
+      if (createTransactionDto.customer && !customerId) {
+        const { firstName, lastName, phone } = createTransactionDto.customer;
+        if (!firstName || !lastName || !phone) {
+          throw new BadRequestException('Customer details (firstName, lastName, phone) are required');
+        }
+        // Check if customer exists by phone
+        let customer = await prisma.customer.findFirst({
+          where: { phone },
+        });
+        if (!customer) {
+          // Create new customer
+          customer = await prisma.customer.create({
+            data: {
+              firstName,
+              lastName,
+              phone,
+            },
+          });
+        }
+        customerId = customer.id;
+      }
+
       // Validate customer if provided
-      if (createTransactionDto.customerId) {
+      if (customerId) {
         const customer = await prisma.customer.findUnique({
-          where: { id: createTransactionDto.customerId },
+          where: { id: customerId },
         });
         if (!customer) {
           throw new BadRequestException('Invalid customer ID');
@@ -43,7 +67,7 @@ export class TransactionService {
       // Create transaction
       const transaction = await prisma.transaction.create({
         data: {
-          customerId: createTransactionDto.customerId,
+          customerId,
           userId: createTransactionDto.userId,
           type: createTransactionDto.type,
           status: createTransactionDto.status || 'PENDING',
@@ -97,9 +121,38 @@ export class TransactionService {
             data: {
               productId: item.productId,
               transactionId: transaction.id,
-              branchId: product.branchId, // Safe access after null check
+              branchId: product.branchId,
               quantity: item.quantity,
               type: 'OUTFLOW',
+              createdById: createTransactionDto.userId,
+            },
+          });
+        }
+      } else if (createTransactionDto.type === 'STOCK_ADJUSTMENT') {
+        for (const item of createTransactionDto.items) {
+          const product = await prisma.product.findUnique({
+            where: { id: item.productId },
+          });
+
+          if (!product) {
+            throw new BadRequestException(`Product not found: ${item.productId}`);
+          }
+
+          await prisma.product.update({
+            where: { id: item.productId },
+            data: {
+              quantity: { increment: item.quantity },
+              branchId: Number(createTransactionDto.branchId) || product.branchId,
+            },
+          });
+
+          await prisma.productStockHistory.create({
+            data: {
+              productId: item.productId,
+              transactionId: transaction.id,
+              branchId: Number(createTransactionDto.branchId) || product.branchId,
+              quantity: item.quantity,
+              type: 'INFLOW',
               createdById: createTransactionDto.userId,
             },
           });

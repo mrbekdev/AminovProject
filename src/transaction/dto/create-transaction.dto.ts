@@ -1,61 +1,12 @@
-import { IsEnum, IsNumber, IsOptional, IsString, IsInt, IsArray, IsDateString } from 'class-validator';
-import { TransactionType, TransactionStatus, PaymentType } from '@prisma/client';
-
-export class CreateTransactionDto {
-  @IsInt()
-  @IsOptional()
-  customerId?: number;
-
-  @IsInt()
-  userId: number;
-
-  @IsEnum(TransactionType)
-  type: TransactionType;
-
-  @IsEnum(TransactionStatus)
-  @IsOptional()
-  status?: TransactionStatus;
-
-  @IsArray()
-  items: CreateTransactionItemDto[];
-
-  @IsNumber()
-  @IsOptional()
-  discount?: number;
-
-  @IsNumber()
-  total: number;
-
-  @IsNumber()
-  @IsOptional()
-  finalTotal?: number;
-
-  @IsEnum(PaymentType)
-  @IsOptional()
-  paymentType?: PaymentType;
-
-  @IsString()
-  @IsOptional()
-  deliveryMethod?: string;
-
-  @IsNumber()
-  @IsOptional()
-  amountPaid?: number;
-
-  @IsNumber()
-  @IsOptional()
-  remainingBalance?: number;
-
-  @IsString()
-  @IsOptional()
-  receiptId?: string;
-}
+import { IsNumber, IsString, IsOptional, IsArray, ValidateNested, IsEnum } from 'class-validator';
+import { Type } from 'class-transformer';
+import { PaymentType, TransactionStatus, TransactionType } from '@prisma/client';
 
 export class CreateTransactionItemDto {
-  @IsInt()
+  @IsNumber()
   productId: number;
 
-  @IsInt()
+  @IsNumber()
   quantity: number;
 
   @IsNumber()
@@ -64,53 +15,125 @@ export class CreateTransactionItemDto {
   @IsNumber()
   total: number;
 
-  @IsInt()
   @IsOptional()
+  @IsNumber()
   creditMonth?: number;
 
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
   creditPercent?: number;
 
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
   monthlyPayment?: number;
 }
 
-export class UpdateTransactionDto {
-  @IsInt()
+export class CustomerDto {
+  @IsString()
+  firstName: string;
+
+  @IsString()
+  lastName: string;
+
+  @IsString()
+  phone: string;
+}
+
+export class CreateTransactionDto {
+  @IsNumber()
+  userId: number;
+
   @IsOptional()
+  @IsNumber()
   customerId?: number;
 
-  @IsEnum(TransactionStatus)
   @IsOptional()
+  @ValidateNested()
+  @Type(() => CustomerDto)
+  customer?: CustomerDto;
+
+  @IsString()
+  @IsEnum(TransactionType)
+  type: TransactionType;
+
+  @IsOptional()
+@IsEnum(TransactionStatus)
   status?: TransactionStatus;
 
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
   discount?: number;
 
   @IsNumber()
-  @IsOptional()
-  finalTotal?: number;
+  total: number;
 
-  @IsEnum(PaymentType)
+  @IsNumber()
+  finalTotal: number;
+
   @IsOptional()
+  @IsEnum(PaymentType)
   paymentType?: PaymentType;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   deliveryMethod?: string;
 
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
   amountPaid?: number;
 
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
   remainingBalance?: number;
 
-  @IsString()
   @IsOptional()
+  @IsString()
+  receiptId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  branchId?: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateTransactionItemDto)
+  items: CreateTransactionItemDto[];
+}
+
+export class UpdateTransactionDto {
+  @IsOptional()
+  @IsNumber()
+  customerId?: number;
+
+  @IsOptional()
+  @IsEnum(TransactionStatus)
+  status?: TransactionStatus;
+
+  @IsOptional()
+  @IsNumber()
+  discount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  finalTotal?: number;
+
+  @IsOptional()
+  @IsEnum(PaymentType)
+  paymentType?: PaymentType;
+
+  @IsOptional()
+  @IsString()
+  deliveryMethod?: string;
+
+  @IsOptional()
+  @IsNumber()
+  amountPaid?: number;
+
+  @IsOptional()
+  @IsNumber()
+  remainingBalance?: number;
+
+  @IsOptional()
+  @IsString()
   receiptId?: string;
 }
