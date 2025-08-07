@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseIntPipe, Query, Put } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
 import { CreateTransactionDto, UpdateTransactionDto } from './dto/create-transaction.dto';
 import { Transaction } from '@prisma/client';
@@ -13,8 +13,8 @@ export class TransactionController {
   }
 
   @Get()
-  findAll(): Promise<Transaction[]> {
-    return this.transactionService.findAll();
+  findAll(@Query('branchId', ParseIntPipe) branchId?: number): Promise<Transaction[]> {
+    return this.transactionService.findAll(branchId);
   }
 
   @Get(':id')
@@ -22,7 +22,7 @@ export class TransactionController {
     return this.transactionService.findOne(id);
   }
 
-  @Patch(':id')
+  @Put(':id')
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateTransactionDto: UpdateTransactionDto,

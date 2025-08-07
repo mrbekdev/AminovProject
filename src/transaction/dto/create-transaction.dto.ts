@@ -57,7 +57,7 @@ export class CreateTransactionDto {
   type: TransactionType;
 
   @IsOptional()
-@IsEnum(TransactionStatus)
+  @IsEnum(TransactionStatus)
   status?: TransactionStatus;
 
   @IsOptional()

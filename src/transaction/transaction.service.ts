@@ -17,6 +17,16 @@ export class TransactionService {
         throw new BadRequestException('Invalid user ID');
       }
 
+      // Validate branch if provided
+      if (createTransactionDto.branchId) {
+        const branch = await prisma.branch.findUnique({
+          where: { id: createTransactionDto.branchId },
+        });
+        if (!branch) {
+          throw new BadRequestException('Invalid branch ID');
+        }
+      }
+
       // Handle customer (create if provided in payload)
       let customerId = createTransactionDto.customerId;
       if (createTransactionDto.customer && !customerId) {
@@ -51,7 +61,7 @@ export class TransactionService {
         }
       }
 
-      // Validate products and update stock
+      // Validate products and check stock
       for (const item of createTransactionDto.items) {
         const product = await prisma.product.findUnique({
           where: { id: item.productId },
@@ -59,7 +69,7 @@ export class TransactionService {
         if (!product) {
           throw new BadRequestException(`Invalid product ID: ${item.productId}`);
         }
-        if (createTransactionDto.type === 'SALE' && product.quantity < item.quantity) {
+        if ((createTransactionDto.type === 'SALE' || createTransactionDto.type === 'STOCK_ADJUSTMENT') && product.quantity < item.quantity) {
           throw new BadRequestException(`Insufficient stock for product: ${product.name}`);
         }
       }
@@ -69,9 +79,10 @@ export class TransactionService {
         data: {
           customerId,
           userId: createTransactionDto.userId,
+          branchId: createTransactionDto.branchId,
           type: createTransactionDto.type,
           status: createTransactionDto.status || 'PENDING',
-          discount: createTransactionDto.discount,
+          discount: createTransactionDto.discount || 0,
           total: createTransactionDto.total,
           finalTotal: createTransactionDto.finalTotal,
           paymentType: createTransactionDto.paymentType,
@@ -92,28 +103,33 @@ export class TransactionService {
           },
         },
         include: {
-          items: true,
+          items: {
+            include: {
+              product: true,
+            },
+          },
           user: true,
           customer: true,
+          branch: true,
         },
       });
 
       // Update product quantities and create stock history
-      if (createTransactionDto.type === 'SALE') {
-        for (const item of createTransactionDto.items) {
-          const product = await prisma.product.findUnique({
-            where: { id: item.productId },
-          });
+      for (const item of createTransactionDto.items) {
+        const product = await prisma.product.findUnique({
+          where: { id: item.productId },
+        });
 
-          // Check if product exists (should always be true due to earlier validation)
-          if (!product) {
-            throw new BadRequestException(`Product not found: ${item.productId}`);
-          }
+        if (!product) {
+          throw new BadRequestException(`Product not found: ${item.productId}`);
+        }
 
+        if (createTransactionDto.type === 'SALE' || createTransactionDto.type === 'STOCK_ADJUSTMENT') {
           await prisma.product.update({
             where: { id: item.productId },
             data: {
               quantity: { decrement: item.quantity },
+              branchId: createTransactionDto.branchId || product.branchId,
             },
           });
 
@@ -121,38 +137,9 @@ export class TransactionService {
             data: {
               productId: item.productId,
               transactionId: transaction.id,
-              branchId: product.branchId,
+              branchId: createTransactionDto.branchId || product.branchId,
               quantity: item.quantity,
               type: 'OUTFLOW',
-              createdById: createTransactionDto.userId,
-            },
-          });
-        }
-      } else if (createTransactionDto.type === 'STOCK_ADJUSTMENT') {
-        for (const item of createTransactionDto.items) {
-          const product = await prisma.product.findUnique({
-            where: { id: item.productId },
-          });
-
-          if (!product) {
-            throw new BadRequestException(`Product not found: ${item.productId}`);
-          }
-
-          await prisma.product.update({
-            where: { id: item.productId },
-            data: {
-              quantity: { increment: item.quantity },
-              branchId: Number(createTransactionDto.branchId) || product.branchId,
-            },
-          });
-
-          await prisma.productStockHistory.create({
-            data: {
-              productId: item.productId,
-              transactionId: transaction.id,
-              branchId: Number(createTransactionDto.branchId) || product.branchId,
-              quantity: item.quantity,
-              type: 'INFLOW',
               createdById: createTransactionDto.userId,
             },
           });
@@ -163,16 +150,22 @@ export class TransactionService {
     });
   }
 
-  async findAll(): Promise<Transaction[]> {
+  async findAll(branchId?: number): Promise<Transaction[]> {
     return this.prisma.transaction.findMany({
+      where: branchId ? { branchId } : {},
       include: {
         customer: true,
         user: true,
         items: {
           include: {
-            product: true,
+            product: {
+              include: {
+                branch: true,
+              },
+            },
           },
         },
+        branch: true,
       },
     });
   }
@@ -185,9 +178,14 @@ export class TransactionService {
         user: true,
         items: {
           include: {
-            product: true,
+            product: {
+              include: {
+                branch: true,
+              },
+            },
           },
         },
+        branch: true,
       },
     });
 
@@ -228,6 +226,7 @@ export class TransactionService {
             product: true,
           },
         },
+        branch: true,
       },
     });
   }

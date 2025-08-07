@@ -18,6 +18,7 @@ model Branch {
   stockHistory ProductStockHistory[] @relation("BranchToStockHistory")
   transfersOut ProductTransfer[]     @relation("BranchToTransfersOut")
   transfersIn  ProductTransfer[]     @relation("BranchToTransfersIn")
+  transactions Transaction[]         @relation("BranchToTransactions")
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
@@ -92,7 +93,7 @@ model Product {
   initialQuantity Int                   @default(0)
   quantity        Int                   @default(0)
   stockHistory    ProductStockHistory[] @relation("ProductToStockHistory")
-  transactions    TransactionItem[]     @relation("ProductToTransactions")
+  transactionItems TransactionItem[]     @relation("ProductToTransactionItems")
   transfers       ProductTransfer[]     @relation("ProductToTransfers")
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
@@ -124,22 +125,29 @@ model Customer {
   @@index([phone, email])
 }
 
-model TransactionItem {
-  id             Int         @id @default(autoincrement())
-  transactionId  Int
-  transaction    Transaction @relation("TransactionToItems", fields: [transactionId], references: [id], onDelete: Cascade)
-  productId      Int
-  product        Product     @relation("ProductToTransactions", fields: [productId], references: [id], onDelete: Restrict)
-  quantity       Int
-  price          Float
-  total          Float
-  creditMonth    Int?
-  creditPercent  Float?
-  monthlyPayment Float?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-
-  @@index([transactionId, productId])
+model Transaction {
+  id               Int                   @id @default(autoincrement())
+  userId           Int
+  customerId       Int?
+  branchId         Int?
+  type             TransactionType
+  status           TransactionStatus     @default(PENDING)
+  discount         Float?                @default(0)
+  total            Float
+  finalTotal       Float
+  paymentType      PaymentType?
+  deliveryMethod   String?
+  amountPaid       Float?
+  remainingBalance Float?
+  receiptId        String?               @unique
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  user             User                  @relation("UserToTransactions", fields: [userId], references: [id], onDelete: Restrict)
+  customer         Customer?             @relation("CustomerToTransactions", fields: [customerId], references: [id], onDelete: SetNull)
+  branch           Branch?               @relation("BranchToTransactions", fields: [branchId], references: [id], onDelete: SetNull)
+  receipt          Receipt?              @relation("TransactionToReceipt", fields: [receiptId], references: [id], onDelete: Cascade)
+  items            TransactionItem[]     @relation("TransactionToItems")
+  stockHistory     ProductStockHistory[] @relation("TransactionToStockHistory")
 }
 
 enum TransactionType {
@@ -160,6 +168,24 @@ enum PaymentType {
   CASH
   CARD
   CREDIT
+}
+
+model TransactionItem {
+  id            Int         @id @default(autoincrement())
+  transactionId Int
+  productId     Int
+  quantity      Int
+  price         Float
+  total         Float
+  creditMonth   Int?
+  creditPercent Float?
+  monthlyPayment Float?
+  transaction   Transaction @relation("TransactionToItems", fields: [transactionId], references: [id], onDelete: Cascade)
+  product       Product     @relation("ProductToTransactionItems", fields: [productId], references: [id], onDelete: Restrict)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([transactionId, productId])
 }
 
 model ProductStockHistory {
@@ -216,30 +242,6 @@ enum TransferStatus {
   REJECTED
   COMPLETED
 }
-model Transaction {
-  id               Int                   @id @default(autoincrement())
-  customerId       Int?
-  customer         Customer?             @relation("CustomerToTransactions", fields: [customerId], references: [id], onDelete: SetNull)
-  userId           Int
-  user             User                  @relation("UserToTransactions", fields: [userId], references: [id], onDelete: Restrict)
-  type             TransactionType
-  status           TransactionStatus     @default(PENDING)
-  items            TransactionItem[]     @relation("TransactionToItems")
-  discount         Float?                @default(0)
-  total            Float
-  finalTotal       Float?
-  paymentType      PaymentType?
-  deliveryMethod   String?
-  amountPaid       Float?
-  remainingBalance Float?
-  receiptId        String?               @unique
-  receipt          Receipt?              @relation("TransactionToReceipt", fields: [receiptId], references: [id], onDelete: Cascade)
-  stockHistory     ProductStockHistory[] @relation("TransactionToStockHistory")
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-
-  @@index([customerId, userId, type, receiptId])
-}
 
 model Receipt {
   id               String       @id
@@ -262,4 +264,3 @@ model Receipt {
 
   @@index([customerId, date])
 }
-
