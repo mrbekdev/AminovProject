@@ -1,73 +1,113 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateProductTransferDto, UpdateProductTransferDto } from './dto/create-product-transfer.dto';
+import { CreateProductTransferDto } from './dto/create-product-transfer.dto';
+import { UpdateProductTransferDto } from './dto/update-product-transfer.dto';
+import { ProductTransfer } from '@prisma/client';
 
 @Injectable()
 export class ProductTransferService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createProductTransferDto: CreateProductTransferDto) {
-    const { productId, fromBranchId, toBranchId, quantity, initiatedById } = createProductTransferDto;
-
-    // Verify product and branches exist
-    const product = await this.prisma.product.findUnique({ where: { id: productId } });
-    const fromBranch = await this.prisma.branch.findUnique({ where: { id: fromBranchId } });
-    const toBranch = await this.prisma.branch.findUnique({ where: { id: toBranchId } });
-    const user = await this.prisma.user.findUnique({ where: { id: initiatedById } });
-
-    if (!product || !fromBranch || !toBranch || !user) {
-      throw new NotFoundException('Product, branch, or user not found');
-    }
-
-    // Check if sufficient quantity exists
-    if (product.quantity < quantity) {
-      throw new BadRequestException('Insufficient product quantity in source branch');
-    }
-
-    // Create transfer and update stock
+  async create(createProductTransferDto: CreateProductTransferDto): Promise<ProductTransfer> {
     return this.prisma.$transaction(async (prisma) => {
-      const transfer = await prisma.productTransfer.create({
+      const { productId, fromBranchId, toBranchId, quantity, initiatedById } = createProductTransferDto;
+
+      const product = await prisma.product.findUnique({
+        where: { id: productId },
+      });
+      if (!product) {
+        throw new BadRequestException(`Product with ID ${productId} not found`);
+      }
+
+      const fromBranch = await prisma.branch.findUnique({
+        where: { id: fromBranchId },
+      });
+      if (!fromBranch) {
+        throw new BadRequestException(`From branch with ID ${fromBranchId} not found`);
+      }
+
+      const toBranch = await prisma.branch.findUnique({
+        where: { id: toBranchId },
+      });
+      if (!toBranch) {
+        throw new BadRequestException(`To branch with ID ${toBranchId} not found`);
+      }
+
+      if (product.quantity < quantity) {
+        throw new BadRequestException(`Insufficient stock for product ${product.name}`);
+      }
+
+      if (fromBranchId === toBranchId) {
+        throw new BadRequestException('Cannot transfer to the same branch');
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: initiatedById },
+      });
+      if (!user) {
+        throw new BadRequestException(`User with ID ${initiatedById} not found`);
+      }
+
+      await prisma.product.update({
+        where: { id: productId },
         data: {
-          ...createProductTransferDto,
-          transferDate: new Date(createProductTransferDto.transferDate),
+          quantity: { decrement: quantity },
+          branchId: fromBranchId,
         },
       });
 
-      // Update product quantity
       await prisma.product.update({
         where: { id: productId },
-        data: { quantity: { decrement: quantity } },
+        data: {
+          quantity: { increment: quantity },
+          branchId: toBranchId,
+        },
       });
 
-      // Record stock history for source branch (outflow)
       await prisma.productStockHistory.create({
         data: {
           productId,
           branchId: fromBranchId,
-          quantity: -quantity,
+          quantity,
           type: 'TRANSFER_OUT',
-          description: `Transfer to branch ${toBranchId}`,
           createdById: initiatedById,
+          description: `Transfer to branch ${toBranchId}`,
         },
       });
 
-      // Record stock history for destination branch (inflow)
       await prisma.productStockHistory.create({
         data: {
           productId,
           branchId: toBranchId,
           quantity,
           type: 'TRANSFER_IN',
-          description: `Transfer from branch ${fromBranchId}`,
           createdById: initiatedById,
+          description: `Transfer from branch ${fromBranchId}`,
         },
       });
 
-      return transfer;
+      return prisma.productTransfer.create({
+        data: {
+          productId,
+          fromBranchId,
+          toBranchId,
+          quantity,
+          initiatedById,
+          transferDate: createProductTransferDto.transferDate || new Date(),
+          status: createProductTransferDto.status || 'PENDING',
+          notes: createProductTransferDto.notes,
+        },
+        include: {
+          product: true,
+          fromBranch: true,
+          toBranch: true,
+          initiatedBy: true,
+        },
+      });
     });
   }
 
-  async findAll() {
+  async findAll(): Promise<ProductTransfer[]> {
     return this.prisma.productTransfer.findMany({
       include: {
         product: true,
@@ -78,7 +118,7 @@ export class ProductTransferService {
     });
   }
 
-  async findOne(id: number) {
+  async findOne(id: number): Promise<ProductTransfer> {
     const transfer = await this.prisma.productTransfer.findUnique({
       where: { id },
       include: {
@@ -88,107 +128,77 @@ export class ProductTransferService {
         initiatedBy: true,
       },
     });
+
     if (!transfer) {
-      throw new NotFoundException('Transfer not found');
+      throw new NotFoundException(`Product transfer with ID ${id} not found`);
     }
+
     return transfer;
   }
 
-  async update(id: number, updateProductTransferDto: UpdateProductTransferDto) {
-    const transfer = await this.prisma.productTransfer.findUnique({ where: { id } });
+  async update(id: number, updateProductTransferDto: UpdateProductTransferDto): Promise<ProductTransfer> {
+    const transfer = await this.prisma.productTransfer.findUnique({
+      where: { id },
+    });
+
     if (!transfer) {
-      throw new NotFoundException('Transfer not found');
+      throw new NotFoundException(`Product transfer with ID ${id} not found`);
     }
 
-    return this.prisma.$transaction(async (prisma) => {
-      // If quantity or product changes, update stock history
-      if (updateProductTransferDto.quantity && updateProductTransferDto.quantity !== transfer.quantity) {
-        const quantityDiff = updateProductTransferDto.quantity - transfer.quantity;
-
-        await prisma.product.update({
-          where: { id: transfer.productId },
-          data: { quantity: { decrement: quantityDiff } },
-        });
-
-        await prisma.productStockHistory.create({
-          data: {
-            productId: transfer.productId,
-            branchId: transfer.fromBranchId,
-            quantity: -quantityDiff,
-            type: 'TRANSFER_OUT',
-            description: `Transfer adjustment for transfer ${id}`,
-            createdById: transfer.initiatedById,
-          },
-        });
-
-        await prisma.productStockHistory.create({
-          data: {
-            productId: transfer.productId,
-            branchId: transfer.toBranchId,
-            quantity: quantityDiff,
-            type: 'TRANSFER_IN',
-            description: `Transfer adjustment for transfer ${id}`,
-            createdById: transfer.initiatedById,
-          },
-        });
-      }
-
-      return prisma.productTransfer.update({
-        where: { id },
-        data: updateProductTransferDto,
-      });
-    });
-  }
-
-  async remove(id: number) {
-    const transfer = await this.prisma.productTransfer.findUnique({ where: { id } });
-    if (!transfer) {
-      throw new NotFoundException('Transfer not found');
-    }
-
-    return this.prisma.$transaction(async (prisma) => {
-      // Reverse the quantity change
-      await prisma.product.update({
-        where: { id: transfer.productId },
-        data: { quantity: { increment: transfer.quantity } },
-      });
-
-      // Record reversal in stock history
-      await prisma.productStockHistory.create({
-        data: {
-          productId: transfer.productId,
-          branchId: transfer.fromBranchId,
-          quantity: transfer.quantity,
-          type: 'TRANSFER_OUT',
-          description: `Reversal of transfer ${id}`,
-          createdById: transfer.initiatedById,
-        },
-      });
-
-      await prisma.productStockHistory.create({
-        data: {
-          productId: transfer.productId,
-          branchId: transfer.toBranchId,
-          quantity: -transfer.quantity,
-          type: 'TRANSFER_IN',
-          description: `Reversal of transfer ${id}`,
-          createdById: transfer.initiatedById,
-        },
-      });
-
-      return prisma.productTransfer.delete({ where: { id } });
-    });
-  }
-
-  async getStockReport(branchId: number, startDate: Date, endDate: Date) {
-    return this.prisma.productStockHistory.findMany({
-      where: {
-        branchId,
-        createdAt: {
-          gte: startDate,
-          lte: endDate,
-        },
+    return this.prisma.productTransfer.update({
+      where: { id },
+      data: {
+        status: updateProductTransferDto.status,
+        notes: updateProductTransferDto.notes,
       },
+      include: {
+        product: true,
+        fromBranch: true,
+        toBranch: true,
+        initiatedBy: true,
+      },
+    });
+  }
+
+  async remove(id: number): Promise<void> {
+    const transfer = await this.prisma.productTransfer.findUnique({
+      where: { id },
+    });
+
+    if (!transfer) {
+      throw new NotFoundException(`Product transfer with ID ${id} not found`);
+    }
+
+    await this.prisma.productTransfer.delete({
+      where: { id },
+    });
+  }
+
+  async getStockReport(branchId: number, startDate?: Date, endDate?: Date) {
+    // Validate dates
+    const isValidDate = (date: Date | undefined): boolean => {
+      return !!date && !isNaN(date.getTime());
+    };
+
+    const whereClause: any = { branchId };
+
+    // Check if both dates are valid before comparing
+    if (isValidDate(startDate) && isValidDate(endDate) && startDate && endDate) {
+      if (startDate > endDate) {
+        throw new BadRequestException('startDate cannot be later than endDate');
+      }
+      whereClause.createdAt = {
+        gte: startDate,
+        lte: endDate,
+      };
+    } else if (isValidDate(startDate) && startDate) {
+      whereClause.createdAt = { gte: startDate };
+    } else if (isValidDate(endDate) && endDate) {
+      whereClause.createdAt = { lte: endDate };
+    }
+
+    return this.prisma.productStockHistory.findMany({
+      where: whereClause,
       include: {
         product: true,
         createdBy: true,
