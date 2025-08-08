@@ -20,7 +20,10 @@ export class AuthService {
             throw new UnauthorizedException('Invalid credentials');
         }
         console.log(user);
-    
+        if (!user.password) {
+            throw new UnauthorizedException('User does not have a password set');
+            
+        }
         const isPasswordValid = await bcrypt.compare(password, user.password); // Compare plain password with stored hash
         if (!isPasswordValid) {
             throw new UnauthorizedException('Invalid credentials');
@@ -34,7 +37,6 @@ export class AuthService {
             access_token: token,
             user: {
                 id: user.id,
-                name: user.name,
                 email: user.email,
                 role: user.role,
             },

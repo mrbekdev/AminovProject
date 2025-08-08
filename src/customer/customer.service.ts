@@ -23,6 +23,7 @@ export class CustomerService {
         firstName,
         lastName,
         email,
+        phone: '',
         createdAt: new Date(),
         updatedAt: new Date(),
       },
@@ -34,7 +35,7 @@ export class CustomerService {
       data: {
         firstName: createCustomerDto.firstName,
         lastName: createCustomerDto.lastName,
-        phone: createCustomerDto.phone,
+        phone: createCustomerDto.phone || '',
         address: createCustomerDto.address,
         email: createCustomerDto.email,
         createdAt: new Date(),

@@ -42,27 +42,38 @@ export class ProductTransferService {
         data: { quantity: { decrement: quantity } },
       });
 
-      // Find or create product in destination branch
+      console.log(`TRANSFER: Source Product ${sourceProduct.id}, Old Qty: ${sourceProduct.quantity}, New Qty: ${sourceProduct.quantity - quantity}`);
+
+      // Find or update/create product in destination branch
       let destProduct = await prisma.product.findFirst({
-        where: { name: sourceProduct.name, branchId: toBranchId },
+        where: { barcode: sourceProduct.barcode, branchId: toBranchId },
       });
+
       if (destProduct) {
+        // Update existing product in destination branch
         await prisma.product.update({
           where: { id: destProduct.id },
           data: { quantity: { increment: quantity } },
         });
+        console.log(`TRANSFER: Dest Product ${destProduct.id}, Old Qty: ${destProduct.quantity}, New Qty: ${destProduct.quantity + quantity}`);
       } else {
+        // Create new product in destination branch
         destProduct = await prisma.product.create({
           data: {
             name: sourceProduct.name,
+            barcode: sourceProduct.barcode,
             quantity,
             price: sourceProduct.price,
+            marketPrice: sourceProduct.marketPrice,
+            model: sourceProduct.model,
+            description: sourceProduct.description,
             branchId: toBranchId,
-            barcode: sourceProduct.barcode || `BARCODE-${sourceProduct.name}-${toBranchId}`, // Copy or generate barcode
-            categoryId: sourceProduct.categoryId || 1, // Use source categoryId or default
-            status: sourceProduct.status || 'ACTIVE', // Use source status or default
+            categoryId: sourceProduct.categoryId,
+            status: sourceProduct.status || 'IN_STORE',
+            initialQuantity: quantity,
           },
         });
+        console.log(`TRANSFER: Created Dest Product ${destProduct.id}, Qty: ${quantity}`);
       }
 
       // Record stock history for source (OUTFLOW)

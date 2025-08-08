@@ -23,7 +23,7 @@ export class UserService {
   async findOne(id: number) {
     return this.prisma.user.findUnique({
       where: { id },
-      include: { branch: true, transactions: true },
+      include: { branch: true, },
     });
   }
 
@@ -31,7 +31,7 @@ export class UserService {
     return this.prisma.user.findMany({
       skip,
       take,
-      include: { branch: true, transactions: true },
+      include: { branch: true,  },
     });
   }
 

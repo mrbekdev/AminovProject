@@ -78,8 +78,6 @@ export class LocationService {
           user: {
             select: {
               id: true,
-              name: true,
-              email: true,
               role: true,
               branch: {
                 select: {
@@ -114,8 +112,6 @@ export class LocationService {
           user: {
             select: {
               id: true,
-              name: true,
-              email: true,
               role: true,
               branch: {
                 select: {
@@ -168,8 +164,7 @@ export class LocationService {
           user: {
             select: {
               id: true,
-              name: true,
-              email: true,
+
               role: true,
               branch: {
                 select: {
@@ -214,8 +209,6 @@ export class LocationService {
           user: {
             select: {
               id: true,
-              name: true,
-              email: true,
               role: true,
               branch: {
                 select: {

@@ -10,14 +10,10 @@ export class CreateUserDto {
   })
   @IsString()
   @MaxLength(100)
-  name: string;
-
-  @ApiProperty({
-    example: 'ali@example.com',
-    description: 'Foydalanuvchining email manzili',
-    maxLength: 255,
-  })
-  @IsEmail()
+  firstName: string;
+  @IsString()
+  @MaxLength(100)
+  lastName: string;
   @MaxLength(255)
   email: string;
 

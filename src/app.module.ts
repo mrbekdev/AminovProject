@@ -10,13 +10,13 @@ import { TransactionModule } from './transaction/transaction.module';
 import { AuthModule } from './auth/auth.module';
 import { LocationModule } from './location/location.module';
 import { CustomerModule } from './customer/customer.module';
-import { ReceiptModule } from './receipt/receipt.module';
+
 import { ProductTransferModule } from './product-transfer/product-transfer.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule, CustomerModule, ReceiptModule, ProductTransferModule,
+    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule, CustomerModule, ProductTransferModule,
   ],
   controllers: [AppController],
   providers: [AppService],

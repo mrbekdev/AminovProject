@@ -1,8 +1,7 @@
-
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
-import {UpdateProductDto} from './dto/update-product.dto'
+import { UpdateProductDto } from './dto/update-product.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -23,7 +22,7 @@ export class ProductService {
           model: createProductDto.model,
           initialQuantity: createProductDto.quantity,
           quantity: createProductDto.quantity,
-          status: createProductDto.status,
+          status: createProductDto.status || 'IN_STORE',
         },
       });
 
@@ -35,7 +34,7 @@ export class ProductService {
             quantity: createProductDto.quantity,
             type: 'INFLOW',
             description: 'Initial stock for product creation',
-            createdById: userId ?? null, // userId bo‘lmasa null
+            createdById: userId ?? null,
             createdAt: new Date(),
             updatedAt: new Date(),
           },
@@ -46,11 +45,22 @@ export class ProductService {
     });
   }
 
-  async findAll(branchId?: number) {
-    const where: Prisma.ProductWhereInput = branchId ? { branchId } : {};
+  async findAll(branchId?: number, search?: string, includeZeroQuantity: boolean = false) {
+    const where: Prisma.ProductWhereInput = {};
+    if (branchId) where.branchId = branchId;
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { barcode: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    if (!includeZeroQuantity) {
+      where.quantity = { gt: 0 };
+    }
     return this.prisma.product.findMany({
       where,
       include: { category: true, branch: true },
+      orderBy: { id: 'asc' },
     });
   }
 
@@ -157,7 +167,6 @@ export class ProductService {
   }
 
   async uploadExcel(file: Express.Multer.File, userId?: number) {
-    // Excel faylni qayta ishlash logikasi (keyinchalik implement qilinadi)
     throw new Error('Excel yuklash funksiyasi hali implement qilinmagan');
   }
 }
