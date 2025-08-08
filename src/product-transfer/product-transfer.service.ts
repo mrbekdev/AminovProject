@@ -1,3 +1,4 @@
+
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductTransferDto } from './dto/create-product-transfer.dto';
@@ -57,23 +58,66 @@ export class ProductTransferService {
         });
         console.log(`TRANSFER: Dest Product ${destProduct.id}, Old Qty: ${destProduct.quantity}, New Qty: ${destProduct.quantity + quantity}`);
       } else {
-        // Create new product in destination branch
-        destProduct = await prisma.product.create({
-          data: {
-            name: sourceProduct.name,
-            barcode: sourceProduct.barcode,
-            quantity,
-            price: sourceProduct.price,
-            marketPrice: sourceProduct.marketPrice,
-            model: sourceProduct.model,
-            description: sourceProduct.description,
-            branchId: toBranchId,
-            categoryId: sourceProduct.categoryId,
-            status: sourceProduct.status || 'IN_STORE',
-            initialQuantity: quantity,
-          },
-        });
-        console.log(`TRANSFER: Created Dest Product ${destProduct.id}, Qty: ${quantity}`);
+        // Create new product in destination branch with unique barcode handling
+        try {
+          destProduct = await prisma.product.create({
+            data: {
+              name: sourceProduct.name,
+              barcode: sourceProduct.barcode,
+              quantity,
+              price: sourceProduct.price,
+              marketPrice: sourceProduct.marketPrice,
+              model: sourceProduct.model,
+              description: sourceProduct.description,
+              branchId: toBranchId,
+              categoryId: sourceProduct.categoryId,
+              status: sourceProduct.status || 'IN_STORE',
+              initialQuantity: quantity,
+            },
+          });
+          console.log(`TRANSFER: Created Dest Product ${destProduct.id}, Qty: ${quantity}`);
+        } catch (error) {
+          // Handle P2002 error (unique constraint violation)
+          if (error.code === 'P2002' && error.meta?.target?.includes('barcode')) {
+            // Try to find the product again in case it was created by another concurrent transaction
+            destProduct = await prisma.product.findFirst({
+              where: { barcode: sourceProduct.barcode, branchId: toBranchId },
+            });
+            
+            if (destProduct) {
+              // Update existing product if found
+              await prisma.product.update({
+                where: { id: destProduct.id },
+                data: { quantity: { increment: quantity } },
+              });
+              console.log(`TRANSFER: Updated existing Dest Product ${destProduct.id}, Added Qty: ${quantity}`);
+            } else {
+              // If still not found, the barcode might conflict with another branch
+              // Generate a unique barcode for this branch
+              const timestamp = Date.now();
+              const uniqueBarcode = `${sourceProduct.barcode}_${toBranchId}_${timestamp}`;
+              
+              destProduct = await prisma.product.create({
+                data: {
+                  name: sourceProduct.name,
+                  barcode: uniqueBarcode,
+                  quantity,
+                  price: sourceProduct.price,
+                  marketPrice: sourceProduct.marketPrice,
+                  model: sourceProduct.model,
+                  description: sourceProduct.description,
+                  branchId: toBranchId,
+                  categoryId: sourceProduct.categoryId,
+                  status: sourceProduct.status || 'IN_STORE',
+                  initialQuantity: quantity,
+                },
+              });
+              console.log(`TRANSFER: Created Dest Product with unique barcode ${destProduct.id}, Qty: ${quantity}`);
+            }
+          } else {
+            throw error; // Re-throw if it's not a barcode constraint error
+          }
+        }
       }
 
       // Record stock history for source (OUTFLOW)
@@ -132,6 +176,7 @@ export class ProductTransferService {
         toBranch: true,
         initiatedBy: true,
       },
+      orderBy: { transferDate: 'desc' },
     });
   }
 
@@ -152,6 +197,7 @@ export class ProductTransferService {
   async update(id: number, updateProductTransferDto: UpdateProductTransferDto): Promise<ProductTransfer> {
     const transfer = await this.prisma.productTransfer.findUnique({ where: { id } });
     if (!transfer) throw new NotFoundException(`Product transfer with ID ${id} not found`);
+    
     return this.prisma.productTransfer.update({
       where: { id },
       data: {
@@ -170,8 +216,16 @@ export class ProductTransferService {
   async remove(id: number): Promise<void> {
     const transfer = await this.prisma.productTransfer.findUnique({ where: { id } });
     if (!transfer) throw new NotFoundException(`Product transfer with ID ${id} not found`);
+    
     await this.prisma.$transaction(async (prisma) => {
-      await prisma.productStockHistory.deleteMany({ where: { productId: transfer.productId, createdAt: transfer.transferDate } });
+      // Delete related stock history records
+      await prisma.productStockHistory.deleteMany({ 
+        where: { 
+          createdAt: transfer.transferDate 
+        } 
+      });
+      
+      // Delete the transfer record
       await prisma.productTransfer.delete({ where: { id } });
     });
   }
@@ -179,6 +233,7 @@ export class ProductTransferService {
   async getStockReport(branchId: number, startDate?: Date, endDate?: Date) {
     const isValidDate = (date: Date | undefined): boolean => !!date && !isNaN(date.getTime());
     const whereClause: any = { branchId };
+    
     if (isValidDate(startDate) && isValidDate(endDate) && startDate && endDate) {
       if (startDate > endDate) throw new BadRequestException('startDate cannot be later than endDate');
       whereClause.createdAt = { gte: startDate, lte: endDate };
@@ -187,6 +242,7 @@ export class ProductTransferService {
     } else if (isValidDate(endDate) && endDate) {
       whereClause.createdAt = { lte: endDate };
     }
+    
     return this.prisma.productStockHistory.findMany({
       where: whereClause,
       include: {
