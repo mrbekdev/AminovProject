@@ -13,7 +13,7 @@ export class TransactionController {
   }
 
   @Get()
-  findAll(@Query('branchId', ParseIntPipe) branchId?: number): Promise<Transaction[]> {
+  findAll(@Query('branchId', new ParseIntPipe({ optional: true })) branchId?: number): Promise<Transaction[]> {
     return this.transactionService.findAll(branchId);
   }
 

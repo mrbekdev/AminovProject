@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Put } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Param, Delete, Query, ParseIntPipe } from '@nestjs/common';
 import { ProductTransferService } from './product-transfer.service';
 import { CreateProductTransferDto, UpdateProductTransferDto } from './dto/create-product-transfer.dto';
 
@@ -17,26 +17,33 @@ export class ProductTransferController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.productTransferService.findOne(+id);
+  findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.productTransferService.findOne(id);
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() updateProductTransferDto: UpdateProductTransferDto) {
-    return this.productTransferService.update(+id, updateProductTransferDto);
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateProductTransferDto: UpdateProductTransferDto,
+  ) {
+    return this.productTransferService.update(id, updateProductTransferDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.productTransferService.remove(+id);
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.productTransferService.remove(id);
   }
 
   @Get('report/:branchId')
   getStockReport(
-    @Param('branchId') branchId: string,
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
+    @Param('branchId', ParseIntPipe) branchId: number,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
-    return this.productTransferService.getStockReport(+branchId, new Date(startDate), new Date(endDate));
+    return this.productTransferService.getStockReport(
+      branchId,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
   }
 }
