@@ -1,9 +1,9 @@
-
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductTransferDto } from './dto/create-product-transfer.dto';
 import { UpdateProductTransferDto } from './dto/update-product-transfer.dto';
 import { ProductTransfer } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ProductTransferService {
@@ -42,10 +42,9 @@ export class ProductTransferService {
         where: { id: sourceProduct.id },
         data: { quantity: { decrement: quantity } },
       });
-
       console.log(`TRANSFER: Source Product ${sourceProduct.id}, Old Qty: ${sourceProduct.quantity}, New Qty: ${sourceProduct.quantity - quantity}`);
 
-      // Find or update/create product in destination branch
+      // Check if product exists in destination branch
       let destProduct = await prisma.product.findFirst({
         where: { barcode: sourceProduct.barcode, branchId: toBranchId },
       });
@@ -56,14 +55,18 @@ export class ProductTransferService {
           where: { id: destProduct.id },
           data: { quantity: { increment: quantity } },
         });
-        console.log(`TRANSFER: Dest Product ${destProduct.id}, Old Qty: ${destProduct.quantity}, New Qty: ${destProduct.quantity + quantity}`);
+        console.log(`TRANSFER: Updated Dest Product ${destProduct.id}, Old Qty: ${destProduct.quantity}, New Qty: ${destProduct.quantity + quantity}`);
       } else {
-        // Create new product in destination branch with unique barcode handling
+        // Generate a unique barcode to avoid conflicts
+        const timestamp = Date.now();
+        const uniqueBarcode = `${sourceProduct.barcode}_${toBranchId}_${timestamp}`;
+
         try {
+          // Create new product in destination branch with unique barcode
           destProduct = await prisma.product.create({
             data: {
               name: sourceProduct.name,
-              barcode: sourceProduct.barcode,
+              barcode: uniqueBarcode, // Use unique barcode to avoid conflicts
               quantity,
               price: sourceProduct.price,
               marketPrice: sourceProduct.marketPrice,
@@ -75,48 +78,11 @@ export class ProductTransferService {
               initialQuantity: quantity,
             },
           });
-          console.log(`TRANSFER: Created Dest Product ${destProduct.id}, Qty: ${quantity}`);
+          console.log(`TRANSFER: Created Dest Product ${destProduct.id}, Qty: ${quantity}, Barcode: ${uniqueBarcode}`);
         } catch (error) {
-          // Handle P2002 error (unique constraint violation)
-          if (error.code === 'P2002' && error.meta?.target?.includes('barcode')) {
-            // Try to find the product again in case it was created by another concurrent transaction
-            destProduct = await prisma.product.findFirst({
-              where: { barcode: sourceProduct.barcode, branchId: toBranchId },
-            });
-            
-            if (destProduct) {
-              // Update existing product if found
-              await prisma.product.update({
-                where: { id: destProduct.id },
-                data: { quantity: { increment: quantity } },
-              });
-              console.log(`TRANSFER: Updated existing Dest Product ${destProduct.id}, Added Qty: ${quantity}`);
-            } else {
-              // If still not found, the barcode might conflict with another branch
-              // Generate a unique barcode for this branch
-              const timestamp = Date.now();
-              const uniqueBarcode = `${sourceProduct.barcode}_${toBranchId}_${timestamp}`;
-              
-              destProduct = await prisma.product.create({
-                data: {
-                  name: sourceProduct.name,
-                  barcode: uniqueBarcode,
-                  quantity,
-                  price: sourceProduct.price,
-                  marketPrice: sourceProduct.marketPrice,
-                  model: sourceProduct.model,
-                  description: sourceProduct.description,
-                  branchId: toBranchId,
-                  categoryId: sourceProduct.categoryId,
-                  status: sourceProduct.status || 'IN_STORE',
-                  initialQuantity: quantity,
-                },
-              });
-              console.log(`TRANSFER: Created Dest Product with unique barcode ${destProduct.id}, Qty: ${quantity}`);
-            }
-          } else {
-            throw error; // Re-throw if it's not a barcode constraint error
-          }
+          // Handle any unexpected errors during product creation
+          console.error(`TRANSFER: Error creating product in destination branch: ${error.message}`);
+          throw new BadRequestException(`Failed to create product in destination branch: ${error.message}`);
         }
       }
 
@@ -159,19 +125,30 @@ export class ProductTransferService {
           notes,
         },
         include: {
-          product: true,
+          Product: true,
           fromBranch: true,
           toBranch: true,
           initiatedBy: true,
         },
       });
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable, // Use serializable isolation to prevent race conditions
+      maxWait: 5000, // Wait up to 5 seconds for the transaction
+      timeout: 10000, // Transaction timeout after 10 seconds
+    }).catch((error) => {
+      console.error(`TRANSFER: Transaction failed: ${error.message}`);
+      if (error.code === 'P2002') {
+        throw new BadRequestException('Unique constraint violation occurred. Please try again.');
+      }
+      throw new BadRequestException(`Transaction failed: ${error.message}`);
     });
   }
 
+  // Rest of the methods remain unchanged
   async findAll(): Promise<ProductTransfer[]> {
     return this.prisma.productTransfer.findMany({
       include: {
-        product: true,
+        Product: true,
         fromBranch: true,
         toBranch: true,
         initiatedBy: true,
@@ -184,7 +161,7 @@ export class ProductTransferService {
     const transfer = await this.prisma.productTransfer.findUnique({
       where: { id },
       include: {
-        product: true,
+        Product: true,
         fromBranch: true,
         toBranch: true,
         initiatedBy: true,
@@ -205,7 +182,7 @@ export class ProductTransferService {
         notes: updateProductTransferDto.notes,
       },
       include: {
-        product: true,
+        Product: true,
         fromBranch: true,
         toBranch: true,
         initiatedBy: true,

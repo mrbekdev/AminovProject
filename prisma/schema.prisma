@@ -130,30 +130,23 @@ model Category {
 }
 
 model Product {
-  id              Int           @id @default(autoincrement())
-  name            String
-  barcode         String        @unique
-  description     String?
-  categoryId      Int
-  branchId        Int
-  price           Float
-  marketPrice     Float?
-  model           String?
-  initialQuantity Int           @default(0)
-  quantity        Int           @default(0)
-  status          ProductStatus @default(IN_STORE)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  branch           Branch                @relation(fields: [branchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  category         Category              @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  items            TransactionItem[]
-  stockHistory     ProductStockHistory[]
-  productTransfers ProductTransfer[]     @relation("ProductToTransfers")
-
-  @@index([barcode])
-  @@index([branchId])
-  @@index([categoryId])
+  id                  Int                   @id @default(autoincrement())
+  barcode             String                @unique
+  name                String
+  quantity            Int
+  price               Float
+  marketPrice         Float?
+  model               String?
+  description         String?
+  branchId            Int
+  categoryId          Int?
+  status              String                @default("IN_STORE")
+  initialQuantity     Int
+  branch              Branch                @relation(fields: [branchId], references: [id])
+  category            Category?             @relation(fields: [categoryId], references: [id])
+  TransactionItem     TransactionItem[]
+  ProductStockHistory ProductStockHistory[]
+  ProductTransfer     ProductTransfer[]
 }
 
 model Customer {
@@ -258,10 +251,10 @@ model ProductTransfer {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  product     Product @relation("ProductToTransfers", fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   fromBranch  Branch  @relation("BranchToTransfersOut", fields: [fromBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   toBranch    Branch  @relation("BranchToTransfersIn", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   initiatedBy User    @relation("UserToTransfers", fields: [initiatedById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  Product     Product @relation(fields: [productId], references: [id])
 
   @@index([productId])
   @@index([fromBranchId])
