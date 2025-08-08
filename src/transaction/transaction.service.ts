@@ -9,7 +9,6 @@ export class TransactionService {
 
   async create(createTransactionDto: CreateTransactionDto): Promise<Transaction> {
     return this.prisma.$transaction(async (prisma) => {
-      // Validate user
       const user = await prisma.user.findUnique({
         where: { id: createTransactionDto.userId },
       });
@@ -17,7 +16,6 @@ export class TransactionService {
         throw new BadRequestException('Invalid user ID');
       }
 
-      // Validate branch if provided
       if (createTransactionDto.branchId) {
         const branch = await prisma.branch.findUnique({
           where: { id: createTransactionDto.branchId },
@@ -27,31 +25,23 @@ export class TransactionService {
         }
       }
 
-      // Handle customer (create if provided in payload)
       let customerId = createTransactionDto.customerId;
       if (createTransactionDto.customer && !customerId) {
         const { firstName, lastName, phone } = createTransactionDto.customer;
         if (!firstName || !lastName || !phone) {
           throw new BadRequestException('Customer details (firstName, lastName, phone) are required');
         }
-        // Check if customer exists by phone
         let customer = await prisma.customer.findFirst({
           where: { phone },
         });
         if (!customer) {
-          // Create new customer
           customer = await prisma.customer.create({
-            data: {
-              firstName,
-              lastName,
-              phone,
-            },
+            data: { firstName, lastName, phone },
           });
         }
         customerId = customer.id;
       }
 
-      // Validate customer if provided
       if (customerId) {
         const customer = await prisma.customer.findUnique({
           where: { id: customerId },
@@ -61,7 +51,6 @@ export class TransactionService {
         }
       }
 
-      // Validate products and check stock
       for (const item of createTransactionDto.items) {
         const product = await prisma.product.findUnique({
           where: { id: item.productId },
@@ -70,11 +59,10 @@ export class TransactionService {
           throw new BadRequestException(`Invalid product ID: ${item.productId}`);
         }
         if ((createTransactionDto.type === 'SALE' || createTransactionDto.type === 'STOCK_ADJUSTMENT') && product.quantity < item.quantity) {
-          throw new BadRequestException(`Insufficient stock for product: ${product.name}`);
+          throw new BadRequestException(`Insufficient stock for product: ${product.name} (available: ${product.quantity}, requested: ${item.quantity})`);
         }
       }
 
-      // Create transaction
       const transaction = await prisma.transaction.create({
         data: {
           customerId,
@@ -114,7 +102,6 @@ export class TransactionService {
         },
       });
 
-      // Update product quantities and create stock history
       for (const item of createTransactionDto.items) {
         const product = await prisma.product.findUnique({
           where: { id: item.productId },
@@ -125,10 +112,14 @@ export class TransactionService {
         }
 
         if (createTransactionDto.type === 'SALE' || createTransactionDto.type === 'STOCK_ADJUSTMENT') {
+          const newQuantity = product.quantity - item.quantity;
+          if (newQuantity < 0) {
+            throw new BadRequestException(`Cannot reduce stock below 0 for product: ${product.name}`);
+          }
           await prisma.product.update({
             where: { id: item.productId },
             data: {
-              quantity: { decrement: item.quantity },
+              quantity: { set: newQuantity },
               branchId: createTransactionDto.branchId || product.branchId,
             },
           });
@@ -143,6 +134,25 @@ export class TransactionService {
               createdById: createTransactionDto.userId,
             },
           });
+        } else if (createTransactionDto.type === 'PURCHASE') {
+          await prisma.product.update({
+            where: { id: item.productId },
+            data: {
+              quantity: { increment: item.quantity },
+              branchId: createTransactionDto.branchId || product.branchId,
+            },
+          });
+
+          await prisma.productStockHistory.create({
+            data: {
+              productId: item.productId,
+              transactionId: transaction.id,
+              branchId: createTransactionDto.branchId || product.branchId,
+              quantity: item.quantity,
+              type: 'INFLOW',
+              createdById: createTransactionDto.userId,
+            },
+          });
         }
       }
 
@@ -151,6 +161,9 @@ export class TransactionService {
   }
 
   async findAll(branchId?: number): Promise<Transaction[]> {
+    if (branchId && (isNaN(branchId) || !Number.isInteger(branchId) || branchId <= 0)) {
+      throw new BadRequestException('Invalid branchId: must be a positive integer');
+    }
     return this.prisma.transaction.findMany({
       where: branchId ? { branchId } : {},
       include: {
@@ -241,17 +254,12 @@ export class TransactionService {
     }
 
     await this.prisma.$transaction(async (prisma) => {
-      // Delete related transaction items
       await prisma.transactionItem.deleteMany({
         where: { transactionId: id },
       });
-
-      // Delete related stock history
       await prisma.productStockHistory.deleteMany({
         where: { transactionId: id },
       });
-
-      // Delete the transaction
       await prisma.transaction.delete({
         where: { id },
       });
