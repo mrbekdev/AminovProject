@@ -1,9 +1,13 @@
-import { Controller, Post, Body, Get, Param, Put, Delete, ParseIntPipe, Query } from '@nestjs/common';
+// product.controller.ts
+import { Controller, Post, Body, Get, Param, Put, Delete, ParseIntPipe, Query, UseInterceptors, UploadedFile, UseGuards } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'; // Assuming you have auth
 
 @Controller('products')
+@UseGuards(JwtAuthGuard) // Add auth if needed
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
@@ -34,5 +38,16 @@ export class ProductController {
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.productService.remove(id);
+  }
+
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadExcel(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('branchId', ParseIntPipe) branchId: number,
+    @Body('categoryId', ParseIntPipe) categoryId: number,
+    @Body('status') status: string,
+  ) {
+    return this.productService.uploadExcel(file, branchId, categoryId, status);
   }
 }

@@ -1,8 +1,10 @@
+// product.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Prisma } from '@prisma/client';
+import * as XLSX from 'xlsx';
 
 @Injectable()
 export class ProductService {
@@ -47,7 +49,7 @@ export class ProductService {
 
   async findAll(branchId?: number, search?: string, includeZeroQuantity: boolean = false) {
     const where: Prisma.ProductWhereInput = {};
-    if (branchId) where.branchId = branchId;
+    if (branchId) where.branchId = +branchId;
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -166,7 +168,31 @@ export class ProductService {
     });
   }
 
-  async uploadExcel(file: Express.Multer.File, userId?: number) {
-    throw new Error('Excel yuklash funksiyasi hali implement qilinmagan');
+  async uploadExcel(file: Express.Multer.File, branchId: number, categoryId: number, status: string, userId?: number) {
+    try {
+      const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+      for (const row of data) {
+        const createProductDto: CreateProductDto = {
+          barcode: row['barcode'],
+          name: row['name'],
+          quantity: Number(row['quantity']) || 0,
+          price: Number(row['price']) || 0,
+          marketPrice: row['marketPrice'] ? Number(row['marketPrice']) : undefined,
+          model: row['model'],
+          description: row['description'],
+          branchId: branchId,
+          categoryId: categoryId,
+          status: status as any, // Assuming status is a valid ProductStatus enum value
+        };
+        await this.create(createProductDto, userId);
+      }
+      return { message: 'Mahsulotlar muvaffaqiyatli yuklandi' };
+    } catch (error) {
+      throw new BadRequestException('Excel faylini o\'qishda xatolik: ' + error.message);
+    }
   }
 }
