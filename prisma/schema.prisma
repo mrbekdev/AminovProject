@@ -131,7 +131,7 @@ model Category {
 
 model Product {
   id                  Int                   @id @default(autoincrement())
-  barcode             String?                @unique
+  barcode             String?   @unique
   name                String
   quantity            Int
   price               Float
@@ -147,6 +147,8 @@ model Product {
   TransactionItem     TransactionItem[]
   ProductStockHistory ProductStockHistory[]
   ProductTransfer     ProductTransfer[]
+
+  @@index([barcode])
 }
 
 model Customer {

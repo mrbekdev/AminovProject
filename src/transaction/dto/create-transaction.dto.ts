@@ -81,6 +81,10 @@ export class CreateTransactionDto {
 
   @IsInt()
   @IsOptional()
+  toBranchId?: number;
+
+  @IsInt()
+  @IsOptional()
   customerId?: number;
 
   @ValidateNested()
