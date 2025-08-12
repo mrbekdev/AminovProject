@@ -195,4 +195,22 @@ async uploadExcel(file: Express.Multer.File, branchId: number, categoryId: numbe
     throw new BadRequestException('Excel faylini o\'qishda xatolik: ' + error.message);
   }
 }
+// product.service.ts ga qo'shiladigan funksiya
+async removeMany(ids: number[], userId?: number) {
+  return this.prisma.$transaction(async (tx) => {
+    const products = await tx.product.findMany({
+      where: { id: { in: ids } },
+    });
+
+    if (products.length !== ids.length) {
+      throw new NotFoundException('Ba\'zi mahsulotlar topilmadi');
+    }
+
+    const deleted = await tx.product.deleteMany({
+      where: { id: { in: ids } },
+    });
+
+    return { message: 'Mahsulotlar muvaffaqiyatli o\'chirildi', count: deleted.count };
+  });
+}
 }

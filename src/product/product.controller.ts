@@ -50,4 +50,10 @@ export class ProductController {
   ) {
     return this.productService.uploadExcel(file, branchId, categoryId, status);
   }
+
+  // product.controller.ts ga qo'shiladigan funksiya
+@Delete('bulk')
+bulkRemove(@Body() body: { ids: number[] }) {
+  return this.productService.removeMany(body.ids);
+}
 }
