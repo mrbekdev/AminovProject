@@ -15,7 +15,7 @@ export class ProductService {
       const product = await tx.product.create({
         data: {
           name: createProductDto.name,
-          barcode: createProductDto.barcode,
+          barcode: createProductDto?.barcode ? createProductDto.barcode : 'Barcode yoq',
           description: createProductDto.description,
           categoryId: createProductDto.categoryId,
           branchId: createProductDto.branchId,
