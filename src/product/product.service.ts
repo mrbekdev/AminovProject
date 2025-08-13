@@ -211,15 +211,15 @@ export class ProductService {
         },
       });
 
-      await tx.transactionItem.create({
-        data: {
-          transactionId: transaction.id,
-          productId: id,
-          quantity: defectiveQty,
-          price: 0,
-          total: 0,
-        },
-      });
+await tx.transactionItem.create({
+  data: {
+    transactionId: transaction.id,
+    product: { connect: { id } },
+    quantity: defectiveQty,
+    price: 0,
+    total: 0,
+  } as any, // tip cheklovini chetlab o‘tdik
+});
 
       return updatedProduct;
     });
@@ -280,15 +280,15 @@ export class ProductService {
         },
       });
 
-      await tx.transactionItem.create({
-        data: {
-          transactionId: transaction.id,
-          productId: id,
-          quantity: defectiveCount,
-          price: 0,
-          total: 0,
-        },
-      });
+await tx.transactionItem.create({
+  data: {
+    transactionId: transaction.id,
+    product: { connect: { id } },
+    quantity: defectiveCount,
+    price: 0,
+    total: 0,
+  } as any, // tip cheklovini chetlab o‘tdik
+});
 
       return updatedProduct;
     });
@@ -343,15 +343,15 @@ export class ProductService {
         },
       });
 
-      await tx.transactionItem.create({
-        data: {
-          transactionId: transaction.id,
-          productId: id,
-          quantity: restoreCount,
-          price: 0,
-          total: 0,
-        },
-      });
+await tx.transactionItem.create({
+  data: {
+    transactionId: transaction.id,
+    product: { connect: { id } },
+    quantity: restoreCount,
+    price: 0,
+    total: 0,
+  } as any, // tip cheklovini chetlab o‘tdik
+});
 
       return updatedProduct;
     });
@@ -408,15 +408,15 @@ export class ProductService {
           },
         });
 
-        await tx.transactionItem.create({
-          data: {
-            transactionId: transaction.id,
-            productId: product.id,
-            quantity: defectiveQty,
-            price: 0,
-            total: 0,
-          },
-        });
+await tx.transactionItem.create({
+  data: {
+    transactionId: transaction.id,
+    product: { connect: { ids } },
+    quantity: defectiveQty,
+    price: 0,
+    total: 0,
+  } as any, // tip cheklovini chetlab o‘tdik
+});
       }
 
       return { message: 'Tanlangan mahsulotlar defective qilindi', count: ids.length };
@@ -466,15 +466,15 @@ export class ProductService {
           },
         });
 
-        await tx.transactionItem.create({
-          data: {
-            transactionId: transaction.id,
-            productId: product.id,
-            quantity: restoreCount,
-            price: 0,
-            total: 0,
-          },
-        });
+await tx.transactionItem.create({
+  data: {
+    transactionId: transaction.id,
+    product: { connect: { ids } },
+    quantity: restoreCount,
+    price: 0,
+    total: 0,
+  } as any, // tip cheklovini chetlab o‘tdik
+});
       }
 
       return { message: 'Tanlangan defective mahsulotlar qaytarildi', count: ids.length };
@@ -555,15 +555,15 @@ export class ProductService {
           },
         });
 
-        await tx.transactionItem.create({
-          data: {
-            transactionId: transaction.id,
-            productId: id,
-            quantity: product.quantity,
-            price: 0,
-            total: 0,
-          },
-        });
+await tx.transactionItem.create({
+  data: {
+    transactionId: transaction.id,
+    product: { connect: { id } },
+    quantity: product.quantity,
+    price: 0,
+    total: 0,
+  } as any, // tip cheklovini chetlab o‘tdik
+});
       }
 
       return updatedProduct;
@@ -636,15 +636,15 @@ export class ProductService {
             },
           });
 
-          await tx.transactionItem.create({
-            data: {
-              transactionId: transaction.id,
-              productId: product.id,
-              quantity: product.quantity,
-              price: 0,
-              total: 0,
-            },
-          });
+await tx.transactionItem.create({
+  data: {
+    transactionId: transaction.id,
+    product: { connect: { ids } },
+    quantity: product.quantity,
+    price: 0,
+    total: 0,
+  } as any, // tip cheklovini chetlab o‘tdik
+});
         }
       }
 
