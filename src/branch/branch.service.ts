@@ -24,10 +24,8 @@ export class BranchService {
     });
   }
 
-  async findAll(skip: number, take: number) {
+  async findAll() {
     return this.prisma.branch.findMany({
-      skip,
-      take,
       include: { products: true, users: true },
     });
   }

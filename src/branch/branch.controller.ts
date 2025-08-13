@@ -39,10 +39,8 @@ export class BranchController {
 
   @Get()
   @ApiOperation({ summary: 'Barcha filiallarni olish' })
-  @ApiQuery({ name: 'skip', required: false })
-  @ApiQuery({ name: 'take', required: false })
-  async findAll(@Query('skip') skip = '0', @Query('take') take = '10') {
-    return this.branchService.findAll(+skip, +take);
+  async findAll() {
+    return this.branchService.findAll();
   }
 
   @Put(':id')
