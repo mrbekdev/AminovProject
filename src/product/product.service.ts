@@ -184,12 +184,13 @@ export class ProductService {
         },
       });
 
+      // DefectiveLog yaratishda faqat kerakli maydonlarni uzatamiz
       await tx.defectiveLog.create({
         data: {
           productId: id,
           quantity: defectiveQty,
           description,
-          userId,
+          userId: userId , // userId ni tekshiramiz
         },
       });
 
@@ -252,12 +253,13 @@ export class ProductService {
         },
       });
 
+      // DefectiveLog yaratishda faqat kerakli maydonlarni uzatamiz
       await tx.defectiveLog.create({
         data: {
           productId: id,
           quantity: defectiveCount,
           description,
-          userId,
+          userId: userId , // userId ni tekshiramiz
         },
       });
 
@@ -379,12 +381,13 @@ export class ProductService {
           },
         });
 
+        // DefectiveLog yaratishda faqat kerakli maydonlarni uzatamiz
         await tx.defectiveLog.create({
           data: {
             productId: product.id,
             quantity: defectiveQty,
             description,
-            userId,
+            userId: userId , 
           },
         });
 
