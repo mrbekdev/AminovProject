@@ -302,7 +302,7 @@ export class ProductService {
         data: {
           quantity: newQuantity,
           defectiveQuantity: newDefectiveQuantity,
-          status: newDefectiveQuantity === 0 ? 'IN_STORE' : product.status,
+          status: newDefectiveQuantity === 0 ? 'FIXED' : product.status,
         },
       });
 
@@ -341,6 +341,26 @@ export class ProductService {
   async getDefectiveProducts(branchId?: number) {
     const where: Prisma.ProductWhereInput = {
       defectiveQuantity: { gt: 0 }
+    };
+    
+    if (branchId) {
+      where.branchId = branchId;
+    }
+
+    return this.prisma.product.findMany({
+      where,
+      include: { 
+        category: true, 
+        branch: true 
+      },
+      orderBy: { id: 'asc' },
+    });
+  }
+
+  // Fixed mahsulotlar ro'yxati
+  async getFixedProducts(branchId?: number) {
+    const where: Prisma.ProductWhereInput = {
+      status: 'FIXED'
     };
     
     if (branchId) {
@@ -487,20 +507,4 @@ export class ProductService {
       return { message: 'Mahsulotlar muvaffaqiyatli o\'chirildi', count: ids.length };
     });
   }
-
-// product.service.ts
-async getFixedProducts(branchId?: number) {
-const defective= await this.prisma.product.findMany({
-  where: {
-    status: 'DEFECTIVE',
-    branchId: branchId,
-  },
-  include: {
-    category: true,
-    branch: true,
-  },
-  orderBy: { id: 'asc' },
-
-})
-return defective
-} }
+}

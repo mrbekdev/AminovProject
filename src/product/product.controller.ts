@@ -51,12 +51,11 @@ export class ProductController {
     return this.productService.getDefectiveProducts(parsedBranchId);
   }
 
-  // product.controller.ts
-@Get('fixed')
-getFixedProducts(@Query('branchId') branchId?: string) {
-  const parsedBranchId = branchId ? parseInt(branchId) : undefined;
-  return this.productService.getFixedProducts(parsedBranchId);
-}
+  @Get('fixed')
+  getFixedProducts(@Query('branchId') branchId?: string) {
+    const parsedBranchId = branchId ? parseInt(branchId) : undefined;
+    return this.productService.getFixedProducts(parsedBranchId);
+  }
 
   @Get('barcode/:barcode')
   findByBarcode(@Param('barcode') barcode: string) {
