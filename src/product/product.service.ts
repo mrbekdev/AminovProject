@@ -487,4 +487,20 @@ export class ProductService {
       return { message: 'Mahsulotlar muvaffaqiyatli o\'chirildi', count: ids.length };
     });
   }
-}
+
+// product.service.ts
+async getFixedProducts(branchId?: number) {
+const defective= await this.prisma.product.findMany({
+  where: {
+    status: 'DEFECTIVE',
+    branchId: branchId,
+  },
+  include: {
+    category: true,
+    branch: true,
+  },
+  orderBy: { id: 'asc' },
+
+})
+return defective
+} }
