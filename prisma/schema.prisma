@@ -126,7 +126,7 @@ model Product {
   price              Float
   quantity           Int                @default(0)
   defectiveQuantity  Int                @default(0)
-  initialQuantity    Int?               // Dastlabki miqdor uchun
+  initialQuantity    Int?               // Initial quantity
   status             ProductStatus      @default(IN_STORE)
   branchId           Int
   branch             Branch             @relation(fields: [branchId], references: [id])
@@ -158,7 +158,6 @@ model DefectiveLog {
   
   @@map("defective_logs")
 }
-
 
 model Customer {
   id        Int     @id @default(autoincrement())

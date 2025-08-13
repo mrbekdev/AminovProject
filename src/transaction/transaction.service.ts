@@ -1,6 +1,7 @@
+// src/transaction/transaction.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateTransactionDto, UpdateTransactionDto, CreateTransactionItemDto } from './dto/create-transaction.dto';
+import { CreateTransactionDto, UpdateTransactionDto } from './dto/create-transaction.dto';
 import { Transaction } from '@prisma/client';
 
 @Injectable()
@@ -20,13 +21,15 @@ export class TransactionService {
       // Handle customer
       let customerId = createTransactionDto.customerId;
       if (createTransactionDto.customer && !customerId) {
-        const { firstName, lastName, phone } = createTransactionDto.customer;
+        const { firstName, lastName, phone, email, address } = createTransactionDto.customer;
         if (!firstName || !lastName || !phone) {
           throw new BadRequestException('Customer details (firstName, lastName, phone) are required');
         }
         let customer = await prisma.customer.findFirst({ where: { phone } });
         if (!customer) {
-          customer = await prisma.customer.create({ data: { firstName, lastName, phone } });
+          customer = await prisma.customer.create({
+            data: { firstName, lastName, phone, email, address },
+          });
         }
         customerId = customer.id;
       }
@@ -40,19 +43,35 @@ export class TransactionService {
         const product = await prisma.product.findFirst({
           where: { id: item.productId, branchId: createTransactionDto.branchId },
         });
-        if (!product) throw new BadRequestException(`Product ID ${item.productId} not found in branch ${createTransactionDto.branchId}`);
+        if (!product) {
+          throw new BadRequestException(
+            `Product ID ${item.productId} not found in branch ${createTransactionDto.branchId}`,
+          );
+        }
 
-        if (['SALE', 'WRITE_OFF'].includes(createTransactionDto.type)) {
-          if (item.quantity <= 0) throw new BadRequestException(`Quantity must be positive for ${createTransactionDto.type}`);
-          if (product.quantity < item.quantity) {
-            throw new BadRequestException(`Insufficient stock for ${product.name}: available ${product.quantity}, requested ${item.quantity}`);
+        if (createTransactionDto.type === 'SALE' || createTransactionDto.type === 'WRITE_OFF') {
+          if (item.quantity <= 0) {
+            throw new BadRequestException(`Quantity must be positive for ${createTransactionDto.type}`);
           }
-        } else if (['PURCHASE', 'RETURN'].includes(createTransactionDto.type)) {
-          if (item.quantity <= 0) throw new BadRequestException(`Quantity must be positive for ${createTransactionDto.type}`);
+          if (product.quantity < item.quantity) {
+            throw new BadRequestException(
+              `Insufficient stock for ${product.name}: available ${product.quantity}, requested ${item.quantity}`,
+            );
+          }
+        } else if (
+          createTransactionDto.type === 'PURCHASE' ||
+          createTransactionDto.type === 'RETURN'
+        ) {
+          if (item.quantity <= 0) {
+            throw new BadRequestException(`Quantity must be positive for ${createTransactionDto.type}`);
+          }
         } else if (createTransactionDto.type === 'STOCK_ADJUSTMENT') {
-          // Allow positive or negative for adjustments, but check final quantity >= 0
           const newQuantity = product.quantity + item.quantity;
-          if (newQuantity < 0) throw new BadRequestException(`Adjustment would reduce stock below 0 for ${product.name}`);
+          if (newQuantity < 0) {
+            throw new BadRequestException(
+              `Adjustment would reduce stock below 0 for ${product.name}`,
+            );
+          }
         } else if (createTransactionDto.type === 'TRANSFER') {
           throw new BadRequestException('Transfers should be handled via ProductTransfer endpoint');
         }
@@ -79,7 +98,7 @@ export class TransactionService {
           remainingBalance: createTransactionDto.remainingBalance,
           receiptId: createTransactionDto.receiptId,
           items: {
-            create: createTransactionDto.items.map((item: CreateTransactionItemDto) => ({
+            create: createTransactionDto.items.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
               price: item.price,
@@ -94,6 +113,7 @@ export class TransactionService {
           user: true,
           customer: true,
           branch: true,
+          items: { include: { product: true } },
         },
       });
 
@@ -102,38 +122,40 @@ export class TransactionService {
         const product = await prisma.product.findFirst({
           where: { id: item.productId, branchId: createTransactionDto.branchId },
         });
-        if (!product) throw new BadRequestException(`Product not found: ${item.productId}`);
+        if (!product) {
+          throw new BadRequestException(`Product not found: ${item.productId}`);
+        }
 
         let newQuantity = product.quantity;
 
         switch (createTransactionDto.type) {
           case 'SALE':
+          case 'WRITE_OFF':
             newQuantity -= item.quantity;
             break;
           case 'PURCHASE':
-            newQuantity += item.quantity;
-            break;
           case 'RETURN':
             newQuantity += item.quantity;
-            break;
-          case 'WRITE_OFF':
-            newQuantity -= item.quantity;
             break;
           case 'STOCK_ADJUSTMENT':
             newQuantity += item.quantity;
             break;
           default:
-            continue; // Skip stock update for other types like TRANSFER
+            continue;
         }
 
-        if (newQuantity < 0) throw new BadRequestException(`Cannot reduce stock below 0 for ${product.name}`);
+        if (newQuantity < 0) {
+          throw new BadRequestException(`Cannot reduce stock below 0 for ${product.name}`);
+        }
 
         await prisma.product.update({
           where: { id: item.productId },
           data: { quantity: newQuantity },
         });
 
-        console.log(`${createTransactionDto.type}: Product ${item.productId}, Old Qty: ${product.quantity}, New Qty: ${newQuantity}`);
+        console.log(
+          `${createTransactionDto.type}: Product ${item.productId}, Old Qty: ${product.quantity}, New Qty: ${newQuantity}`,
+        );
       }
 
       return transaction;
@@ -146,8 +168,8 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
-
         branch: true,
+        items: { include: { product: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -159,8 +181,8 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
-
         branch: true,
+        items: { include: { product: true } },
       },
     });
     if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
@@ -186,8 +208,8 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
-
         branch: true,
+        items: { include: { product: true } },
       },
     });
   }
@@ -197,7 +219,6 @@ export class TransactionService {
     if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
     await this.prisma.$transaction(async (prisma) => {
       await prisma.transactionItem.deleteMany({ where: { transactionId: id } });
-
       await prisma.transaction.delete({ where: { id } });
     });
   }
