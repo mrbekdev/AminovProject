@@ -481,18 +481,18 @@ export class ProductService {
   // Defective mahsulotlar ro'yxati
   async getDefectiveProducts(branchId?: number) {
     const where: Prisma.ProductWhereInput = {
-      defectiveQuantity: { gt: 0 }
+      defectiveQuantity: { gt: 0 },
     };
-    
+
     if (branchId) {
       where.branchId = branchId;
     }
 
     return this.prisma.product.findMany({
       where,
-      include: { 
-        category: true, 
-        branch: true 
+      include: {
+        category: true,
+        branch: true,
       },
       orderBy: { id: 'asc' },
     });
@@ -501,18 +501,18 @@ export class ProductService {
   // Fixed mahsulotlar ro'yxati
   async getFixedProducts(branchId?: number) {
     const where: Prisma.ProductWhereInput = {
-      status: 'FIXED'
+      status: 'FIXED',
     };
-    
+
     if (branchId) {
       where.branchId = branchId;
     }
 
     return this.prisma.product.findMany({
       where,
-      include: { 
-        category: true, 
-        branch: true 
+      include: {
+        category: true,
+        branch: true,
       },
       orderBy: { id: 'asc' },
     });
