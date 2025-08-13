@@ -1,55 +1,102 @@
-
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNumber, IsOptional, IsEnum, IsNotEmpty } from 'class-validator';
+// dto/create-product.dto.ts
+import { IsString, IsNumber, IsOptional, IsEnum, Min } from 'class-validator';
 import { ProductStatus } from '@prisma/client';
 
 export class CreateProductDto {
-  @ApiProperty()
   @IsString()
-  @IsNotEmpty()
   name: string;
 
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  barcode: string;
-
-  @ApiProperty({ required: false })
-  @IsString()
   @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
 
-  @ApiProperty()
+  @IsOptional()
   @IsNumber()
-  categoryId: number;
+  categoryId?: number;
 
-  @ApiProperty()
   @IsNumber()
-  @IsNotEmpty()
   branchId: number;
 
-  @ApiProperty({ enum: ProductStatus })
-  @IsEnum(ProductStatus)
-  @IsNotEmpty()
-  status: ProductStatus;
-
-  @ApiProperty()
   @IsNumber()
-  @IsNotEmpty()
+  @Min(0)
   price: number;
 
-  @ApiProperty({ required: false })
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   marketPrice?: number;
 
-  @ApiProperty({ required: false })
-  @IsString()
   @IsOptional()
+  @IsString()
   model?: string;
 
-  @ApiProperty()
   @IsNumber()
-  @IsNotEmpty()
+  @Min(0)
   quantity: number;
+
+  @IsOptional()
+  @IsEnum(ProductStatus)
+  status?: ProductStatus;
+}
+
+
+export class UpdateProductDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsNumber()
+  categoryId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  branchId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  marketPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  quantity?: number;
+
+  @IsOptional()
+  @IsEnum(ProductStatus)
+  status?: ProductStatus;
+}
+
+export class MarkDefectiveDto {
+  @IsNumber()
+  @Min(1)
+  defectiveCount: number;
+}
+
+export class RestoreDefectiveDto {
+  @IsNumber()
+  @Min(1)
+  restoreCount: number;
 }

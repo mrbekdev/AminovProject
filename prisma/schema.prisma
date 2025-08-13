@@ -7,15 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum ProductStatus {
-  IN_WAREHOUSE
-  IN_STORE
-  SOLD
-  DEFECTIVE
-  RETURNED
-  CARRIER
-}
-
 enum TransactionType {
   SALE
   STOCK_ADJUSTMENT
@@ -44,6 +35,7 @@ enum StockHistoryType {
   TRANSFER_IN
   TRANSFER_OUT
   RETURN
+  DEFECTIVE
 }
 
 enum UserRole {
@@ -129,9 +121,18 @@ model Category {
   @@index([branchId])
 }
 
+enum ProductStatus {
+  IN_WAREHOUSE
+  IN_STORE
+  SOLD
+  DEFECTIVE
+  RETURNED
+  CARRIER
+}
+
 model Product {
   id                  Int                   @id @default(autoincrement())
-  barcode             String?                @unique
+  barcode             String?               @unique
   name                String
   quantity            Int
   price               Float
@@ -142,11 +143,40 @@ model Product {
   categoryId          Int?
   status              String                @default("IN_STORE")
   initialQuantity     Int
+  defectiveQuantity   Int                   @default(0) // Yangi field - defective mahsulotlar soni
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
   branch              Branch                @relation(fields: [branchId], references: [id])
   category            Category?             @relation(fields: [categoryId], references: [id])
   TransactionItem     TransactionItem[]
   ProductStockHistory ProductStockHistory[]
   ProductTransfer     ProductTransfer[]
+
+  @@map("products")
+}
+
+model ProductStockHistory {
+  id            Int              @id @default(autoincrement())
+  productId     Int
+  transactionId Int?
+  branchId      Int
+  createdById   Int?
+  quantity      Int              // + yoki - bo'lishi mumkin
+  type          StockHistoryType
+  description   String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch      Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdBy   User?        @relation("StockHistoryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([productId])
+  @@index([transactionId])
+  @@index([branchId])
+  @@index([createdById])
+  @@map("product_stock_history")
 }
 
 model Customer {
@@ -156,6 +186,7 @@ model Customer {
   phone     String
   email     String?  @unique
   address   String?
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -214,30 +245,6 @@ model TransactionItem {
   @@index([transactionId])
   @@index([productId])
 }
-
-model ProductStockHistory {
-  id            Int              @id @default(autoincrement())
-  productId     Int
-  transactionId Int?
-  branchId      Int
-  createdById   Int?
-  quantity      Int
-  type          StockHistoryType
-  description   String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-
-  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  branch      Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  createdBy   User?        @relation("StockHistoryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
-
-  @@index([productId])
-  @@index([transactionId])
-  @@index([branchId])
-  @@index([createdById])
-}
-
 model ProductTransfer {
   id            Int            @id @default(autoincrement())
   productId     Int
