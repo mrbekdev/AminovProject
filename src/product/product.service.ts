@@ -184,13 +184,12 @@ export class ProductService {
         },
       });
 
-      // DefectiveLog yaratishda faqat kerakli maydonlarni uzatamiz
       await tx.defectiveLog.create({
         data: {
           productId: id,
           quantity: defectiveQty,
           description,
-          userId: userId , // userId ni tekshiramiz
+          userId,
         },
       });
 
@@ -211,15 +210,15 @@ export class ProductService {
         },
       });
 
-await tx.transactionItem.create({
-  data: {
-    transactionId: transaction.id,
-    product: { connect: { id } },
-    quantity: defectiveQty,
-    price: 0,
-    total: 0,
-  } as any, // tip cheklovini chetlab o‘tdik
-});
+      await tx.transactionItem.create({
+        data: {
+          transactionId: transaction.id,
+          productId: id,
+          quantity: defectiveQty,
+          price: 0,
+          total: 0,
+        },
+      });
 
       return updatedProduct;
     });
@@ -253,13 +252,12 @@ await tx.transactionItem.create({
         },
       });
 
-      // DefectiveLog yaratishda faqat kerakli maydonlarni uzatamiz
       await tx.defectiveLog.create({
         data: {
           productId: id,
           quantity: defectiveCount,
           description,
-          userId: userId , // userId ni tekshiramiz
+          userId,
         },
       });
 
@@ -280,15 +278,15 @@ await tx.transactionItem.create({
         },
       });
 
-await tx.transactionItem.create({
-  data: {
-    transactionId: transaction.id,
-    product: { connect: { id } },
-    quantity: defectiveCount,
-    price: 0,
-    total: 0,
-  } as any, // tip cheklovini chetlab o‘tdik
-});
+      await tx.transactionItem.create({
+        data: {
+          transactionId: transaction.id,
+          productId: id,
+          quantity: defectiveCount,
+          price: 0,
+          total: 0,
+        },
+      });
 
       return updatedProduct;
     });
@@ -343,15 +341,15 @@ await tx.transactionItem.create({
         },
       });
 
-await tx.transactionItem.create({
-  data: {
-    transactionId: transaction.id,
-    product: { connect: { id } },
-    quantity: restoreCount,
-    price: 0,
-    total: 0,
-  } as any, // tip cheklovini chetlab o‘tdik
-});
+      await tx.transactionItem.create({
+        data: {
+          transactionId: transaction.id,
+          productId: id,
+          quantity: restoreCount,
+          price: 0,
+          total: 0,
+        },
+      });
 
       return updatedProduct;
     });
@@ -381,13 +379,12 @@ await tx.transactionItem.create({
           },
         });
 
-        // DefectiveLog yaratishda faqat kerakli maydonlarni uzatamiz
         await tx.defectiveLog.create({
           data: {
             productId: product.id,
             quantity: defectiveQty,
             description,
-            userId: userId , 
+            userId,
           },
         });
 
@@ -408,15 +405,15 @@ await tx.transactionItem.create({
           },
         });
 
-await tx.transactionItem.create({
-  data: {
-    transactionId: transaction.id,
-    product: { connect: { ids } },
-    quantity: defectiveQty,
-    price: 0,
-    total: 0,
-  } as any, // tip cheklovini chetlab o‘tdik
-});
+        await tx.transactionItem.create({
+          data: {
+            transactionId: transaction.id,
+            productId: product.id,
+            quantity: defectiveQty,
+            price: 0,
+            total: 0,
+          },
+        });
       }
 
       return { message: 'Tanlangan mahsulotlar defective qilindi', count: ids.length };
@@ -466,15 +463,15 @@ await tx.transactionItem.create({
           },
         });
 
-await tx.transactionItem.create({
-  data: {
-    transactionId: transaction.id,
-    product: { connect: { ids } },
-    quantity: restoreCount,
-    price: 0,
-    total: 0,
-  } as any, // tip cheklovini chetlab o‘tdik
-});
+        await tx.transactionItem.create({
+          data: {
+            transactionId: transaction.id,
+            productId: product.id,
+            quantity: restoreCount,
+            price: 0,
+            total: 0,
+          },
+        });
       }
 
       return { message: 'Tanlangan defective mahsulotlar qaytarildi', count: ids.length };
@@ -555,15 +552,15 @@ await tx.transactionItem.create({
           },
         });
 
-await tx.transactionItem.create({
-  data: {
-    transactionId: transaction.id,
-    product: { connect: { id } },
-    quantity: product.quantity,
-    price: 0,
-    total: 0,
-  } as any, // tip cheklovini chetlab o‘tdik
-});
+        await tx.transactionItem.create({
+          data: {
+            transactionId: transaction.id,
+            productId: id,
+            quantity: product.quantity,
+            price: 0,
+            total: 0,
+          },
+        });
       }
 
       return updatedProduct;
@@ -636,15 +633,15 @@ await tx.transactionItem.create({
             },
           });
 
-await tx.transactionItem.create({
-  data: {
-    transactionId: transaction.id,
-    product: { connect: { ids } },
-    quantity: product.quantity,
-    price: 0,
-    total: 0,
-  } as any, // tip cheklovini chetlab o‘tdik
-});
+          await tx.transactionItem.create({
+            data: {
+              transactionId: transaction.id,
+              productId: product.id,
+              quantity: product.quantity,
+              price: 0,
+              total: 0,
+            },
+          });
         }
       }
 
