@@ -161,135 +161,136 @@ export class ProductService {
   }
 
   // Mahsulotni DEFECTIVE qilib belgilash (to'liq mahsulot)
-  async markAsDefective(id: number, description: string, userId: number) {
-    return this.prisma.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({ where: { id } });
-      if (!product) {
-        throw new NotFoundException('Mahsulot topilmadi');
-      }
+// Mahsulotni DEFECTIVE qilib belgilash (to'liq mahsulot)
+async markAsDefective(id: number, description: string, userId: number) {
+  return this.prisma.$transaction(async (tx) => {
+    const product = await tx.product.findUnique({ where: { id } });
+    if (!product) {
+      throw new NotFoundException('Mahsulot topilmadi');
+    }
 
-      if (product.quantity === 0) {
-        throw new BadRequestException('Mahsulot miqdori 0 ga teng, defective qilib bo\'lmaydi');
-      }
+    if (product.quantity === 0) {
+      throw new BadRequestException('Mahsulot miqdori 0 ga teng, defective qilib bo\'lmaydi');
+    }
 
-      const defectiveQty = product.quantity;
+    const defectiveQty = product.quantity;
 
-      const updatedProduct = await tx.product.update({
-        where: { id },
-        data: {
-          status: 'DEFECTIVE',
-          defectiveQuantity: defectiveQty,
-          quantity: 0,
-        },
-      });
-
-      await tx.defectiveLog.create({
-        data: {
-          productId: id,
-          quantity: defectiveQty,
-          description,
-          userId,
-        },
-      });
-
-      const transDesc = `Mahsulot to'liq defective qilib belgilandi. ${defectiveQty} ta. Sababi: ${description}`;
-
-      const transaction = await tx.transaction.create({
-        data: {
-          userId,
-          branchId: product.branchId,
-          type: 'WRITE_OFF',
-          status: 'COMPLETED',
-          discount: 0,
-          total: 0,
-          finalTotal: 0,
-          amountPaid: 0,
-          remainingBalance: 0,
-          description: transDesc,
-        },
-      });
-
-      await tx.transactionItem.create({
-        data: {
-          transactionId: transaction.id,
-          productId: id,
-          quantity: defectiveQty,
-          price: 0,
-          total: 0,
-        },
-      });
-
-      return updatedProduct;
+    const updatedProduct = await tx.product.update({
+      where: { id },
+      data: {
+        status: 'DEFECTIVE',
+        defectiveQuantity: (product.defectiveQuantity || 0) + defectiveQty,
+        quantity: 0,
+      },
     });
-  }
 
-  // Mahsulotdan ma'lum miqdorini DEFECTIVE qilib belgilash
-  async markPartialDefective(id: number, defectiveCount: number, description: string, userId: number) {
-    return this.prisma.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({ where: { id } });
-      if (!product) {
-        throw new NotFoundException('Mahsulot topilmadi');
-      }
-
-      if (defectiveCount <= 0) {
-        throw new BadRequestException('Defective miqdor 0 dan katta bo\'lishi kerak');
-      }
-
-      if (defectiveCount > product.quantity) {
-        throw new BadRequestException('Defective miqdor mavjud mahsulot miqdoridan ko\'p bo\'lishi mumkin emas');
-      }
-
-      const newQuantity = product.quantity - defectiveCount;
-      const newDefectiveQuantity = (product.defectiveQuantity || 0) + defectiveCount;
-
-      const updatedProduct = await tx.product.update({
-        where: { id },
-        data: {
-          quantity: newQuantity,
-          defectiveQuantity: newDefectiveQuantity,
-          status: newQuantity === 0 ? 'DEFECTIVE' : product.status,
-        },
-      });
-
-      await tx.defectiveLog.create({
-        data: {
-          productId: id,
-          quantity: defectiveCount,
-          description,
-          userId,
-        },
-      });
-
-      const transDesc = `${defectiveCount} ta mahsulot defective qilib belgilandi. Sababi: ${description}`;
-
-      const transaction = await tx.transaction.create({
-        data: {
-          userId,
-          branchId: product.branchId,
-          type: 'WRITE_OFF',
-          status: 'COMPLETED',
-          discount: 0,
-          total: 0,
-          finalTotal: 0,
-          amountPaid: 0,
-          remainingBalance: 0,
-          description: transDesc,
-        },
-      });
-
-      await tx.transactionItem.create({
-        data: {
-          transactionId: transaction.id,
-          productId: id,
-          quantity: defectiveCount,
-          price: 0,
-          total: 0,
-        },
-      });
-
-      return updatedProduct;
+    await tx.defectiveLog.create({
+      data: {
+        productId: id,
+        quantity: defectiveQty,
+        description,
+        userId,
+      },
     });
-  }
+
+    const transDesc = `Mahsulot to'liq defective qilib belgilandi. ${defectiveQty} ta. Sababi: ${description}`;
+
+    const transaction = await tx.transaction.create({
+      data: {
+        userId,
+        branchId: product.branchId,
+        type: 'WRITE_OFF',
+        status: 'COMPLETED',
+        discount: 0,
+        total: 0,
+        finalTotal: 0,
+        amountPaid: 0,
+        remainingBalance: 0,
+        description: transDesc,
+      },
+    });
+
+    await tx.transactionItem.create({
+      data: {
+        transactionId: transaction.id,
+        productId: id,
+        quantity: defectiveQty,
+        price: 0,
+        total: 0,
+      },
+    });
+
+    return updatedProduct;
+  });
+}
+
+// Mahsulotdan ma'lum miqdorini DEFECTIVE qilib belgilash
+async markPartialDefective(id: number, defectiveCount: number, description: string, userId: number) {
+  return this.prisma.$transaction(async (tx) => {
+    const product = await tx.product.findUnique({ where: { id } });
+    if (!product) {
+      throw new NotFoundException('Mahsulot topilmadi');
+    }
+
+    if (defectiveCount <= 0) {
+      throw new BadRequestException('Defective miqdor 0 dan katta bo\'lishi kerak');
+    }
+
+    if (defectiveCount > product.quantity) {
+      throw new BadRequestException('Defective miqdor mavjud mahsulot miqdoridan ko\'p bo\'lishi mumkin emas');
+    }
+
+    const newQuantity = product.quantity - defectiveCount;
+    const newDefectiveQuantity = (product.defectiveQuantity || 0) + defectiveCount;
+
+    const updatedProduct = await tx.product.update({
+      where: { id },
+      data: {
+        quantity: newQuantity,
+        defectiveQuantity: newDefectiveQuantity,
+        status: newQuantity === 0 ? 'DEFECTIVE' : product.status,
+      },
+    });
+
+    await tx.defectiveLog.create({
+      data: {
+        productId: id,
+        quantity: defectiveCount,
+        description,
+        userId,
+      },
+    });
+
+    const transDesc = `${defectiveCount} ta mahsulot defective qilib belgilandi. Sababi: ${description}`;
+
+    const transaction = await tx.transaction.create({
+      data: {
+        userId,
+        branchId: product.branchId,
+        type: 'WRITE_OFF',
+        status: 'COMPLETED',
+        discount: 0,
+        total: 0,
+        finalTotal: 0,
+        amountPaid: 0,
+        remainingBalance: 0,
+        description: transDesc,
+      },
+    });
+
+    await tx.transactionItem.create({
+      data: {
+        transactionId: transaction.id,
+        productId: id,
+        quantity: defectiveCount,
+        price: 0,
+        total: 0,
+      },
+    });
+
+    return updatedProduct;
+  });
+}
 
   // Defective mahsulotlarni qaytarish (restore)
   async restoreDefectiveProduct(id: number, restoreCount: number, userId: number) {

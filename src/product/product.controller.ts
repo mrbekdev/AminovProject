@@ -12,7 +12,8 @@ import {
   UseInterceptors, 
   UploadedFile, 
   UseGuards, 
-  Req 
+  Req, 
+  BadRequestException
 } from '@nestjs/common';
 import { Request } from 'express';
 import { ProductService } from './product.service';
@@ -72,36 +73,47 @@ export class ProductController {
     return this.productService.update(id, updateProductDto, req.user.id);
   }
 
-  // Mahsulotni to'liq defective qilish
-  @Put(':id/mark-defective')
-  markAsDefective(
-    @Req() req: AuthRequest,
-    @Param('id', ParseIntPipe) id: number,
-    @Body('description') description: string,
-  ) {
-    return this.productService.markAsDefective(id, description, req.user.id);
+// Mahsulotni to'liq defective qilish
+@Put(':id/mark-defective')
+markAsDefective(
+  @Req() req: AuthRequest,
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: { description: string }
+) {
+  if (!body.description) {
+    throw new BadRequestException('Description is required');
   }
+  return this.productService.markAsDefective(id, body.description, req.user.id);
+}
 
-  // Mahsulotdan ma'lum miqdorini defective qilish
-  @Put(':id/partial-defective')
-  markPartialDefective(
-    @Req() req: AuthRequest,
-    @Param('id', ParseIntPipe) id: number,
-    @Body('defectiveCount', ParseIntPipe) defectiveCount: number,
-    @Body('description') description: string,
-  ) {
-    return this.productService.markPartialDefective(id, defectiveCount, description, req.user.id);
+// Mahsulotdan ma'lum miqdorini defective qilish
+@Put(':id/partial-defective')
+markPartialDefective(
+  @Req() req: AuthRequest,
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: { defectiveCount: number; description: string }
+) {
+  if (!body.description) {
+    throw new BadRequestException('Description is required');
   }
+  if (!body.defectiveCount || body.defectiveCount <= 0) {
+    throw new BadRequestException('Valid defectiveCount is required');
+  }
+  return this.productService.markPartialDefective(id, body.defectiveCount, body.description, req.user.id);
+}
 
-  // Defective mahsulotni qaytarish
-  @Put(':id/restore-defective')
-  restoreDefectiveProduct(
-    @Req() req: AuthRequest,
-    @Param('id', ParseIntPipe) id: number,
-    @Body('restoreCount', ParseIntPipe) restoreCount: number
-  ) {
-    return this.productService.restoreDefectiveProduct(id, restoreCount, req.user.id);
+// Defective mahsulotni qaytarish
+@Put(':id/restore-defective')
+restoreDefectiveProduct(
+  @Req() req: AuthRequest,
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: { restoreCount: number }
+) {
+  if (!body.restoreCount || body.restoreCount <= 0) {
+    throw new BadRequestException('Valid restoreCount is required');
   }
+  return this.productService.restoreDefectiveProduct(id, body.restoreCount, req.user.id);
+}
 
   // Bulk defective
   @Post('bulk-defective')
