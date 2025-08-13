@@ -1,4 +1,6 @@
 // prisma/schema.prisma
+// (Unchanged from previous, but adding ProductTransfer model for completeness)
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -55,6 +57,8 @@ model Branch {
   transactions Transaction[]
   users        User[]
   categories   Category[]
+  fromTransfers ProductTransfer[] @relation("FromBranch")
+  toTransfers   ProductTransfer[] @relation("ToBranch")
 
   @@index([name])
 }
@@ -74,6 +78,8 @@ model User {
 
   branch              Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdTransactions Transaction[] @relation("TransactionsCreatedBy")
+  initiatedTransfers  ProductTransfer[] @relation("InitiatedTransfers")
+  approvedTransfers   ProductTransfer[] @relation("ApprovedTransfers")
 
   userLocations UserLocation[]
   defectiveLogs DefectiveLog[]
@@ -126,7 +132,7 @@ model Product {
   price              Float
   quantity           Int                @default(0)
   defectiveQuantity  Int                @default(0)
-  initialQuantity    Int?               // Initial quantity
+  initialQuantity    Int?               // Dastlabki miqdor uchun
   status             ProductStatus      @default(IN_STORE)
   branchId           Int
   branch             Branch             @relation(fields: [branchId], references: [id])
@@ -138,6 +144,7 @@ model Product {
   
   defectiveLogs      DefectiveLog[]
   transactionItems   TransactionItem[]
+  transfers          ProductTransfer[]
 
   @@index([branchId])
   @@index([categoryId])
@@ -222,4 +229,30 @@ model TransactionItem {
 
   transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   product     Product?    @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+}
+
+model ProductTransfer {
+  id            Int            @id @default(autoincrement())
+  productId     Int
+  fromBranchId  Int
+  toBranchId    Int
+  quantity      Int
+  status        TransferStatus @default(PENDING)
+  initiatedById Int
+  approvedById  Int?
+  transferDate  DateTime       @default(now())
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  product      Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fromBranch   Branch  @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict)
+  toBranch     Branch  @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict)
+  initiatedBy  User    @relation("InitiatedTransfers", fields: [initiatedById], references: [id], onDelete: Restrict)
+  approvedBy   User?   @relation("ApprovedTransfers", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([fromBranchId])
+  @@index([toBranchId])
+  @@index([initiatedById])
+  @@index([status])
 }

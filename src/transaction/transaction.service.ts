@@ -1,8 +1,8 @@
-// src/transaction/transaction.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateTransactionDto, UpdateTransactionDto } from './dto/create-transaction.dto';
-import { Transaction } from '@prisma/client';
+import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { UpdateTransactionDto } from './dto/update-transaction.dto';
+import { Transaction, TransactionStatus, PaymentType } from '@prisma/client';
 
 @Injectable()
 export class TransactionService {
@@ -10,152 +10,120 @@ export class TransactionService {
 
   async create(createTransactionDto: CreateTransactionDto): Promise<Transaction> {
     return this.prisma.$transaction(async (prisma) => {
-      // Validate user
-      const user = await prisma.user.findUnique({ where: { id: createTransactionDto.userId } });
-      if (!user) throw new BadRequestException('Invalid user ID');
+      const { customer, branchId, items, type, userId, paymentType, status = 'PENDING', total: dtoTotal, finalTotal: dtoFinalTotal } = createTransactionDto;
 
       // Validate branch
-      const branch = await prisma.branch.findUnique({ where: { id: createTransactionDto.branchId } });
+      const branch = await prisma.branch.findUnique({ where: { id: branchId } });
       if (!branch) throw new BadRequestException('Invalid branch ID');
 
-      // Handle customer
-      let customerId = createTransactionDto.customerId;
-      if (createTransactionDto.customer && !customerId) {
-        const { firstName, lastName, phone, email, address } = createTransactionDto.customer;
-        if (!firstName || !lastName || !phone) {
-          throw new BadRequestException('Customer details (firstName, lastName, phone) are required');
-        }
-        let customer = await prisma.customer.findFirst({ where: { phone } });
-        if (!customer) {
-          customer = await prisma.customer.create({
-            data: { firstName, lastName, phone, email, address },
-          });
-        }
-        customerId = customer.id;
-      }
-      if (customerId) {
-        const customer = await prisma.customer.findUnique({ where: { id: customerId } });
-        if (!customer) throw new BadRequestException('Invalid customer ID');
-      }
+      // Validate user
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) throw new BadRequestException('Invalid user ID');
 
       // Validate products and stock
-      for (const item of createTransactionDto.items) {
+      for (const item of items) {
         const product = await prisma.product.findFirst({
-          where: { id: item.productId, branchId: createTransactionDto.branchId },
+          where: { id: item.productId, branchId },
         });
         if (!product) {
-          throw new BadRequestException(
-            `Product ID ${item.productId} not found in branch ${createTransactionDto.branchId}`,
-          );
+          throw new BadRequestException(`Product ID ${item.productId} not found in branch ${branchId}`);
         }
-
-        if (createTransactionDto.type === 'SALE' || createTransactionDto.type === 'WRITE_OFF') {
-          if (item.quantity <= 0) {
-            throw new BadRequestException(`Quantity must be positive for ${createTransactionDto.type}`);
-          }
-          if (product.quantity < item.quantity) {
-            throw new BadRequestException(
-              `Insufficient stock for ${product.name}: available ${product.quantity}, requested ${item.quantity}`,
-            );
-          }
-        } else if (
-          createTransactionDto.type === 'PURCHASE' ||
-          createTransactionDto.type === 'RETURN'
-        ) {
-          if (item.quantity <= 0) {
-            throw new BadRequestException(`Quantity must be positive for ${createTransactionDto.type}`);
-          }
-        } else if (createTransactionDto.type === 'STOCK_ADJUSTMENT') {
-          const newQuantity = product.quantity + item.quantity;
-          if (newQuantity < 0) {
-            throw new BadRequestException(
-              `Adjustment would reduce stock below 0 for ${product.name}`,
-            );
-          }
-        } else if (createTransactionDto.type === 'TRANSFER') {
-          throw new BadRequestException('Transfers should be handled via ProductTransfer endpoint');
+        if (item.quantity <= 0) {
+          throw new BadRequestException(`Quantity for product ${item.productId} must be positive`);
+        }
+        if (product.quantity < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for ${product.name || `Product ${item.productId}`}: available ${product.quantity}, requested ${item.quantity}`,
+          );
         }
       }
 
       // Calculate totals
-      const total = createTransactionDto.items.reduce((sum, item) => sum + item.total, 0);
-      const finalTotal = total - (createTransactionDto.discount || 0);
+      const calculatedTotal = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+      if (Math.abs(calculatedTotal - dtoTotal) > 0.01) {
+        throw new BadRequestException(`Calculated total (${calculatedTotal.toFixed(2)}) does not match provided total (${dtoTotal})`);
+      }
 
-      // Create transaction
+      let interestRate = 0;
+      let creditMonth: number | undefined;
+      if (paymentType && ['CREDIT', 'INSTALLMENT'].includes(paymentType)) {
+        creditMonth = items[0]?.creditMonth;
+        if (!creditMonth || items.some((item) => item.creditMonth !== creditMonth)) {
+          throw new BadRequestException('All items must have the same credit month');
+        }
+        if (creditMonth <= 0 || creditMonth > 24) {
+          throw new BadRequestException('Credit months must be between 1 and 24');
+        }
+        interestRate = creditMonth <= 3 ? 0.05 : creditMonth <= 6 ? 0.10 : creditMonth <= 12 ? 0.15 : 0.20;
+        const expectedFinalTotal = calculatedTotal * (1 + interestRate);
+        if (Math.abs(expectedFinalTotal - dtoFinalTotal) > 0.01) {
+          throw new BadRequestException(
+            `Final total (${dtoFinalTotal.toFixed(2)}) does not match calculated total with interest (${expectedFinalTotal.toFixed(2)})`,
+          );
+        }
+      } else if (Math.abs(dtoTotal - dtoFinalTotal) > 0.01) {
+        throw new BadRequestException('Final total must match total when no payment type is specified');
+      }
+
+      // Create or find customer
+      let customerId: number | undefined;
+      if (customer) {
+        const existingCustomer = await prisma.customer.findFirst({
+          where: { phone: customer.phone },
+        });
+        if (existingCustomer) {
+          customerId = existingCustomer.id;
+        } else {
+          const newCustomer = await prisma.customer.create({
+            data: {
+              firstName: customer.firstName,
+              lastName: customer.lastName,
+              phone: customer.phone,
+              email: customer.email,
+              address: customer.address,
+            },
+          });
+          customerId = newCustomer.id;
+        }
+      }
+
+      // Create transaction with items
       const transaction = await prisma.transaction.create({
         data: {
+          userId,
+          branchId,
+          type,
+          status,
+          total: dtoTotal,
+          finalTotal: dtoFinalTotal,
+          paymentType,
           customerId,
-          userId: createTransactionDto.userId,
-          branchId: createTransactionDto.branchId,
-          type: createTransactionDto.type,
-          status: createTransactionDto.status || 'PENDING',
-          discount: createTransactionDto.discount || 0,
-          total,
-          finalTotal,
-          paymentType: createTransactionDto.type === 'SALE' ? createTransactionDto.paymentType : undefined,
-          deliveryMethod: createTransactionDto.deliveryMethod,
-          amountPaid: createTransactionDto.amountPaid,
-          remainingBalance: createTransactionDto.remainingBalance,
-          receiptId: createTransactionDto.receiptId,
           items: {
-            create: createTransactionDto.items.map((item) => ({
+            create: items.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
               price: item.price,
-              total: item.total,
+              total: item.quantity * item.price,
               creditMonth: item.creditMonth,
-              creditPercent: item.creditPercent,
-              monthlyPayment: item.monthlyPayment,
+              creditPercent: paymentType ? interestRate : undefined,
+              monthlyPayment: paymentType && creditMonth ? dtoFinalTotal / creditMonth : undefined,
             })),
           },
         },
         include: {
-          user: true,
+          items: true,
           customer: true,
           branch: true,
-          items: { include: { product: true } },
+          user: true,
         },
       });
 
-      // Update product quantities
-      for (const item of createTransactionDto.items) {
-        const product = await prisma.product.findFirst({
-          where: { id: item.productId, branchId: createTransactionDto.branchId },
-        });
-        if (!product) {
-          throw new BadRequestException(`Product not found: ${item.productId}`);
-        }
-
-        let newQuantity = product.quantity;
-
-        switch (createTransactionDto.type) {
-          case 'SALE':
-          case 'WRITE_OFF':
-            newQuantity -= item.quantity;
-            break;
-          case 'PURCHASE':
-          case 'RETURN':
-            newQuantity += item.quantity;
-            break;
-          case 'STOCK_ADJUSTMENT':
-            newQuantity += item.quantity;
-            break;
-          default:
-            continue;
-        }
-
-        if (newQuantity < 0) {
-          throw new BadRequestException(`Cannot reduce stock below 0 for ${product.name}`);
-        }
-
+      // Update product quantities atomically
+      for (const item of items) {
         await prisma.product.update({
           where: { id: item.productId },
-          data: { quantity: newQuantity },
+          data: { quantity: { decrement: item.quantity } },
         });
-
-        console.log(
-          `${createTransactionDto.type}: Product ${item.productId}, Old Qty: ${product.quantity}, New Qty: ${newQuantity}`,
-        );
       }
 
       return transaction;
@@ -164,12 +132,12 @@ export class TransactionService {
 
   async findAll(branchId?: number): Promise<Transaction[]> {
     return this.prisma.transaction.findMany({
-      where: branchId && !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0 ? { branchId } : {},
+      where: branchId ? { branchId } : {},
       include: {
+        items: true,
         customer: true,
-        user: true,
         branch: true,
-        items: { include: { product: true } },
+        user: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -179,10 +147,10 @@ export class TransactionService {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },
       include: {
+        items: true,
         customer: true,
-        user: true,
         branch: true,
-        items: { include: { product: true } },
+        user: true,
       },
     });
     if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
@@ -190,26 +158,31 @@ export class TransactionService {
   }
 
   async update(id: number, updateTransactionDto: UpdateTransactionDto): Promise<Transaction> {
-    const transaction = await this.prisma.transaction.findUnique({ where: { id } });
+    const transaction = await this.prisma.transaction.findUnique({
+      where: { id },
+      include: { items: true },
+    });
     if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
+
+    if (updateTransactionDto.status === 'CANCELLED' && transaction.status !== 'CANCELLED') {
+      await this.prisma.$transaction(async (prisma) => {
+        for (const item of transaction.items) {
+          await prisma.product.update({
+            where: { id: id },
+            data: { quantity: { increment: item.quantity } },
+          });
+        }
+      });
+    }
+
     return this.prisma.transaction.update({
       where: { id },
-      data: {
-        customerId: updateTransactionDto.customerId,
-        status: updateTransactionDto.status,
-        discount: updateTransactionDto.discount,
-        finalTotal: updateTransactionDto.finalTotal,
-        paymentType: updateTransactionDto.paymentType,
-        deliveryMethod: updateTransactionDto.deliveryMethod,
-        amountPaid: updateTransactionDto.amountPaid,
-        remainingBalance: updateTransactionDto.remainingBalance,
-        receiptId: updateTransactionDto.receiptId,
-      },
+      data: updateTransactionDto,
       include: {
+        items: true,
         customer: true,
-        user: true,
         branch: true,
-        items: { include: { product: true } },
+        user: true,
       },
     });
   }
@@ -217,9 +190,6 @@ export class TransactionService {
   async remove(id: number): Promise<void> {
     const transaction = await this.prisma.transaction.findUnique({ where: { id } });
     if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
-    await this.prisma.$transaction(async (prisma) => {
-      await prisma.transactionItem.deleteMany({ where: { transactionId: id } });
-      await prisma.transaction.delete({ where: { id } });
-    });
+    await this.prisma.transaction.delete({ where: { id } });
   }
 }

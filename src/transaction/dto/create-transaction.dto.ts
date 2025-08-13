@@ -1,4 +1,3 @@
-// src/transaction/dto/create-transaction.dto.ts
 import { IsArray, IsEnum, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TransactionType, TransactionStatus, PaymentType } from '@prisma/client';
