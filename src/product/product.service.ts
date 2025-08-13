@@ -175,16 +175,27 @@ export class ProductService {
         throw new BadRequestException('Mahsulot miqdori 0 ga teng, defective qilib bo\'lmaydi');
       }
 
+      const defectiveQty = product.quantity;
+
       const updatedProduct = await tx.product.update({
         where: { id },
         data: {
           status: 'DEFECTIVE',
-          defectiveQuantity: product.quantity,
+          defectiveQuantity: defectiveQty,
           quantity: 0,
         },
       });
 
-      const transDesc = `Mahsulot to'liq defective qilib belgilandi. ${product.quantity} ta. Sababi: ${description}`;
+      await tx.defectiveLog.create({
+        data: {
+          productId: id,
+          quantity: defectiveQty,
+          description,
+          userId,
+        },
+      });
+
+      const transDesc = `Mahsulot to'liq defective qilib belgilandi. ${defectiveQty} ta. Sababi: ${description}`;
 
       const transaction = await tx.transaction.create({
         data: {
@@ -205,7 +216,7 @@ export class ProductService {
         data: {
           transactionId: transaction.id,
           productId: id,
-          quantity: product.quantity,
+          quantity: defectiveQty,
           price: 0,
           total: 0,
         },
@@ -240,6 +251,15 @@ export class ProductService {
           quantity: newQuantity,
           defectiveQuantity: newDefectiveQuantity,
           status: newQuantity === 0 ? 'DEFECTIVE' : product.status,
+        },
+      });
+
+      await tx.defectiveLog.create({
+        data: {
+          productId: id,
+          quantity: defectiveCount,
+          description,
+          userId,
         },
       });
 
