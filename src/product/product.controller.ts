@@ -11,13 +11,19 @@ import {
   Query, 
   UseInterceptors, 
   UploadedFile, 
-  UseGuards 
+  UseGuards, 
+  Req 
 } from '@nestjs/common';
+import { Request } from 'express';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+interface AuthRequest extends Request {
+  user: { id: number };
+}
 
 @Controller('products')
 @UseGuards(JwtAuthGuard)
@@ -25,8 +31,8 @@ export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
   @Post()
-  create(@Body() createProductDto: CreateProductDto) {
-    return this.productService.create(createProductDto);
+  create(@Req() req: AuthRequest, @Body() createProductDto: CreateProductDto) {
+    return this.productService.create(createProductDto, req.user.id);
   }
 
   @Get()
@@ -56,56 +62,60 @@ export class ProductController {
   }
 
   @Put(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() updateProductDto: UpdateProductDto) {
-    return this.productService.update(id, updateProductDto);
+  update(@Req() req: AuthRequest, @Param('id', ParseIntPipe) id: number, @Body() updateProductDto: UpdateProductDto) {
+    return this.productService.update(id, updateProductDto, req.user.id);
   }
 
   // Mahsulotni to'liq defective qilish
   @Put(':id/mark-defective')
   markAsDefective(
+    @Req() req: AuthRequest,
     @Param('id', ParseIntPipe) id: number,
     @Body('description') description: string,
   ) {
-    return this.productService.markAsDefective(id, description);
+    return this.productService.markAsDefective(id, description, req.user.id);
   }
 
   // Mahsulotdan ma'lum miqdorini defective qilish
   @Put(':id/partial-defective')
   markPartialDefective(
+    @Req() req: AuthRequest,
     @Param('id', ParseIntPipe) id: number,
     @Body('defectiveCount', ParseIntPipe) defectiveCount: number,
     @Body('description') description: string,
   ) {
-    return this.productService.markPartialDefective(id, defectiveCount, description);
+    return this.productService.markPartialDefective(id, defectiveCount, description, req.user.id);
   }
 
   // Defective mahsulotni qaytarish
   @Put(':id/restore-defective')
   restoreDefectiveProduct(
+    @Req() req: AuthRequest,
     @Param('id', ParseIntPipe) id: number,
     @Body('restoreCount', ParseIntPipe) restoreCount: number
   ) {
-    return this.productService.restoreDefectiveProduct(id, restoreCount);
+    return this.productService.restoreDefectiveProduct(id, restoreCount, req.user.id);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.productService.remove(id);
+  remove(@Req() req: AuthRequest, @Param('id', ParseIntPipe) id: number) {
+    return this.productService.remove(id, req.user.id);
   }
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
   uploadExcel(
+    @Req() req: AuthRequest,
     @UploadedFile() file: Express.Multer.File,
     @Body('branchId', ParseIntPipe) branchId: number,
     @Body('categoryId', ParseIntPipe) categoryId: number,
     @Body('status') status: string,
   ) {
-    return this.productService.uploadExcel(file, branchId, categoryId, status);
+    return this.productService.uploadExcel(file, branchId, categoryId, status, req.user.id);
   }
 
   @Delete('bulk')
-  bulkRemove(@Body() body: { ids: number[] }) {
-    return this.productService.removeMany(body.ids);
+  bulkRemove(@Req() req: AuthRequest, @Body() body: { ids: number[] }) {
+    return this.productService.removeMany(body.ids, req.user.id);
   }
 }

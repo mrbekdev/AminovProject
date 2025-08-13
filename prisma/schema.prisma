@@ -28,16 +28,6 @@ enum PaymentType {
   CREDIT
 }
 
-enum StockHistoryType {
-  INFLOW
-  OUTFLOW
-  ADJUSTMENT
-  TRANSFER_IN
-  TRANSFER_OUT
-  RETURN
-  DEFECTIVE
-}
-
 enum UserRole {
   ADMIN
   MANAGER
@@ -62,7 +52,6 @@ model Branch {
 
   products            Product[]
   transactions        Transaction[]
-  stockHistory        ProductStockHistory[]
   users               User[]
   categories          Category[]
   productTransfersOut ProductTransfer[]     @relation("BranchToTransfersOut")
@@ -87,7 +76,6 @@ model User {
 
   branch              Branch?               @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdTransactions Transaction[]         @relation("TransactionsCreatedBy")
-  stockHistoryCreated ProductStockHistory[] @relation("StockHistoryCreatedBy")
   productTransfers    ProductTransfer[]     @relation("UserToTransfers")
   userLocations       UserLocation[]
 
@@ -149,34 +137,9 @@ model Product {
   branch              Branch                @relation(fields: [branchId], references: [id])
   category            Category?             @relation(fields: [categoryId], references: [id])
   TransactionItem     TransactionItem[]
-  ProductStockHistory ProductStockHistory[]
   ProductTransfer     ProductTransfer[]
 
   @@map("products")
-}
-
-model ProductStockHistory {
-  id            Int              @id @default(autoincrement())
-  productId     Int
-  transactionId Int?
-  branchId      Int
-  createdById   Int?
-  quantity      Int              // + yoki - bo'lishi mumkin
-  type          StockHistoryType
-  description   String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-
-  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  branch      Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  createdBy   User?        @relation("StockHistoryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
-
-  @@index([productId])
-  @@index([transactionId])
-  @@index([branchId])
-  @@index([createdById])
-  @@map("product_stock_history")
 }
 
 model Customer {
@@ -199,7 +162,7 @@ model Customer {
 model Transaction {
   id               Int               @id @default(autoincrement())
   customerId       Int?
-  userId           Int
+  userId           Int?
   branchId         Int?
   type             TransactionType
   status           TransactionStatus @default(PENDING)
@@ -211,14 +174,14 @@ model Transaction {
   amountPaid       Float?
   remainingBalance Float?
   receiptId        String?
+  description      String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
   customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  user         User                  @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user         User?                 @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   branch       Branch?               @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   items        TransactionItem[]
-  stockHistory ProductStockHistory[]
   receipts     Receipt[]
 
   @@index([customerId])
@@ -229,7 +192,7 @@ model Transaction {
 model TransactionItem {
   id             Int      @id @default(autoincrement())
   transactionId  Int
-  productId      Int
+  productId      Int?
   quantity       Int
   price          Float
   total          Float
@@ -239,12 +202,13 @@ model TransactionItem {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  product     Product     @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  product     Product?     @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([transactionId])
   @@index([productId])
 }
+
 model ProductTransfer {
   id            Int            @id @default(autoincrement())
   productId     Int

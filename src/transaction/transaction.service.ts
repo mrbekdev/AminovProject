@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto, UpdateTransactionDto, CreateTransactionItemDto } from './dto/create-transaction.dto';
-import { StockHistoryType, Transaction } from '@prisma/client';
+import { Transaction } from '@prisma/client';
 
 @Injectable()
 export class TransactionService {
@@ -98,7 +98,7 @@ export class TransactionService {
         },
       });
 
-      // Update product quantities and stock history
+      // Update product quantities
       for (const item of createTransactionDto.items) {
         const product = await prisma.product.findFirst({
           where: { id: item.productId, branchId: createTransactionDto.branchId },
@@ -106,36 +106,22 @@ export class TransactionService {
         if (!product) throw new BadRequestException(`Product not found: ${item.productId}`);
 
         let newQuantity = product.quantity;
-        let historyType: string;
-        let historyQuantity = Math.abs(item.quantity); // Always positive in history
-        let description: string;
 
         switch (createTransactionDto.type) {
           case 'SALE':
             newQuantity -= item.quantity;
-            historyType = 'OUTFLOW';
-            description = `Sale transaction ${transaction.id}`;
             break;
           case 'PURCHASE':
             newQuantity += item.quantity;
-            historyType = 'INFLOW';
-            description = `Purchase transaction ${transaction.id}`;
             break;
           case 'RETURN':
             newQuantity += item.quantity;
-            historyType = 'RETURN';
-            description = `Return transaction ${transaction.id}`;
             break;
           case 'WRITE_OFF':
             newQuantity -= item.quantity;
-            historyType = 'OUTFLOW';
-            description = `Write-off transaction ${transaction.id}`;
             break;
           case 'STOCK_ADJUSTMENT':
             newQuantity += item.quantity;
-            historyType = 'ADJUSTMENT';
-            description = `Stock adjustment transaction ${transaction.id}`;
-            historyQuantity = item.quantity; // Keep sign if needed, but enum doesn't distinguish; adjust if necessary
             break;
           default:
             continue; // Skip stock update for other types like TRANSFER
@@ -146,19 +132,6 @@ export class TransactionService {
         await prisma.product.update({
           where: { id: item.productId },
           data: { quantity: newQuantity },
-        });
-
-        await prisma.productStockHistory.create({
-          data: {
-            productId: item.productId,
-            transactionId: transaction.id,
-            branchId: createTransactionDto.branchId,
-            quantity: historyQuantity,
-            type: StockHistoryType[historyType],
-            description,
-            createdById: createTransactionDto.userId,
-            createdAt: new Date(),
-          },
         });
 
         console.log(`${createTransactionDto.type}: Product ${item.productId}, Old Qty: ${product.quantity}, New Qty: ${newQuantity}`);
@@ -225,7 +198,7 @@ export class TransactionService {
     if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
     await this.prisma.$transaction(async (prisma) => {
       await prisma.transactionItem.deleteMany({ where: { transactionId: id } });
-      await prisma.productStockHistory.deleteMany({ where: { transactionId: id } });
+
       await prisma.transaction.delete({ where: { id } });
     });
   }
