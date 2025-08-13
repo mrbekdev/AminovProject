@@ -150,16 +150,15 @@ model DefectiveLog {
   productId   Int
   quantity    Int
   description String
-  userId      Int
+  userId      Int?     // Optional field
   createdAt   DateTime @default(now())
-
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@index([productId])
-  @@index([userId])
-  @@index([createdAt])
+  
+  product     Product  @relation(fields: [productId], references: [id])
+  user        User?    @relation(fields: [userId], references: [id])
+  
+  @@map("defective_logs")
 }
+
 
 model Customer {
   id        Int     @id @default(autoincrement())
