@@ -103,6 +103,18 @@ export class ProductController {
     return this.productService.restoreDefectiveProduct(id, restoreCount, req.user.id);
   }
 
+  // Bulk defective
+  @Post('bulk-defective')
+  bulkMarkDefective(@Req() req: AuthRequest, @Body() body: { ids: number[]; description: string }) {
+    return this.productService.bulkMarkDefective(body.ids, body.description, req.user.id);
+  }
+
+  // Bulk restore defective
+  @Post('bulk-restore-defective')
+  bulkRestoreDefective(@Req() req: AuthRequest, @Body() body: { ids: number[] }) {
+    return this.productService.bulkRestoreDefective(body.ids, req.user.id);
+  }
+
   @Delete(':id')
   remove(@Req() req: AuthRequest, @Param('id', ParseIntPipe) id: number) {
     return this.productService.remove(id, req.user.id);

@@ -16,7 +16,6 @@ export class ProductService {
         data: {
           name: createProductDto.name,
           barcode: createProductDto?.barcode ? createProductDto.barcode : 'Barcode yoq',
-          description: createProductDto.description,
           categoryId: createProductDto.categoryId,
           branchId: createProductDto.branchId,
           price: createProductDto.price,
@@ -113,7 +112,6 @@ export class ProductService {
         data: {
           name: updateProductDto.name,
           barcode: updateProductDto.barcode,
-          description: updateProductDto.description,
           categoryId: updateProductDto.categoryId,
           branchId: updateProductDto.branchId,
           price: updateProductDto.price,
@@ -354,6 +352,129 @@ export class ProductService {
       });
 
       return updatedProduct;
+    });
+  }
+
+  // Bulk defective (to'liq defective qilish bir necha mahsulot uchun)
+  async bulkMarkDefective(ids: number[], description: string, userId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const products = await tx.product.findMany({ where: { id: { in: ids } } });
+      if (products.length !== ids.length) {
+        throw new NotFoundException('Ba\'zi mahsulotlar topilmadi');
+      }
+
+      for (const product of products) {
+        if (product.quantity === 0) {
+          continue; // Skip if no quantity
+        }
+
+        const defectiveQty = product.quantity;
+
+        await tx.product.update({
+          where: { id: product.id },
+          data: {
+            status: 'DEFECTIVE',
+            defectiveQuantity: defectiveQty,
+            quantity: 0,
+          },
+        });
+
+        await tx.defectiveLog.create({
+          data: {
+            productId: product.id,
+            quantity: defectiveQty,
+            description,
+            userId,
+          },
+        });
+
+        const transDesc = `Bulk: Mahsulot to'liq defective qilib belgilandi. ${defectiveQty} ta. Sababi: ${description}`;
+
+        const transaction = await tx.transaction.create({
+          data: {
+            userId,
+            branchId: product.branchId,
+            type: 'WRITE_OFF',
+            status: 'COMPLETED',
+            discount: 0,
+            total: 0,
+            finalTotal: 0,
+            amountPaid: 0,
+            remainingBalance: 0,
+            description: transDesc,
+          },
+        });
+
+        await tx.transactionItem.create({
+          data: {
+            transactionId: transaction.id,
+            productId: product.id,
+            quantity: defectiveQty,
+            price: 0,
+            total: 0,
+          },
+        });
+      }
+
+      return { message: 'Tanlangan mahsulotlar defective qilindi', count: ids.length };
+    });
+  }
+
+  // Bulk restore defective (to'liq restore qilish bir necha mahsulot uchun)
+  async bulkRestoreDefective(ids: number[], userId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const products = await tx.product.findMany({ where: { id: { in: ids } } });
+      if (products.length !== ids.length) {
+        throw new NotFoundException('Ba\'zi mahsulotlar topilmadi');
+      }
+
+      for (const product of products) {
+        if (!product.defectiveQuantity || product.defectiveQuantity === 0) {
+          continue; // Skip if no defective quantity
+        }
+
+        const restoreCount = product.defectiveQuantity;
+        const newQuantity = product.quantity + restoreCount;
+        const newDefectiveQuantity = 0;
+
+        await tx.product.update({
+          where: { id: product.id },
+          data: {
+            quantity: newQuantity,
+            defectiveQuantity: newDefectiveQuantity,
+            status: 'FIXED',
+          },
+        });
+
+        const transDesc = `Bulk: ${restoreCount} ta defective mahsulot qaytarildi`;
+
+        const transaction = await tx.transaction.create({
+          data: {
+            userId,
+            branchId: product.branchId,
+            type: 'RETURN',
+            status: 'COMPLETED',
+            discount: 0,
+            total: 0,
+            finalTotal: 0,
+            amountPaid: 0,
+            remainingBalance: 0,
+            description: transDesc,
+          },
+        });
+
+        await tx.transactionItem.create({
+          data: {
+            transactionId: transaction.id,
+            productId: product.id,
+            quantity: restoreCount,
+            price: 0,
+            total: 0,
+          },
+        });
+      }
+
+      return { message: 'Tanlangan defective mahsulotlar qaytarildi', count: ids.length };
     });
   }
 

@@ -91,7 +91,6 @@ export class TransactionService {
           },
         },
         include: {
-          items: { include: { product: true } },
           user: true,
           customer: true,
           branch: true,
@@ -147,7 +146,7 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
-        items: { include: { product: { include: { branch: true } } } },
+
         branch: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -160,7 +159,7 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
-        items: { include: { product: { include: { branch: true } } } },
+
         branch: true,
       },
     });
@@ -187,7 +186,7 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
-        items: { include: { product: true } },
+
         branch: true,
       },
     });

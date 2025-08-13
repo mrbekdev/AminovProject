@@ -51,11 +51,10 @@ model Branch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  products            Product[]
-  transactions        Transaction[]
-  users               User[]
-  categories          Category[]
-
+  products     Product[]
+  transactions Transaction[]
+  users        User[]
+  categories   Category[]
 
   @@index([name])
 }
@@ -73,11 +72,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branch              Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  createdTransactions Transaction[]     @relation("TransactionsCreatedBy")
+  branch              Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdTransactions Transaction[] @relation("TransactionsCreatedBy")
 
-  userLocations       UserLocation[]
-  defectiveLogs       DefectiveLog[]
+  userLocations UserLocation[]
+  defectiveLogs DefectiveLog[]
 
   @@index([phone])
   @@index([branchId])
@@ -120,28 +119,30 @@ enum ProductStatus {
 }
 
 model Product {
-  id                Int               @id @default(autoincrement())
-  barcode           String?           @unique
-  name              String
-  quantity          Int
-  price             Float
-  marketPrice       Float?
-  model             String?
-  description       String?
-  branchId          Int
-  categoryId        Int?
-  status            String            @default("IN_STORE")
-  initialQuantity   Int
-  defectiveQuantity Int               @default(0)
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  branch            Branch            @relation(fields: [branchId], references: [id])
-  category          Category?         @relation(fields: [categoryId], references: [id])
-  TransactionItem   TransactionItem[]
+  id                 Int                @id @default(autoincrement())
+  name               String
+  barcode            String?            @unique
+  model              String?
+  price              Float
+  quantity           Int                @default(0)
+  defectiveQuantity  Int                @default(0)
+  initialQuantity    Int?               // Dastlabki miqdor uchun
+  status             ProductStatus      @default(IN_STORE)
+  branchId           Int
+  branch             Branch             @relation(fields: [branchId], references: [id])
+  categoryId         Int
+  category           Category           @relation(fields: [categoryId], references: [id])
+  marketPrice        Float?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  
+  defectiveLogs      DefectiveLog[]
+  transactionItems   TransactionItem[]
 
-  defectiveLogs     DefectiveLog[]
-
-  @@map("products")
+  @@index([branchId])
+  @@index([categoryId])
+  @@index([barcode])
+  @@index([status])
 }
 
 model DefectiveLog {
@@ -157,6 +158,7 @@ model DefectiveLog {
 
   @@index([productId])
   @@index([userId])
+  @@index([createdAt])
 }
 
 model Customer {
@@ -202,6 +204,9 @@ model Transaction {
   @@index([customerId])
   @@index([userId])
   @@index([branchId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model TransactionItem {
@@ -217,10 +222,9 @@ model TransactionItem {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  product     Product?     @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  product     Product?    @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([transactionId])
   @@index([productId])
 }
-
