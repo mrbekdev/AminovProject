@@ -47,63 +47,29 @@ export class CreateTransactionItemDto {
   monthlyPayment?: number;
 }
 
+// Assume DTOs are updated: create-transaction.dto.ts (add toBranchId)
 export class CreateTransactionDto {
-  @IsOptional()
-  @IsNumber()
-  customerId?: number;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => CreateCustomerDto)
-  customer?: CreateCustomerDto;
-
-  @IsNumber()
-  userId: number;
-
-  @IsNumber()
+  customer?: {
+    firstName: string;
+    lastName: string;
+    phone: string;
+    email?: string;
+    address?: string;
+  };
   branchId: number;
-
-  @IsEnum(TransactionType)
-  type: TransactionType;
-
-  @IsOptional()
-  @IsEnum(TransactionStatus)
-  status?: TransactionStatus;
-
-  @IsOptional()
-  @IsNumber()
-  discount?: number;
-
-  @IsNumber()
+  toBranchId?: number; // Added
+  items: {
+    productId: number;
+    quantity: number;
+    price: number;
+    creditMonth?: number;
+  }[];
+  type: string; // TransactionType
+  userId: number;
+  paymentType?: string; // PaymentType
+  status?: string; // TransactionStatus
   total: number;
-
-  @IsNumber()
   finalTotal: number;
-
-  @IsOptional()
-  @IsEnum(PaymentType)
-  paymentType?: PaymentType;
-
-  @IsOptional()
-  @IsString()
-  deliveryMethod?: string;
-
-  @IsOptional()
-  @IsNumber()
-  amountPaid?: number;
-
-  @IsOptional()
-  @IsNumber()
-  remainingBalance?: number;
-
-  @IsOptional()
-  @IsString()
-  receiptId?: string;
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => CreateTransactionItemDto)
-  items: CreateTransactionItemDto[];
 }
 
 export class UpdateTransactionDto {

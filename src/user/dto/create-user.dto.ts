@@ -31,6 +31,7 @@ export class CreateUserDto {
     description: 'Telefon raqami (ixtiyoriy)',
     maxLength: 20,
   })
+  
   @IsOptional()
   @IsString()
   @MaxLength(20)
@@ -48,6 +49,8 @@ export class CreateUserDto {
     example: 1,
     description: 'Foydalanuvchi bog‘langan filial (branch) ID raqami',
   })
+
+
   @IsInt()
   @IsPositive()
   branchId: number;

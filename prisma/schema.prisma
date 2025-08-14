@@ -1,6 +1,4 @@
-// prisma/schema.prisma
-// (Unchanged from previous, but adding ProductTransfer model for completeness)
-
+// Updated Prisma schema (prisma/schema.prisma)
 generator client {
   provider = "prisma-client-js"
 }
@@ -29,6 +27,7 @@ enum PaymentType {
   CASH
   CARD
   CREDIT
+  INSTALLMENT
 }
 
 enum UserRole {
@@ -47,74 +46,6 @@ enum TransferStatus {
   COMPLETED
 }
 
-model Branch {
-  id        Int      @id @default(autoincrement())
-  name      String
-  address   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  products     Product[]
-  transactions Transaction[]
-  users        User[]
-  categories   Category[]
-  fromTransfers ProductTransfer[] @relation("FromBranch")
-  toTransfers   ProductTransfer[] @relation("ToBranch")
-
-  @@index([name])
-}
-
-model User {
-  id        Int     @id @default(autoincrement())
-  firstName String?
-  lastName  String?
-  phone     String? @unique
-
-  email     String?  @unique
-  password  String?
-  role      UserRole
-  branchId  Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  branch              Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  createdTransactions Transaction[] @relation("TransactionsCreatedBy")
-  initiatedTransfers  ProductTransfer[] @relation("InitiatedTransfers")
-  approvedTransfers   ProductTransfer[] @relation("ApprovedTransfers")
-
-  userLocations UserLocation[]
-  defectiveLogs DefectiveLog[]
-
-  @@index([phone])
-  @@index([branchId])
-}
-
-model UserLocation {
-  userId    Int      @id
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  latitude  Float
-  longitude Float
-  address   String?
-  isOnline  Boolean  @default(false)
-  lastSeen  DateTime
-  updatedAt DateTime @updatedAt
-}
-
-model Category {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique @db.VarChar(100)
-  description String?  @db.VarChar(255)
-  branchId    Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  products Product[]
-
-  @@index([name])
-  @@index([branchId])
-}
-
 enum ProductStatus {
   IN_WAREHOUSE
   IN_STORE
@@ -125,27 +56,96 @@ enum ProductStatus {
   FIXED
 }
 
+model Branch {
+  id            Int                @id @default(autoincrement())
+  name          String
+  address       String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  products      Product[]
+  transactions  Transaction[]      @relation("FromBranch")
+  toTransactions Transaction[]   @relation("ToBranch")
+  users         User[]
+  categories    Category[]
+  fromTransfers ProductTransfer[]  @relation("FromBranch")
+  toTransfers   ProductTransfer[]  @relation("ToBranch")
+
+  @@index([name])
+}
+
+model User {
+  id                Int              @id @default(autoincrement())
+  firstName         String?
+  lastName          String?
+  phone             String?          @unique
+  email             String?          @unique
+  password          String?
+  role              UserRole
+  branchId          Int?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  branch            Branch?          @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdTransactions Transaction[]  @relation("TransactionsCreatedBy")
+  initiatedTransfers ProductTransfer[] @relation("InitiatedTransfers")
+  approvedTransfers ProductTransfer[] @relation("ApprovedTransfers")
+  userLocations     UserLocation[]
+  defectiveLogs     DefectiveLog[]
+
+  @@index([phone])
+  @@index([branchId])
+}
+
+model UserLocation {
+  userId    Int
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  latitude  Float
+  longitude Float
+  address   String?
+  isOnline  Boolean          @default(false)
+  lastSeen  DateTime
+  updatedAt DateTime         @updatedAt
+
+  @@id([userId])
+}
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  branchId    Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branch      Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  products    Product[]
+
+  @@index([name])
+  @@index([branchId])
+}
+
 model Product {
-  id                 Int                @id @default(autoincrement())
-  name               String
-  barcode            String?            @unique
-  model              String?
-  price              Float
-  quantity           Int                @default(0)
-  defectiveQuantity  Int                @default(0)
-  initialQuantity    Int?               // Dastlabki miqdor uchun
-  status             ProductStatus      @default(IN_STORE)
-  branchId           Int
-  branch             Branch             @relation(fields: [branchId], references: [id])
-  categoryId         Int
-  category           Category           @relation(fields: [categoryId], references: [id])
-  marketPrice        Float?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  
-  defectiveLogs      DefectiveLog[]
-  transactionItems   TransactionItem[]
-  transfers          ProductTransfer[]
+  id                Int              @id @default(autoincrement())
+  name              String
+  barcode           String?          @unique
+  model             String?
+  price             Float
+  quantity          Int              @default(0)
+  defectiveQuantity Int              @default(0)
+  initialQuantity   Int?
+  status            ProductStatus    @default(IN_STORE)
+  branchId          Int
+  branch            Branch           @relation(fields: [branchId], references: [id])
+  categoryId        Int
+  category          Category         @relation(fields: [categoryId], references: [id])
+  marketPrice       Float?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  defectiveLogs     DefectiveLog[]
+  transactionItems  TransactionItem[]
+  transfers         ProductTransfer[]
 
   @@index([branchId])
   @@index([categoryId])
@@ -158,21 +158,21 @@ model DefectiveLog {
   productId   Int
   quantity    Int
   description String
-  userId      Int?     // Optional field
+  userId      Int?
   createdAt   DateTime @default(now())
-  
+
   product     Product  @relation(fields: [productId], references: [id])
   user        User?    @relation(fields: [userId], references: [id])
-  
+
   @@map("defective_logs")
 }
 
 model Customer {
-  id        Int     @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   firstName String
   lastName  String
   phone     String
-  email     String? @unique
+  email     String?  @unique
   address   String?
 
   createdAt DateTime @default(now())
@@ -187,7 +187,8 @@ model Transaction {
   id               Int               @id @default(autoincrement())
   customerId       Int?
   userId           Int?
-  branchId         Int?
+  branchId         Int?              // fromBranchId for TRANSFER
+  toBranchId       Int?              // Added for TRANSFER
   type             TransactionType
   status           TransactionStatus @default(PENDING)
   discount         Float             @default(0)
@@ -202,38 +203,40 @@ model Transaction {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
-  customer Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  user     User?             @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  branch   Branch?           @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  items    TransactionItem[]
+  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  user             User?             @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch           Branch?           @relation("FromBranch", fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  toBranch         Branch?           @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  items            TransactionItem[]
 
   @@index([customerId])
   @@index([userId])
   @@index([branchId])
+  @@index([toBranchId])
   @@index([type])
   @@index([status])
   @@index([createdAt])
 }
 
 model TransactionItem {
-  id             Int      @id @default(autoincrement())
-  transactionId  Int
-  productId      Int?
-  quantity       Int
-  price          Float
-  total          Float
-  creditMonth    Int?
-  creditPercent  Float?
-  monthlyPayment Float?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              Int      @id @default(autoincrement())
+  transactionId   Int
+  productId       Int?
+  quantity        Int
+  price           Float
+  total           Float
+  creditMonth     Int?
+  creditPercent   Float?
+  monthlyPayment  Float?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  product     Product?    @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  transaction     Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  product         Product?    @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 }
 
 model ProductTransfer {
-  id            Int            @id @default(autoincrement())
+  id            Int           @id @default(autoincrement())
   productId     Int
   fromBranchId  Int
   toBranchId    Int
@@ -241,15 +244,15 @@ model ProductTransfer {
   status        TransferStatus @default(PENDING)
   initiatedById Int
   approvedById  Int?
-  transferDate  DateTime       @default(now())
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  transferDate  DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  product      Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  fromBranch   Branch  @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict)
-  toBranch     Branch  @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict)
-  initiatedBy  User    @relation("InitiatedTransfers", fields: [initiatedById], references: [id], onDelete: Restrict)
-  approvedBy   User?   @relation("ApprovedTransfers", fields: [approvedById], references: [id], onDelete: SetNull)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fromBranch    Branch        @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict)
+  toBranch      Branch        @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict)
+  initiatedBy   User          @relation("InitiatedTransfers", fields: [initiatedById], references: [id], onDelete: Restrict)
+  approvedBy    User?         @relation("ApprovedTransfers", fields: [approvedById], references: [id], onDelete: SetNull)
 
   @@index([productId])
   @@index([fromBranchId])
