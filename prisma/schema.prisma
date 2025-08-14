@@ -37,6 +37,7 @@ enum UserRole {
   CASHIER
   WAREHOUSE
   AUDITOR
+  MARKETING
 }
 
 enum TransferStatus {
