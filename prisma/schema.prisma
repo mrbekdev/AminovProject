@@ -202,6 +202,7 @@ model Transaction {
   branch   Branch?           @relation("FromBranch", fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   toBranch Branch?           @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   items    TransactionItem[]
+  paymentSchedules PaymentSchedule[]
 
   @@index([customerId])
   @@index([userId])
@@ -253,4 +254,15 @@ model ProductTransfer {
   @@index([toBranchId])
   @@index([initiatedById])
   @@index([status])
+}
+
+model PaymentSchedule {
+  id               Int      @id @default(autoincrement())
+  transactionId    Int
+  month            Int
+  payment          Float
+  remainingBalance Float
+  createdAt        DateTime @default(now())
+
+  transaction      Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 }

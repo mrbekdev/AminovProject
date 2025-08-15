@@ -54,7 +54,7 @@ export class TransactionService {
         const branch = await prisma.branch.findUnique({ where: { id: branchId } });
         if (!branch) throw new BadRequestException('Invalid branch ID');
 
-        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT].includes('CREDIT')) {
+        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT]) {
           creditMonth = items[0]?.creditMonth;
           if (!creditMonth || items.some((item) => item.creditMonth !== creditMonth)) {
             throw new BadRequestException('All items must have the same credit month');
@@ -219,6 +219,23 @@ export class TransactionService {
               },
             });
           }
+        }
+      }
+
+      // Save payment schedule to database if applicable
+      if (type === TransactionType.SALE && (paymentType === PaymentType.CREDIT || paymentType === PaymentType.INSTALLMENT) && creditMonth && creditMonth > 0) {
+        let remainingBalance = transaction.finalTotal;
+        const monthlyPayment = transaction.items[0].monthlyPayment || 0; // All items have the same
+        for (let m = 1; m <= creditMonth; m++) {
+          await prisma.paymentSchedule.create({
+            data: {
+              transactionId: transaction.id,
+              month: m,
+              payment: monthlyPayment,
+              remainingBalance: Math.max(0, remainingBalance - monthlyPayment),
+            },
+          });
+          remainingBalance -= monthlyPayment;
         }
       }
 
