@@ -31,44 +31,47 @@ export class CreateTransactionItemDto {
   @IsNumber()
   price: number;
 
-  @IsNumber()
-  total: number;
-
   @IsOptional()
   @IsNumber()
   creditMonth?: number;
-
-  @IsOptional()
-  @IsNumber()
-  creditPercent?: number;
-
-  @IsOptional()
-  @IsNumber()
-  monthlyPayment?: number;
 }
 
-// Assume DTOs are updated: create-transaction.dto.ts (add toBranchId)
 export class CreateTransactionDto {
-  customer?: {
-    firstName: string;
-    lastName: string;
-    phone: string;
-    email?: string;
-    address?: string;
-  };
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateCustomerDto)
+  customer?: CreateCustomerDto;
+
+  @IsNumber()
   branchId: number;
-  toBranchId?: number; // Added
-  items: {
-    productId: number;
-    quantity: number;
-    price: number;
-    creditMonth?: number;
-  }[];
-  type: string; // TransactionType
+
+  @IsOptional()
+  @IsNumber()
+  toBranchId?: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateTransactionItemDto)
+  items: CreateTransactionItemDto[];
+
+  @IsEnum(TransactionType)
+  type: TransactionType;
+
+  @IsNumber()
   userId: number;
-  paymentType?: string; // PaymentType
-  status?: string; // TransactionStatus
+
+  @IsOptional()
+  @IsEnum(PaymentType)
+  paymentType?: PaymentType;
+
+  @IsOptional()
+  @IsEnum(TransactionStatus)
+  status?: TransactionStatus;
+
+  @IsNumber()
   total: number;
+
+  @IsNumber()
   finalTotal: number;
 }
 

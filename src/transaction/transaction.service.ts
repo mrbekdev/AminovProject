@@ -53,7 +53,7 @@ export class TransactionService {
         const branch = await prisma.branch.findUnique({ where: { id: branchId } });
         if (!branch) throw new BadRequestException('Invalid branch ID');
 
-        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT].includes(PaymentType[paymentType])) {
+        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT].includes('INSTALLMENT')) {
           creditMonth = items[0]?.creditMonth;
           if (!creditMonth || items.some((item) => item.creditMonth !== creditMonth)) {
             throw new BadRequestException('All items must have the same credit month');
@@ -169,24 +169,36 @@ export class TransactionService {
         if (type === TransactionType.TRANSFER) {
           // Find or create product in toBranch
           let toProduct = await prisma.product.findFirst({
-            where: { barcode: product.barcode ?? undefined, branchId: toBranchId! },
+            where: {
+              barcode: product.barcode ?? null,
+              branchId: toBranchId!,
+            },
           });
           if (!toProduct) {
-            toProduct = await prisma.product.create({
-              data: {
-                name: product.name,
-                barcode: product.barcode ?? undefined,
-                model: product.model ?? undefined,
-                price: product.price,
-                quantity: 0,
-                defectiveQuantity: 0,
-                initialQuantity: 0,
-                status: 'IN_STORE',
-                branchId: toBranchId!,
-                categoryId: product.categoryId,
-                marketPrice: product.marketPrice ?? undefined,
-              },
-            });
+            try {
+              toProduct = await prisma.product.create({
+                data: {
+                  name: product.name,
+                  barcode: product.barcode ?? null,
+                  model: product.model ?? null,
+                  price: product.price,
+                  quantity: 0,
+                  defectiveQuantity: 0,
+                  initialQuantity: 0,
+                  status: 'IN_STORE',
+                  branchId: toBranchId!,
+                  categoryId: product.categoryId,
+                  marketPrice: product.marketPrice ?? null,
+                },
+              });
+            } catch (error) {
+              if (error.code === 'P2002') {
+                throw new BadRequestException(
+                  `A product with barcode ${product.barcode} already exists in branch ${toBranchId}. Please update the existing product or use a different barcode.`,
+                );
+              }
+              throw error;
+            }
           }
           // Increment in destination branch
           await prisma.product.update({
@@ -239,18 +251,17 @@ export class TransactionService {
     if (updateTransactionDto.status === TransactionStatus.CANCELLED && transaction.status !== TransactionStatus.CANCELLED) {
       await this.prisma.$transaction(async (prisma) => {
         for (const item of transaction.items) {
-          if (!item.productId) continue; // Skip if productId is null
+          if (!item.productId) continue;
           const product = await prisma.product.findUnique({ where: { id: item.productId } });
-          if (!product) continue; // Skip if product not found
+          if (!product) continue;
 
           if (transaction.type === TransactionType.TRANSFER) {
-            // Reverse transfer: increment back to fromBranch, decrement from toBranch
             await prisma.product.update({
               where: { id: item.productId },
               data: { quantity: { increment: item.quantity } },
             });
             const toProduct = await prisma.product.findFirst({
-              where: { barcode: product?.barcode ?? undefined, branchId: transaction.toBranchId ?? undefined },
+              where: { barcode: product?.barcode ?? null, branchId: transaction.toBranchId ?? undefined },
             });
             if (toProduct) {
               await prisma.product.update({
@@ -259,7 +270,6 @@ export class TransactionService {
               });
             }
           } else {
-            // For other types like SALE, increment back
             await prisma.product.update({
               where: { id: item.productId },
               data: { quantity: { increment: item.quantity } },
