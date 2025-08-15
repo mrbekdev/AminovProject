@@ -27,7 +27,7 @@ const Hisobotlar = () => {
   const [notification, setNotification] = useState(null);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
   const [selectedReportType, setSelectedReportType] = useState('all');
-  const API_URL = 'https://suddocs.uz';
+  const API_URL = 'http://localhost:4000';
 
   const formatCurrency = (amount) =>
     (amount !== null && amount !== undefined && !Number.isNaN(Number(amount)))

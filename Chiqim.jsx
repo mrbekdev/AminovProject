@@ -466,6 +466,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
           },
         });
       } else {
+        // SALE uchun oddiy transaction endpoint ishlatamiz
         response = await axiosWithAuth({
           method: 'post',
           url: `${API_URL}/transactions`,

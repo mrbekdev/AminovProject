@@ -335,13 +335,18 @@ export class TransactionService {
         }
       },
       include: {
+        customer: true,
         items: {
           include: {
             product: true
           }
-        }
+        },
+        paymentSchedules: true
       }
     });
+
+    // Mahsulot miqdorlarini yangilash - manba filialdan kamaytirish
+    await this.updateProductQuantities(transfer);
 
     return transfer;
   }
