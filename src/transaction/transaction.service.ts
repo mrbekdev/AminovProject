@@ -21,7 +21,6 @@ export class TransactionService {
         status = TransactionStatus.PENDING,
         total: dtoTotal,
         finalTotal: dtoFinalTotal,
-        creditPercent,
       } = createTransactionDto;
 
       // Validate user
@@ -48,24 +47,36 @@ export class TransactionService {
         // Validate to branch
         const toBranch = await prisma.branch.findUnique({ where: { id: toBranchId } });
         if (!toBranch) throw new BadRequestException('Invalid toBranch ID');
-      } else if (type === TransactionType.SALE) {
-        if (toBranchId) throw new BadRequestException('toBranchId not allowed for SALE');
-        // Validate branch
+      } else {
+        if (toBranchId) throw new BadRequestException('toBranchId not allowed for non-TRANSFER');
+        // Validate branch (for non-TRANSFER)
         const branch = await prisma.branch.findUnique({ where: { id: branchId } });
         if (!branch) throw new BadRequestException('Invalid branch ID');
 
         if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT]) {
-          creditMonth = items[0]?.creditMonth;
-          if (!creditMonth || items.some((item) => item.creditMonth !== creditMonth)) {
+          // Get credit month from the first item
+          const firstItemCreditMonth = items[0]?.creditMonth;
+          if (!firstItemCreditMonth || items.some((item) => item.creditMonth !== firstItemCreditMonth)) {
             throw new BadRequestException('All items must have the same credit month');
           }
+          creditMonth = firstItemCreditMonth;
+          
           if (creditMonth <= 0 || creditMonth > 24) {
             throw new BadRequestException('Credit months must be between 1 and 24');
           }
-          if (creditPercent === undefined || creditPercent < 0 || creditPercent > 1) {
-            throw new BadRequestException('Credit percent must be between 0 and 1');
+
+          // Use custom interest rate from items if provided
+          const firstItemInterest = items[0]?.creditPercent;
+          if (firstItemInterest !== undefined) {
+            if (firstItemInterest < 0 || firstItemInterest > 1) {
+              throw new BadRequestException('Credit percent must be between 0 and 1');
+            }
+            interestRate = firstItemInterest;
+          } else {
+            // Default interest rate calculation
+            interestRate = creditMonth <= 3 ? 0.05 : creditMonth <= 6 ? 0.10 : creditMonth <= 12 ? 0.15 : 0.20;
           }
-          interestRate = creditPercent;
+
           const expectedFinalTotal = dtoTotal * (1 + interestRate);
           if (Math.abs(expectedFinalTotal - dtoFinalTotal) > 0.01) {
             throw new BadRequestException(
@@ -75,9 +86,6 @@ export class TransactionService {
         } else if (Math.abs(dtoTotal - dtoFinalTotal) > 0.01) {
           throw new BadRequestException('Final total must match total when no credit payment type is specified');
         }
-        if (!customer) throw new BadRequestException('Customer is required for SALE');
-      } else {
-        throw new BadRequestException('Unsupported transaction type');
       }
 
       // Validate products and stock
@@ -109,12 +117,22 @@ export class TransactionService {
         throw new BadRequestException(`Calculated total (${calculatedTotal.toFixed(2)}) does not match provided total (${dtoTotal})`);
       }
 
-      // Create or find customer (only for SALE)
+      // Create or find customer (only for non-TRANSFER)
       let customerId: number | undefined;
-      if (type === TransactionType.SALE && customer) {
+      if (type !== TransactionType.TRANSFER && customer) {
         const existingCustomer = await prisma.customer.findFirst({ where: { phone: customer.phone } });
         if (existingCustomer) {
           customerId = existingCustomer.id;
+          // Update existing customer info if provided
+          await prisma.customer.update({
+            where: { id: existingCustomer.id },
+            data: {
+              firstName: customer.firstName || existingCustomer.firstName,
+              lastName: customer.lastName || existingCustomer.lastName,
+              email: customer.email || existingCustomer.email,
+              address: customer.address || existingCustomer.address,
+            },
+          });
         } else {
           const newCustomer = await prisma.customer.create({
             data: {
@@ -127,6 +145,12 @@ export class TransactionService {
           });
           customerId = newCustomer.id;
         }
+      }
+
+      // Calculate monthly payment
+      let monthlyPayment: number | undefined;
+      if (interestRate > 0 && creditMonth && creditMonth > 0) {
+        monthlyPayment = dtoFinalTotal / creditMonth;
       }
 
       // Create transaction with items
@@ -149,7 +173,7 @@ export class TransactionService {
               total: item.quantity * item.price,
               creditMonth: creditMonth,
               creditPercent: interestRate > 0 ? interestRate : undefined,
-              monthlyPayment: interestRate > 0 && creditMonth ? dtoFinalTotal / creditMonth : undefined,
+              monthlyPayment: monthlyPayment,
             })),
           },
         },
@@ -174,68 +198,32 @@ export class TransactionService {
         });
 
         if (type === TransactionType.TRANSFER) {
-          // Check if barcode exists before using upsert
-          if (product.barcode) {
-            // Use upsert when barcode exists
-            await prisma.product.upsert({
-              where: {
-                barcode_branchId: {
-                  barcode: product.barcode,
-                  branchId: toBranchId!,
-                },
-              },
-              update: {
-                quantity: { increment: item.quantity },
-              },
-              create: {
-                name: product.name,
-                barcode: product.barcode,
-                model: product.model,
-                price: product.price,
-                quantity: item.quantity,
-                defectiveQuantity: 0,
-                initialQuantity: item.quantity,
-                status: 'IN_STORE',
-                branchId: toBranchId!,
-                categoryId: product.categoryId,
-                marketPrice: product.marketPrice,
-              },
-            });
-          } else {
-            // When barcode is null, create a new product directly
-            await prisma.product.create({
+          // Find or create product in toBranch
+          let toProduct = await prisma.product.findFirst({
+            where: { barcode: product.barcode ?? undefined, branchId: toBranchId! },
+          });
+          if (!toProduct) {
+            toProduct = await prisma.product.create({
               data: {
                 name: product.name,
-                barcode: null,
-                model: product.model,
+                barcode: product.barcode ?? undefined,
+                model: product.model ?? undefined,
                 price: product.price,
-                quantity: item.quantity,
+                quantity: 0,
                 defectiveQuantity: 0,
-                initialQuantity: item.quantity,
+                initialQuantity: 0,
                 status: 'IN_STORE',
                 branchId: toBranchId!,
                 categoryId: product.categoryId,
-                marketPrice: product.marketPrice,
+                marketPrice: product.marketPrice ?? undefined,
               },
             });
           }
-        }
-      }
-
-      // Save payment schedule to database if applicable
-      if (type === TransactionType.SALE && (paymentType === PaymentType.CREDIT || paymentType === PaymentType.INSTALLMENT) && creditMonth && creditMonth > 0) {
-        let remainingBalance = transaction.finalTotal;
-        const monthlyPayment = transaction.items[0].monthlyPayment || 0; // All items have the same
-        for (let m = 1; m <= creditMonth; m++) {
-          await prisma.paymentSchedule.create({
-            data: {
-              transactionId: transaction.id,
-              month: m,
-              payment: monthlyPayment,
-              remainingBalance: Math.max(0, remainingBalance - monthlyPayment),
-            },
+          // Increment in destination branch
+          await prisma.product.update({
+            where: { id: toProduct.id },
+            data: { quantity: { increment: item.quantity } },
           });
-          remainingBalance -= monthlyPayment;
         }
       }
 
@@ -247,7 +235,11 @@ export class TransactionService {
     return this.prisma.transaction.findMany({
       where: branchId ? { OR: [{ branchId }, { toBranchId: branchId }] } : {},
       include: {
-        items: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
         customer: true,
         branch: true,
         toBranch: true,
@@ -261,7 +253,11 @@ export class TransactionService {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },
       include: {
-        items: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
         customer: true,
         branch: true,
         toBranch: true,
@@ -282,17 +278,18 @@ export class TransactionService {
     if (updateTransactionDto.status === TransactionStatus.CANCELLED && transaction.status !== TransactionStatus.CANCELLED) {
       await this.prisma.$transaction(async (prisma) => {
         for (const item of transaction.items) {
-          if (!item.productId) continue;
+          if (!item.productId) continue; // Skip if productId is null
           const product = await prisma.product.findUnique({ where: { id: item.productId } });
-          if (!product) continue;
+          if (!product) continue; // Skip if product not found
 
           if (transaction.type === TransactionType.TRANSFER) {
+            // Reverse transfer: increment back to fromBranch, decrement from toBranch
             await prisma.product.update({
               where: { id: item.productId },
               data: { quantity: { increment: item.quantity } },
             });
             const toProduct = await prisma.product.findFirst({
-              where: { barcode: product?.barcode ?? null, branchId: transaction.toBranchId ?? undefined },
+              where: { barcode: product?.barcode ?? undefined, branchId: transaction.toBranchId ?? undefined },
             });
             if (toProduct) {
               await prisma.product.update({
@@ -301,6 +298,7 @@ export class TransactionService {
               });
             }
           } else {
+            // For other types like SALE, increment back
             await prisma.product.update({
               where: { id: item.productId },
               data: { quantity: { increment: item.quantity } },
@@ -318,7 +316,11 @@ export class TransactionService {
         paymentType: updateTransactionDto.paymentType as PaymentType | undefined,
       },
       include: {
-        items: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
         customer: true,
         branch: true,
         toBranch: true,
@@ -328,8 +330,16 @@ export class TransactionService {
   }
 
   async remove(id: number): Promise<void> {
-    const transaction = await this.prisma.transaction.findUnique({ where: { id } });
+    const transaction = await this.prisma.transaction.findUnique({ 
+      where: { id },
+      include: { items: true }
+    });
     if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
+    
+    // First delete transaction items, then transaction
+    await this.prisma.transactionItem.deleteMany({ where: { transactionId: id } });
     await this.prisma.transaction.delete({ where: { id } });
   }
+
+  // Additional method to get payment schedule
 }
