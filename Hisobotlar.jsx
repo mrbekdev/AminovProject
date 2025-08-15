@@ -150,9 +150,7 @@ const Hisobotlar = () => {
         transactions = transactionsRes.data;
       }
       
-      console.log('API Response:', transactionsRes.data);
-      console.log('Parsed Transactions:', transactions);
-      console.log('Statistics:', statsRes.data);
+
       
       const statistics = statsRes.data || {};
 
@@ -180,26 +178,46 @@ const Hisobotlar = () => {
             description: transaction.description
           };
 
+          // Transaction turiga qarab ajratish
           if (transaction.type === 'PURCHASE') {
-            purchases.push({
-              ...baseData,
-              type: 'Kirim',
-              branchName: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum'
-            });
+            // Kirim - faqat fromBranchId = selectedBranchId bo'lganda
+            if (transaction.fromBranchId?.toString() === selectedBranchId) {
+              purchases.push({
+                ...baseData,
+                type: 'Kirim',
+                branchName: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum'
+              });
+            }
           } else if (transaction.type === 'SALE') {
-            sales.push({
-              ...baseData,
-              type: 'Chiqim',
-              branchName: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum'
-            });
+            // Chiqim - faqat fromBranchId = selectedBranchId bo'lganda
+            if (transaction.fromBranchId?.toString() === selectedBranchId) {
+              sales.push({
+                ...baseData,
+                type: 'Chiqim',
+                branchName: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum'
+              });
+            }
           } else if (transaction.type === 'TRANSFER') {
-            transfers.push({
-              ...baseData,
-              type: 'O\'tkazma',
-              direction: transaction.fromBranchId?.toString() === selectedBranchId ? 'out' : 'in',
-              fromBranch: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum',
-              toBranch: branches.find(b => b.id === transaction.toBranchId)?.name || 'Noma\'lum'
-            });
+            // O'tkazma - fromBranchId = selectedBranchId bo'lsa CHIQIM, toBranchId = selectedBranchId bo'lsa KIRIM
+            if (transaction.fromBranchId?.toString() === selectedBranchId) {
+              // Sizning filialdan chiqayotgan o'tkazma - CHIQIM
+              transfers.push({
+                ...baseData,
+                type: 'O\'tkazma (Chiqim)',
+                direction: 'out',
+                fromBranch: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum',
+                toBranch: branches.find(b => b.id === transaction.toBranchId)?.name || 'Noma\'lum'
+              });
+            } else if (transaction.toBranchId?.toString() === selectedBranchId) {
+              // Sizning filialga kirgan o'tkazma - KIRIM
+              transfers.push({
+                ...baseData,
+                type: 'O\'tkazma (Kirim)',
+                direction: 'in',
+                fromBranch: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum',
+                toBranch: branches.find(b => b.id === transaction.toBranchId)?.name || 'Noma\'lum'
+              });
+            }
           }
         }
       }

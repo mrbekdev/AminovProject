@@ -105,8 +105,12 @@ export class TransactionService {
   private async updateProductQuantities(transaction: any) {
     for (const item of transaction.items) {
       if (item.productId) {
-        const product = await this.prisma.product.findUnique({
-          where: { id: item.productId }
+        // Mahsulotni fromBranchId orqali topish
+        const product = await this.prisma.product.findFirst({
+          where: { 
+            id: item.productId,
+            branchId: transaction.fromBranchId 
+          }
         });
 
         if (!product) continue;
@@ -183,7 +187,7 @@ export class TransactionService {
         include: {
           customer: true,
           user: true,
-          branch: true,
+          fromBranch: true,
           toBranch: true,
           items: {
             include: {
@@ -216,7 +220,7 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
-        branch: true,
+        fromBranch: true,
         toBranch: true,
         items: {
           include: {
@@ -249,7 +253,7 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
-        branch: true,
+        fromBranch: true,
         toBranch: true,
         items: {
           include: {
