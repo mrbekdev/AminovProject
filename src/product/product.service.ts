@@ -31,7 +31,6 @@ export class ProductService {
         const transaction = await tx.transaction.create({
           data: {
             userId,
-            branchId: createProductDto.branchId,
             type: 'PURCHASE',
             status: 'COMPLETED',
             discount: 0,
@@ -133,7 +132,7 @@ export class ProductService {
         const transaction = await tx.transaction.create({
           data: {
             userId,
-            branchId: product.branchId,
+
             type,
             status: 'COMPLETED',
             discount: 0,
@@ -198,7 +197,7 @@ async markAsDefective(id: number, description: string, userId: number) {
     const transaction = await tx.transaction.create({
       data: {
         userId,
-        branchId: product.branchId,
+
         type: 'WRITE_OFF',
         status: 'COMPLETED',
         discount: 0,
@@ -266,7 +265,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
     const transaction = await tx.transaction.create({
       data: {
         userId,
-        branchId: product.branchId,
+
         type: 'WRITE_OFF',
         status: 'COMPLETED',
         discount: 0,
@@ -329,7 +328,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
       const transaction = await tx.transaction.create({
         data: {
           userId,
-          branchId: product.branchId,
+
           type: 'RETURN',
           status: 'COMPLETED',
           discount: 0,
@@ -393,7 +392,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
         const transaction = await tx.transaction.create({
           data: {
             userId,
-            branchId: product.branchId,
+
             type: 'WRITE_OFF',
             status: 'COMPLETED',
             discount: 0,
@@ -451,7 +450,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
         const transaction = await tx.transaction.create({
           data: {
             userId,
-            branchId: product.branchId,
+
             type: 'RETURN',
             status: 'COMPLETED',
             discount: 0,
@@ -540,7 +539,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
         const transaction = await tx.transaction.create({
           data: {
             userId,
-            branchId: product.branchId,
+
             type: 'WRITE_OFF',
             status: 'COMPLETED',
             discount: 0,
@@ -621,7 +620,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
           const transaction = await tx.transaction.create({
             data: {
               userId,
-              branchId: product.branchId,
+
               type: 'WRITE_OFF',
               status: 'COMPLETED',
               discount: 0,
