@@ -54,7 +54,7 @@ export class TransactionService {
         const branch = await prisma.branch.findUnique({ where: { id: branchId } });
         if (!branch) throw new BadRequestException('Invalid branch ID');
 
-        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT].includes('INSTALLMENT')) {
+        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT].includes('CREDIT')) {
           creditMonth = items[0]?.creditMonth;
           if (!creditMonth || items.some((item) => item.creditMonth !== creditMonth)) {
             throw new BadRequestException('All items must have the same credit month');
@@ -173,55 +173,53 @@ export class TransactionService {
           data: { quantity: { decrement: item.quantity } },
         });
 
-// Replace the upsert section in your code with this:
-
-if (type === TransactionType.TRANSFER) {
-  // Check if barcode exists before using upsert
-  if (product.barcode) {
-    // Use upsert when barcode exists
-    await prisma.product.upsert({
-      where: {
-        barcode_branchId: {
-          barcode: product.barcode,
-          branchId: toBranchId!,
-        },
-      },
-      update: {
-        quantity: { increment: item.quantity },
-      },
-      create: {
-        name: product.name,
-        barcode: product.barcode,
-        model: product.model,
-        price: product.price,
-        quantity: item.quantity,
-        defectiveQuantity: 0,
-        initialQuantity: item.quantity,
-        status: 'IN_STORE',
-        branchId: toBranchId!,
-        categoryId: product.categoryId,
-        marketPrice: product.marketPrice,
-      },
-    });
-  } else {
-    // When barcode is null, create a new product directly
-    await prisma.product.create({
-      data: {
-        name: product.name,
-        barcode: null,
-        model: product.model,
-        price: product.price,
-        quantity: item.quantity,
-        defectiveQuantity: 0,
-        initialQuantity: item.quantity,
-        status: 'IN_STORE',
-        branchId: toBranchId!,
-        categoryId: product.categoryId,
-        marketPrice: product.marketPrice,
-      },
-    });
-  }
-}
+        if (type === TransactionType.TRANSFER) {
+          // Check if barcode exists before using upsert
+          if (product.barcode) {
+            // Use upsert when barcode exists
+            await prisma.product.upsert({
+              where: {
+                barcode_branchId: {
+                  barcode: product.barcode,
+                  branchId: toBranchId!,
+                },
+              },
+              update: {
+                quantity: { increment: item.quantity },
+              },
+              create: {
+                name: product.name,
+                barcode: product.barcode,
+                model: product.model,
+                price: product.price,
+                quantity: item.quantity,
+                defectiveQuantity: 0,
+                initialQuantity: item.quantity,
+                status: 'IN_STORE',
+                branchId: toBranchId!,
+                categoryId: product.categoryId,
+                marketPrice: product.marketPrice,
+              },
+            });
+          } else {
+            // When barcode is null, create a new product directly
+            await prisma.product.create({
+              data: {
+                name: product.name,
+                barcode: null,
+                model: product.model,
+                price: product.price,
+                quantity: item.quantity,
+                defectiveQuantity: 0,
+                initialQuantity: item.quantity,
+                status: 'IN_STORE',
+                branchId: toBranchId!,
+                categoryId: product.categoryId,
+                marketPrice: product.marketPrice,
+              },
+            });
+          }
+        }
       }
 
       return transaction;
