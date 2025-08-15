@@ -53,7 +53,7 @@ export class TransactionService {
         const branch = await prisma.branch.findUnique({ where: { id: branchId } });
         if (!branch) throw new BadRequestException('Invalid branch ID');
 
-        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT].includes('INSTALLMENT')) {
+        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT].includes('CREDIT')) {
           creditMonth = items[0]?.creditMonth;
           if (!creditMonth || items.some((item) => item.creditMonth !== creditMonth)) {
             throw new BadRequestException('All items must have the same credit month');
@@ -167,44 +167,32 @@ export class TransactionService {
         });
 
         if (type === TransactionType.TRANSFER) {
-          // Find existing product in toBranch
+          // Find or create product in toBranch
           let toProduct = await prisma.product.findFirst({
-            where: {
-              barcode: product.barcode ?? null,
-              branchId: toBranchId!,
-            },
+            where: { barcode: product.barcode ?? null, branchId: toBranchId! },
           });
-
-          if (toProduct) {
-            // Update existing product quantity
-            await prisma.product.update({
-              where: { id: toProduct.id },
-              data: { quantity: { increment: item.quantity } },
+          if (!toProduct) {
+            toProduct = await prisma.product.create({
+              data: {
+                name: product.name,
+                barcode: product.barcode ?? null,
+                model: product.model ?? null,
+                price: product.price,
+                quantity: 0,
+                defectiveQuantity: 0,
+                initialQuantity: 0,
+                status: 'IN_STORE',
+                branchId: toBranchId!,
+                categoryId: product.categoryId,
+                marketPrice: product.marketPrice ?? null,
+              },
             });
-          } else {
-            // Create new product if none exists
-            try {
-              toProduct = await prisma.product.create({
-                data: {
-                  name: product.name,
-                  barcode: product.barcode ?? null,
-                  model: product.model ?? null,
-                  price: product.price,
-                  quantity: item.quantity, // Initialize with transferred quantity
-                  defectiveQuantity: 0,
-                  initialQuantity: item.quantity,
-                  status: 'IN_STORE',
-                  branchId: toBranchId!,
-                  categoryId: product.categoryId,
-                  marketPrice: product.marketPrice ?? null,
-                },
-              });
-            } catch (error) {
-              throw new BadRequestException(
-                `Failed to create product in branch ${toBranchId}: ${error.message}`,
-              );
-            }
           }
+          // Increment in destination branch
+          await prisma.product.update({
+            where: { id: toProduct.id },
+            data: { quantity: { increment: item.quantity } },
+          });
         }
       }
 

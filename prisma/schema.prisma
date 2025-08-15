@@ -128,7 +128,7 @@ model Category {
 model Product {
   id                Int              @id @default(autoincrement())
   name              String
-  barcode           String?          @unique
+  barcode           String?          
   model             String?
   price             Float
   quantity          Int              @default(0)
@@ -151,6 +151,7 @@ model Product {
   @@index([categoryId])
   @@index([barcode])
   @@index([status])
+  @@unique([barcode, branchId]) // Added to make barcode unique per branch
 }
 
 model DefectiveLog {
