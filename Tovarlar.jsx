@@ -28,7 +28,7 @@ const Kirim = () => {
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const navigate = useNavigate();
-  const API_URL = 'https://suddocs.uz';
+  const API_URL = 'http://localhost:4000';
 
   const formatQuantity = (qty) => (qty >= 0 ? new Intl.NumberFormat('uz-UZ').format(qty) + ' dona' : '0 dona');
 

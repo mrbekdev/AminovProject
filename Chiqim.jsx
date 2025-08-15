@@ -27,7 +27,7 @@ const Chiqim = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState(null);
   const navigate = useNavigate();
-  const API_URL = 'https://suddocs.uz';
+  const API_URL = 'http://localhost:4000';
 
   const formatCurrency = (amount) =>
     amount != null && Number.isFinite(Number(amount))
