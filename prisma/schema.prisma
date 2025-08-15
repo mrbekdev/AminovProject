@@ -125,15 +125,15 @@ model Category {
 }
 
 model Product {
-  id                Int     @id @default(autoincrement())
+  id                Int            @id @default(autoincrement())
   name              String
-  barcode           String? @unique
+  barcode           String?        @unique
   model             String?
   price             Float
   quantity          Int
-  defectiveQuantity Int     @default(0)
-  initialQuantity   Int     @default(0)
-  status            String
+  defectiveQuantity Int            @default(0)
+  initialQuantity   Int            @default(0)
+  status            ProductStatus  @default(IN_STORE)
   branchId          Int
   categoryId        Int
   marketPrice       Float?
@@ -144,7 +144,7 @@ model Product {
   DefectiveLog    DefectiveLog[]
   ProductTransfer ProductTransfer[]
 
-  @@unique([barcode, branchId], name: "barcode_branchId") // shu joy upsert uchun shart
+  @@unique([barcode, branchId], name: "barcode_branchId")
 }
 
 model DefectiveLog {
