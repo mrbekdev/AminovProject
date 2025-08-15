@@ -157,7 +157,13 @@ export class TransactionService {
     
     if (type) where.type = type;
     if (status) where.status = status;
-    if (branchId) where.branchId = parseInt(branchId);
+    if (branchId) {
+      // BranchId orqali filtrlash - bu filialdan chiqgan yoki kirgan transactionlarni olish
+      where.OR = [
+        { branchId: parseInt(branchId) },
+        { toBranchId: parseInt(branchId) }
+      ];
+    }
     if (customerId) where.customerId = parseInt(customerId);
     if (paymentType) where.paymentType = paymentType;
     

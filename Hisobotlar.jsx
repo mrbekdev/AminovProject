@@ -27,7 +27,7 @@ const Hisobotlar = () => {
   const [notification, setNotification] = useState(null);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
   const [selectedReportType, setSelectedReportType] = useState('all');
-  const API_URL = 'http://localhost:4000';
+  const API_URL = 'https://suddocs.uz';
 
   const formatCurrency = (amount) =>
     (amount !== null && amount !== undefined && !Number.isNaN(Number(amount)))
@@ -75,12 +75,20 @@ const Hisobotlar = () => {
   };
 
   useEffect(() => {
+    // BranchId ni localStorage dan olish
+    const branchId = localStorage.getItem('branchId');
+    if (branchId) {
+      setSelectedBranchId(branchId);
+    }
+    
     const fetchBranches = async () => {
       try {
         const res = await axiosWithAuth({ method: 'get', url: `${API_URL}/branches` });
         const branchesData = Array.isArray(res.data) ? res.data : res.data.branches || [];
         setBranches(branchesData);
-        if (branchesData.length > 0) {
+        
+        // Agar localStorage da branchId yo'q bo'lsa, birinchi filialni tanlash
+        if (!branchId && branchesData.length > 0) {
           setSelectedBranchId(branchesData[0].id.toString());
         }
       } catch (err) {
@@ -120,10 +128,10 @@ const Hisobotlar = () => {
     try {
       const { startDate, endDate } = getDateRange();
       
-      // Barcha transactionlarni yuklash
+      // Oddiy branchId orqali transactionlarni yuklash
       const transactionsRes = await axiosWithAuth({
         method: 'get',
-        url: `${API_URL}/transactions?startDate=${startDate}&endDate=${endDate}`,
+        url: `${API_URL}/transactions?branchId=${selectedBranchId}&startDate=${startDate}&endDate=${endDate}`,
         timeout: 10000
       });
 
@@ -134,7 +142,18 @@ const Hisobotlar = () => {
         timeout: 10000
       });
 
-      const transactions = Array.isArray(transactionsRes.data) ? transactionsRes.data : [];
+      // Backend dan kelgan ma'lumotlarni to'g'ri parse qilish
+      let transactions = [];
+      if (transactionsRes.data && transactionsRes.data.transactions) {
+        transactions = transactionsRes.data.transactions;
+      } else if (Array.isArray(transactionsRes.data)) {
+        transactions = transactionsRes.data;
+      }
+      
+      console.log('API Response:', transactionsRes.data);
+      console.log('Parsed Transactions:', transactions);
+      console.log('Statistics:', statsRes.data);
+      
       const statistics = statsRes.data || {};
 
       // Transactionlarni turiga qarab ajratish
@@ -143,12 +162,6 @@ const Hisobotlar = () => {
       const transfers = [];
 
       for (const transaction of transactions) {
-        // Faqat tanlangan filial bilan bog'liq transactionlarni olish
-        const isFromBranch = transaction.branchId?.toString() === selectedBranchId;
-        const isToBranch = transaction.toBranchId?.toString() === selectedBranchId;
-        
-        if (!isFromBranch && !isToBranch) continue;
-
         const items = transaction.items || [];
         
         for (const item of items) {
@@ -167,36 +180,26 @@ const Hisobotlar = () => {
             description: transaction.description
           };
 
-          if (transaction.type === 'PURCHASE' && isFromBranch) {
+          if (transaction.type === 'PURCHASE') {
             purchases.push({
               ...baseData,
               type: 'Kirim',
               branchName: branches.find(b => b.id === transaction.branchId)?.name || 'Noma\'lum'
             });
-          } else if (transaction.type === 'SALE' && isFromBranch) {
+          } else if (transaction.type === 'SALE') {
             sales.push({
               ...baseData,
               type: 'Chiqim',
               branchName: branches.find(b => b.id === transaction.branchId)?.name || 'Noma\'lum'
             });
           } else if (transaction.type === 'TRANSFER') {
-            if (isFromBranch) {
-              transfers.push({
-                ...baseData,
-                type: 'O\'tkazma (Chiqim)',
-                direction: 'out',
-                fromBranch: branches.find(b => b.id === transaction.branchId)?.name || 'Noma\'lum',
-                toBranch: branches.find(b => b.id === transaction.toBranchId)?.name || 'Noma\'lum'
-              });
-            } else if (isToBranch) {
-              transfers.push({
-                ...baseData,
-                type: 'O\'tkazma (Kirim)',
-                direction: 'in',
-                fromBranch: branches.find(b => b.id === transaction.branchId)?.name || 'Noma\'lum',
-                toBranch: branches.find(b => b.id === transaction.toBranchId)?.name || 'Noma\'lum'
-              });
-            }
+            transfers.push({
+              ...baseData,
+              type: 'O\'tkazma',
+              direction: transaction.branchId?.toString() === selectedBranchId ? 'out' : 'in',
+              fromBranch: branches.find(b => b.id === transaction.branchId)?.name || 'Noma\'lum',
+              toBranch: branches.find(b => b.id === transaction.toBranchId)?.name || 'Noma\'lum'
+            });
           }
         }
       }

@@ -41,7 +41,7 @@ const SalesManagement = ({ selectedBranchId }) => {
     address: "",
   });
 
-  const API_BASE_URL = "http://localhost:4000";
+  const API_BASE_URL = "https://suddocs.uz";
 
   const statusTranslations = {
     IN_WAREHOUSE: "Омборда",
