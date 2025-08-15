@@ -167,14 +167,22 @@ export class TransactionService {
         });
 
         if (type === TransactionType.TRANSFER) {
-          // Find or create product in toBranch
+          // Find existing product in toBranch
           let toProduct = await prisma.product.findFirst({
             where: {
               barcode: product.barcode ?? null,
               branchId: toBranchId!,
             },
           });
-          if (!toProduct) {
+
+          if (toProduct) {
+            // Update existing product quantity
+            await prisma.product.update({
+              where: { id: toProduct.id },
+              data: { quantity: { increment: item.quantity } },
+            });
+          } else {
+            // Create new product if none exists
             try {
               toProduct = await prisma.product.create({
                 data: {
@@ -182,9 +190,9 @@ export class TransactionService {
                   barcode: product.barcode ?? null,
                   model: product.model ?? null,
                   price: product.price,
-                  quantity: 0,
+                  quantity: item.quantity, // Initialize with transferred quantity
                   defectiveQuantity: 0,
-                  initialQuantity: 0,
+                  initialQuantity: item.quantity,
                   status: 'IN_STORE',
                   branchId: toBranchId!,
                   categoryId: product.categoryId,
@@ -192,19 +200,11 @@ export class TransactionService {
                 },
               });
             } catch (error) {
-              if (error.code === 'P2002') {
-                throw new BadRequestException(
-                  `A product with barcode ${product.barcode} already exists in branch ${toBranchId}. Please update the existing product or use a different barcode.`,
-                );
-              }
-              throw error;
+              throw new BadRequestException(
+                `Failed to create product in branch ${toBranchId}: ${error.message}`,
+              );
             }
           }
-          // Increment in destination branch
-          await prisma.product.update({
-            where: { id: toProduct.id },
-            data: { quantity: { increment: item.quantity } },
-          });
         }
       }
 
