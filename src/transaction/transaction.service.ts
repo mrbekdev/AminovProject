@@ -427,15 +427,25 @@ export class TransactionService {
   // Statistika
   async getStatistics(branchId?: number, startDate?: string, endDate?: string) {
     const where: any = {};
+    const whereOr: any = [];
     
-    if (branchId) where.branchId = branchId;
+    if (branchId) {
+      whereOr.push({ branchId: branchId });
+      whereOr.push({ toBranchId: branchId });
+    }
+    
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
-    const [totalSales, creditSales, cashSales, cardSales] = await Promise.all([
+    // Agar branchId berilgan bo'lsa, OR shartini qo'shamiz
+    if (whereOr.length > 0) {
+      where.OR = whereOr;
+    }
+
+    const [totalSales, creditSales, cashSales, cardSales, purchases, transfers] = await Promise.all([
       this.prisma.transaction.aggregate({
         where: { ...where, type: TransactionType.SALE },
         _sum: { finalTotal: true },
@@ -455,6 +465,16 @@ export class TransactionService {
         where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CARD },
         _sum: { finalTotal: true },
         _count: true
+      }),
+      this.prisma.transaction.aggregate({
+        where: { ...where, type: TransactionType.PURCHASE },
+        _sum: { finalTotal: true },
+        _count: true
+      }),
+      this.prisma.transaction.aggregate({
+        where: { ...where, type: TransactionType.TRANSFER },
+        _sum: { finalTotal: true },
+        _count: true
       })
     ]);
 
@@ -466,7 +486,11 @@ export class TransactionService {
       cashSales: cashSales._sum.finalTotal || 0,
       cashTransactions: cashSales._count || 0,
       cardSales: cardSales._sum.finalTotal || 0,
-      cardTransactions: cardSales._count || 0
+      cardTransactions: cardSales._count || 0,
+      totalPurchases: purchases._sum.finalTotal || 0,
+      purchaseTransactions: purchases._count || 0,
+      totalTransfers: transfers._sum.finalTotal || 0,
+      transferTransactions: transfers._count || 0
     };
   }
 }
