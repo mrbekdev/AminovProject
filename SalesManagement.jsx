@@ -125,6 +125,7 @@ const SalesManagement = ({ selectedBranchId }) => {
       newCart = [...cart, { ...product, quantity: 1 }];
     }
     setCart(newCart);
+    // Mahsulot miqdorini faqat UI da kamaytirish, backend da emas
     setProducts((prev) =>
       prev.map((p) =>
         p.id === product.id
@@ -132,12 +133,6 @@ const SalesManagement = ({ selectedBranchId }) => {
           : p
       )
     );
-    try {
-      await updateProductQuantity(product.id, product.quantity - 1, product.status);
-    } catch (err) {
-      setCart(cart);
-      setProducts(products);
-    }
   };
 
   useEffect(() => {
@@ -223,18 +218,20 @@ const SalesManagement = ({ selectedBranchId }) => {
   const removeFromCart = async (productId) => {
     const item = cart.find((item) => item.id === productId);
     if (item) {
-      const product = products.find((p) => p.id === productId);
-      try {
-        await updateProductQuantity(product.id, product.quantity + item.quantity, product.status);
-        setCart(cart.filter((item) => item.id !== productId));
-        setCreditTerms((prev) => {
-          const newTerms = { ...prev };
-          delete newTerms[productId];
-          return newTerms;
-        });
-      } catch (err) {
-        toast.error(`Маҳсулотни саватдан олиб ташлашда хатолик: ${err.message}`);
-      }
+      // Mahsulot miqdorini faqat UI da qaytarish, backend da emas
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === productId
+            ? { ...p, quantity: p.quantity + item.quantity, status: p.quantity + item.quantity > 0 ? "IN_STORE" : p.status }
+            : p
+        )
+      );
+      setCart(cart.filter((item) => item.id !== productId));
+      setCreditTerms((prev) => {
+        const newTerms = { ...prev };
+        delete newTerms[productId];
+        return newTerms;
+      });
     }
   };
 
@@ -248,16 +245,19 @@ const SalesManagement = ({ selectedBranchId }) => {
     } else if (quantity > product.quantity + currentItem.quantity) {
       toast.error(`"${product.name}" учун етарли миқдор мавжуд эмас!`);
     } else {
-      try {
-        await updateProductQuantity(product.id, product.quantity - quantityDifference, product.status);
-        setCart(
-          cart.map((item) =>
-            item.id === productId ? { ...item, quantity } : item
-          )
-        );
-      } catch (err) {
-        toast.error(`Миқдорни янгилашда хатолик: ${err.message}`);
-      }
+      // Mahsulot miqdorini faqat UI da yangilash, backend da emas
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === productId
+            ? { ...p, quantity: p.quantity - quantityDifference, status: p.quantity - quantityDifference === 0 ? "SOLD" : p.status }
+            : p
+        )
+      );
+      setCart(
+        cart.map((item) =>
+          item.id === productId ? { ...item, quantity } : item
+        )
+      );
     }
   };
 

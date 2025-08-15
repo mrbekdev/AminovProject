@@ -105,13 +105,35 @@ export class TransactionService {
   private async updateProductQuantities(transaction: any) {
     for (const item of transaction.items) {
       if (item.productId) {
+        const product = await this.prisma.product.findUnique({
+          where: { id: item.productId }
+        });
+
+        if (!product) continue;
+
+        let newQuantity = product.quantity;
+        let newStatus = product.status;
+
+        if (transaction.type === 'SALE') {
+          // Sotish - mahsulot sonidan kamaytirish
+          newQuantity = Math.max(0, product.quantity - item.quantity);
+          newStatus = newQuantity === 0 ? 'SOLD' : 'IN_STORE';
+        } else if (transaction.type === 'PURCHASE') {
+          // Kirim - mahsulot soniga qo'shish
+          newQuantity = product.quantity + item.quantity;
+          newStatus = 'IN_WAREHOUSE';
+        } else if (transaction.type === 'TRANSFER') {
+          // O'tkazma - faqat manba filialdan kamaytirish
+          // Maqsad filialga qo'shish approveTransfer da amalga oshiriladi
+          newQuantity = Math.max(0, product.quantity - item.quantity);
+          newStatus = newQuantity === 0 ? 'SOLD' : 'IN_STORE';
+        }
+
         await this.prisma.product.update({
           where: { id: item.productId },
           data: {
-            quantity: {
-              decrement: item.quantity
-            },
-            status: item.quantity === 0 ? 'SOLD' : 'IN_STORE'
+            quantity: newQuantity,
+            status: newStatus
           }
         });
       }
@@ -338,20 +360,10 @@ export class TransactionService {
     // Mahsulotlarni o'tkazish
     for (const item of transaction.items) {
       if (item.productId && item.product) {
-        // Manba filialdan chiqarish
-        await this.prisma.product.update({
-          where: { 
-            id: item.productId,
-            branchId: transaction.branchId || 0
-          },
-          data: {
-            quantity: {
-              decrement: item.quantity
-            }
-          }
-        });
-
-        // Maqsad filialga qo'shish
+        // Manba filialdan chiqarish - bu allaqachon createTransfer da amalga oshirilgan
+        // Faqat maqsad filialga qo'shish qilamiz
+        
+        // Maqsad filialda mavjud mahsulotni topish
         const targetProduct = await this.prisma.product.findFirst({
           where: {
             barcode: item.product.barcode,
@@ -360,12 +372,14 @@ export class TransactionService {
         });
 
         if (targetProduct) {
+          // Mavjud mahsulotga qo'shish
           await this.prisma.product.update({
             where: { id: targetProduct.id },
             data: {
               quantity: {
                 increment: item.quantity
-              }
+              },
+              status: 'IN_WAREHOUSE'
             }
           });
         } else {
