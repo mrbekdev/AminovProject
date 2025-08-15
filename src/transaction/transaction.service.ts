@@ -1,345 +1,453 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { Transaction, TransactionStatus, PaymentType, TransactionType, Product } from '@prisma/client';
+import { TransactionType, TransactionStatus, PaymentType } from '@prisma/client';
 
 @Injectable()
 export class TransactionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {}
 
-  async create(createTransactionDto: CreateTransactionDto): Promise<Transaction> {
-    return this.prisma.$transaction(async (prisma) => {
-      const {
-        customer,
-        branchId,
-        toBranchId,
-        items,
-        type,
-        userId,
-        paymentType,
-        status = TransactionStatus.PENDING,
-        total: dtoTotal,
-        finalTotal: dtoFinalTotal,
-      } = createTransactionDto;
+  async create(createTransactionDto: CreateTransactionDto) {
+    const { items, customer, ...transactionData } = createTransactionDto;
 
-      // Validate user
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user) throw new BadRequestException('Invalid user ID');
-
-      // Common validations
-      if (!items || items.length === 0) throw new BadRequestException('Items are required');
-
-      let interestRate = 0;
-      let creditMonth: number | undefined;
-
-      if (type === TransactionType.TRANSFER) {
-        if (!toBranchId) throw new BadRequestException('toBranchId is required for TRANSFER');
-        if (toBranchId === branchId) throw new BadRequestException('Cannot transfer to the same branch');
-        if (customer) throw new BadRequestException('No customer for TRANSFER');
-        if (paymentType) throw new BadRequestException('No paymentType for TRANSFER');
-        if (Math.abs(dtoTotal - dtoFinalTotal) > 0.01) throw new BadRequestException('Final total must match total for TRANSFER');
-
-        // Validate from branch
-        const branch = await prisma.branch.findUnique({ where: { id: branchId } });
-        if (!branch) throw new BadRequestException('Invalid branch ID');
-
-        // Validate to branch
-        const toBranch = await prisma.branch.findUnique({ where: { id: toBranchId } });
-        if (!toBranch) throw new BadRequestException('Invalid toBranch ID');
-      } else {
-        if (toBranchId) throw new BadRequestException('toBranchId not allowed for non-TRANSFER');
-        // Validate branch (for non-TRANSFER)
-        const branch = await prisma.branch.findUnique({ where: { id: branchId } });
-        if (!branch) throw new BadRequestException('Invalid branch ID');
-
-        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT]) {
-          // Get credit month from the first item
-          const firstItemCreditMonth = items[0]?.creditMonth;
-          if (!firstItemCreditMonth || items.some((item) => item.creditMonth !== firstItemCreditMonth)) {
-            throw new BadRequestException('All items must have the same credit month');
-          }
-          creditMonth = firstItemCreditMonth;
-          
-          if (creditMonth <= 0 || creditMonth > 24) {
-            throw new BadRequestException('Credit months must be between 1 and 24');
-          }
-
-          // Use custom interest rate from items if provided
-          const firstItemInterest = items[0]?.creditPercent;
-          if (firstItemInterest !== undefined) {
-            if (firstItemInterest < 0 || firstItemInterest > 1) {
-              throw new BadRequestException('Credit percent must be between 0 and 1');
-            }
-            interestRate = firstItemInterest;
-          } else {
-            // Default interest rate calculation
-            interestRate = creditMonth <= 3 ? 0.05 : creditMonth <= 6 ? 0.10 : creditMonth <= 12 ? 0.15 : 0.20;
-          }
-
-          const expectedFinalTotal = dtoTotal * (1 + interestRate);
-          if (Math.abs(expectedFinalTotal - dtoFinalTotal) > 0.01) {
-            throw new BadRequestException(
-              `Final total (${dtoFinalTotal.toFixed(2)}) does not match calculated total with interest (${expectedFinalTotal.toFixed(2)})`,
-            );
-          }
-        } else if (Math.abs(dtoTotal - dtoFinalTotal) > 0.01) {
-          throw new BadRequestException('Final total must match total when no credit payment type is specified');
-        }
-      }
-
-      // Validate products and stock
-      const products: Product[] = [];
-      for (const item of items) {
-        const product = await prisma.product.findFirst({
-          where: { id: item.productId, branchId },
-        });
-        if (!product) {
-          throw new BadRequestException(`Product ID ${item.productId} not found in branch ${branchId}`);
-        }
-        if (item.quantity <= 0) {
-          throw new BadRequestException(`Quantity for product ${item.productId} must be positive`);
-        }
-        if (product.quantity < item.quantity) {
-          throw new BadRequestException(
-            `Insufficient stock for ${product.name || `Product ${item.productId}`}: available ${product.quantity}, requested ${item.quantity}`,
-          );
-        }
-        if (Math.abs(item.price - product.price) > 0.01) {
-          throw new BadRequestException(`Price for product ${item.productId} must match product price (${product.price})`);
-        }
-        products.push(product);
-      }
-
-      // Calculate totals
-      const calculatedTotal = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
-      if (Math.abs(calculatedTotal - dtoTotal) > 0.01) {
-        throw new BadRequestException(`Calculated total (${calculatedTotal.toFixed(2)}) does not match provided total (${dtoTotal})`);
-      }
-
-      // Create or find customer (only for non-TRANSFER)
-      let customerId: number | undefined;
-      if (type !== TransactionType.TRANSFER && customer) {
-        const existingCustomer = await prisma.customer.findFirst({ where: { phone: customer.phone } });
-        if (existingCustomer) {
-          customerId = existingCustomer.id;
-          // Update existing customer info if provided
-          await prisma.customer.update({
-            where: { id: existingCustomer.id },
-            data: {
-              firstName: customer.firstName || existingCustomer.firstName,
-              lastName: customer.lastName || existingCustomer.lastName,
-              email: customer.email || existingCustomer.email,
-              address: customer.address || existingCustomer.address,
-            },
-          });
-        } else {
-          const newCustomer = await prisma.customer.create({
-            data: {
-              firstName: customer.firstName,
-              lastName: customer.lastName,
-              phone: customer.phone,
-              email: customer.email,
-              address: customer.address,
-            },
-          });
-          customerId = newCustomer.id;
-        }
-      }
-
-      // Calculate monthly payment
-      let monthlyPayment: number | undefined;
-      if (interestRate > 0 && creditMonth && creditMonth > 0) {
-        monthlyPayment = dtoFinalTotal / creditMonth;
-      }
-
-      // Create transaction with items
-      const transaction = await prisma.transaction.create({
-        data: {
-          userId,
-          branchId,
-          toBranchId: type === TransactionType.TRANSFER ? toBranchId : undefined,
-          type: type as TransactionType,
-          status: status as TransactionStatus,
-          total: dtoTotal,
-          finalTotal: dtoFinalTotal,
-          paymentType: type === TransactionType.TRANSFER ? undefined : paymentType as PaymentType | undefined,
-          customerId,
-          items: {
-            create: items.map((item) => ({
-              productId: item.productId,
-              quantity: item.quantity,
-              price: item.price,
-              total: item.quantity * item.price,
-              creditMonth: creditMonth,
-              creditPercent: interestRate > 0 ? interestRate : undefined,
-              monthlyPayment: monthlyPayment,
-            })),
-          },
-        },
-        include: {
-          items: true,
-          customer: true,
-          branch: true,
-          toBranch: true,
-          user: true,
-        },
+    // Customer yaratish yoki mavjudini topish
+    let customerId: number | null = null;
+    if (customer) {
+      const existingCustomer = await this.prisma.customer.findFirst({
+        where: { phone: customer.phone }
       });
-
-      // Update product quantities
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const product = products[i];
-
-        // Decrement from source branch
-        await prisma.product.update({
-          where: { id: item.productId },
-          data: { quantity: { decrement: item.quantity } },
+      
+      if (existingCustomer) {
+        customerId = existingCustomer.id;
+      } else {
+        const newCustomer = await this.prisma.customer.create({
+          data: customer
         });
-
-        if (type === TransactionType.TRANSFER) {
-          // Find or create product in toBranch
-          let toProduct = await prisma.product.findFirst({
-            where: { barcode: product.barcode ?? undefined, branchId: toBranchId! },
-          });
-          if (!toProduct) {
-            toProduct = await prisma.product.create({
-              data: {
-                name: product.name,
-                barcode: product.barcode ?? undefined,
-                model: product.model ?? undefined,
-                price: product.price,
-                quantity: 0,
-                defectiveQuantity: 0,
-                initialQuantity: 0,
-                status: 'IN_STORE',
-                branchId: toBranchId!,
-                categoryId: product.categoryId,
-                marketPrice: product.marketPrice ?? undefined,
-              },
-            });
-          }
-          // Increment in destination branch
-          await prisma.product.update({
-            where: { id: toProduct.id },
-            data: { quantity: { increment: item.quantity } },
-          });
-        }
+        customerId = newCustomer.id;
       }
+    }
 
-      return transaction;
-    });
-  }
-
-  async findAll(branchId?: number): Promise<Transaction[]> {
-    return this.prisma.transaction.findMany({
-      where: branchId ? { OR: [{ branchId }, { toBranchId: branchId }] } : {},
+    // Transaction yaratish
+    const transaction = await this.prisma.transaction.create({
+      data: {
+        ...transactionData,
+        customerId,
+        items: {
+          create: items.map(item => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            price: item.price,
+            total: item.price * item.quantity,
+            creditMonth: item.creditMonth,
+            creditPercent: item.creditPercent,
+            monthlyPayment: item.monthlyPayment || this.calculateMonthlyPayment(item)
+          }))
+        }
+      },
       include: {
+        customer: true,
         items: {
           include: {
-            product: true,
-          },
+            product: true
+          }
         },
-        customer: true,
-        branch: true,
-        toBranch: true,
-        user: true,
-      },
-      orderBy: { createdAt: 'desc' },
+        paymentSchedules: true
+      }
     });
-  }
 
-  async findOne(id: number): Promise<Transaction> {
-    const transaction = await this.prisma.transaction.findUnique({
-      where: { id },
-      include: {
-        items: {
-          include: {
-            product: true,
-          },
-        },
-        customer: true,
-        branch: true,
-        toBranch: true,
-        user: true,
-      },
-    });
-    if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
+    // Kredit bo'lsa, oylik to'lovlar jadvalini yaratish
+    if (transaction.paymentType === PaymentType.CREDIT || transaction.paymentType === PaymentType.INSTALLMENT) {
+      await this.createPaymentSchedule(transaction.id, transaction.items);
+    }
+
+    // Mahsulot miqdorlarini yangilash
+    await this.updateProductQuantities(transaction);
+
     return transaction;
   }
 
-  async update(id: number, updateTransactionDto: UpdateTransactionDto): Promise<Transaction> {
+  private calculateMonthlyPayment(item: any): number {
+    if (!item.creditMonth || !item.creditPercent) return 0;
+    
+    const totalWithInterest = item.price * item.quantity * (1 + item.creditPercent / 100);
+    return totalWithInterest / item.creditMonth;
+  }
+
+  private async createPaymentSchedule(transactionId: number, items: any[]) {
+    const schedules: any[] = [];
+    
+    for (const item of items) {
+      if (item.creditMonth && item.creditPercent) {
+        const totalWithInterest = item.price * item.quantity * (1 + item.creditPercent / 100);
+        const monthlyPayment = totalWithInterest / item.creditMonth;
+        let remainingBalance = totalWithInterest;
+
+        for (let month = 1; month <= item.creditMonth; month++) {
+          remainingBalance -= monthlyPayment;
+          schedules.push({
+            transactionId,
+            month,
+            payment: monthlyPayment,
+            remainingBalance: Math.max(0, remainingBalance)
+          });
+        }
+      }
+    }
+
+    if (schedules.length > 0) {
+      await this.prisma.paymentSchedule.createMany({
+        data: schedules
+      });
+    }
+  }
+
+  private async updateProductQuantities(transaction: any) {
+    for (const item of transaction.items) {
+      if (item.productId) {
+        await this.prisma.product.update({
+          where: { id: item.productId },
+          data: {
+            quantity: {
+              decrement: item.quantity
+            },
+            status: item.quantity === 0 ? 'SOLD' : 'IN_STORE'
+          }
+        });
+      }
+    }
+  }
+
+  async findAll(query: any = {}) {
+    const {
+      page = 1,
+      limit = 10,
+      type,
+      status,
+      branchId,
+      customerId,
+      startDate,
+      endDate,
+      paymentType
+    } = query;
+
+    const where: any = {};
+    
+    if (type) where.type = type;
+    if (status) where.status = status;
+    if (branchId) where.branchId = parseInt(branchId);
+    if (customerId) where.customerId = parseInt(customerId);
+    if (paymentType) where.paymentType = paymentType;
+    
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [transactions, total] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where,
+        skip,
+        take: parseInt(limit),
+        include: {
+          customer: true,
+          user: true,
+          branch: true,
+          toBranch: true,
+          items: {
+            include: {
+              product: true
+            }
+          },
+          paymentSchedules: {
+            orderBy: { month: 'asc' }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+      this.prisma.transaction.count({ where })
+    ]);
+
+    return {
+      transactions,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    };
+  }
+
+  async findOne(id: number) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },
-      include: { items: true },
-    });
-    if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
-
-    if (updateTransactionDto.status === TransactionStatus.CANCELLED && transaction.status !== TransactionStatus.CANCELLED) {
-      await this.prisma.$transaction(async (prisma) => {
-        for (const item of transaction.items) {
-          if (!item.productId) continue; // Skip if productId is null
-          const product = await prisma.product.findUnique({ where: { id: item.productId } });
-          if (!product) continue; // Skip if product not found
-
-          if (transaction.type === TransactionType.TRANSFER) {
-            // Reverse transfer: increment back to fromBranch, decrement from toBranch
-            await prisma.product.update({
-              where: { id: item.productId },
-              data: { quantity: { increment: item.quantity } },
-            });
-            const toProduct = await prisma.product.findFirst({
-              where: { barcode: product?.barcode ?? undefined, branchId: transaction.toBranchId ?? undefined },
-            });
-            if (toProduct) {
-              await prisma.product.update({
-                where: { id: toProduct.id },
-                data: { quantity: { decrement: item.quantity } },
-              });
-            }
-          } else {
-            // For other types like SALE, increment back
-            await prisma.product.update({
-              where: { id: item.productId },
-              data: { quantity: { increment: item.quantity } },
-            });
+      include: {
+        customer: true,
+        user: true,
+        branch: true,
+        toBranch: true,
+        items: {
+          include: {
+            product: true
           }
+        },
+        paymentSchedules: {
+          orderBy: { month: 'asc' }
         }
-      });
+      }
+    });
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    return transaction;
+  }
+
+  async update(id: number, updateTransactionDto: UpdateTransactionDto) {
+    const transaction = await this.findOne(id);
+    
+    if (transaction.status === TransactionStatus.COMPLETED) {
+      throw new BadRequestException('Completed transactions cannot be modified');
     }
 
     return this.prisma.transaction.update({
       where: { id },
+      data: updateTransactionDto,
+      include: {
+        customer: true,
+        user: true,
+        branch: true,
+        toBranch: true,
+        items: {
+          include: {
+            product: true
+          }
+        },
+        paymentSchedules: {
+          orderBy: { month: 'asc' }
+        }
+      }
+    });
+  }
+
+  async remove(id: number) {
+    const transaction = await this.findOne(id);
+    
+    if (transaction.status === TransactionStatus.COMPLETED) {
+      throw new BadRequestException('Completed transactions cannot be deleted');
+    }
+
+    // Mahsulot miqdorlarini qaytarish
+    for (const item of transaction.items) {
+      if (item.productId) {
+        await this.prisma.product.update({
+          where: { id: item.productId },
+          data: {
+            quantity: {
+              increment: item.quantity
+            }
+          }
+        });
+      }
+    }
+
+    return this.prisma.transaction.delete({
+      where: { id }
+    });
+  }
+
+  // Kredit to'lovlarini boshqarish
+  async getPaymentSchedules(transactionId: number) {
+    const transaction = await this.findOne(transactionId);
+    return transaction.paymentSchedules;
+  }
+
+  async updatePaymentStatus(transactionId: number, month: number, paid: boolean) {
+    const schedule = await this.prisma.paymentSchedule.findFirst({
+      where: { transactionId, month }
+    });
+
+    if (!schedule) {
+      throw new NotFoundException('Payment schedule not found');
+    }
+
+    // PaymentSchedule modelida paid field yo'q, shuning uchun boshqa yechim ishlatamiz
+    return this.prisma.paymentSchedule.update({
+      where: { id: schedule.id },
+      data: { 
+        // paid field yo'q, shuning uchun boshqa field bilan belgilaymiz
+        remainingBalance: paid ? 0 : schedule.remainingBalance
+      }
+    });
+  }
+
+  // Filiallar orasida o'tkazma
+  async createTransfer(transferData: any) {
+    const { fromBranchId, toBranchId, items, ...data } = transferData;
+
+    // O'tkazma yaratish
+    const transfer = await this.prisma.transaction.create({
       data: {
-        ...updateTransactionDto,
-        status: updateTransactionDto.status as TransactionStatus | undefined,
-        paymentType: updateTransactionDto.paymentType as PaymentType | undefined,
+        ...data,
+        type: TransactionType.TRANSFER,
+        branchId: fromBranchId,
+        toBranchId: toBranchId,
+        status: TransactionStatus.PENDING,
+        items: {
+          create: items.map(item => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            price: item.price,
+            total: item.price * item.quantity
+          }))
+        }
       },
       include: {
         items: {
           include: {
-            product: true,
-          },
-        },
-        customer: true,
-        branch: true,
-        toBranch: true,
-        user: true,
-      },
+            product: true
+          }
+        }
+      }
     });
+
+    return transfer;
   }
 
-  async remove(id: number): Promise<void> {
-    const transaction = await this.prisma.transaction.findUnique({ 
-      where: { id },
-      include: { items: true }
-    });
-    if (!transaction) throw new NotFoundException(`Transaction with ID ${id} not found`);
+  async approveTransfer(id: number, approvedById: number) {
+    const transaction = await this.findOne(id);
     
-    // First delete transaction items, then transaction
-    await this.prisma.transactionItem.deleteMany({ where: { transactionId: id } });
-    await this.prisma.transaction.delete({ where: { id } });
+    if (transaction.type !== TransactionType.TRANSFER) {
+      throw new BadRequestException('Only transfer transactions can be approved');
+    }
+
+    if (transaction.status !== TransactionStatus.PENDING) {
+      throw new BadRequestException('Transaction is not pending');
+    }
+
+    // Mahsulotlarni o'tkazish
+    for (const item of transaction.items) {
+      if (item.productId && item.product) {
+        // Manba filialdan chiqarish
+        await this.prisma.product.update({
+          where: { 
+            id: item.productId,
+            branchId: transaction.branchId || 0
+          },
+          data: {
+            quantity: {
+              decrement: item.quantity
+            }
+          }
+        });
+
+        // Maqsad filialga qo'shish
+        const targetProduct = await this.prisma.product.findFirst({
+          where: {
+            barcode: item.product.barcode,
+            branchId: transaction.toBranchId || 0
+          }
+        });
+
+        if (targetProduct) {
+          await this.prisma.product.update({
+            where: { id: targetProduct.id },
+            data: {
+              quantity: {
+                increment: item.quantity
+              }
+            }
+          });
+        } else {
+          // Yangi mahsulot yaratish
+          await this.prisma.product.create({
+            data: {
+              name: item.product.name,
+              barcode: item.product.barcode,
+              model: item.product.model,
+              price: item.product.price,
+              quantity: item.quantity,
+              status: 'IN_WAREHOUSE',
+              branchId: transaction.toBranchId || 0,
+              categoryId: item.product.categoryId,
+              marketPrice: item.product.marketPrice
+            }
+          });
+        }
+      }
+    }
+
+    // O'tkazmani tasdiqlash
+    return this.prisma.transaction.update({
+      where: { id },
+      data: {
+        status: TransactionStatus.COMPLETED,
+        userId: approvedById
+      }
+    });
   }
 
-  // Additional method to get payment schedule
+  async rejectTransfer(id: number) {
+    const transaction = await this.findOne(id);
+    
+    if (transaction.type !== TransactionType.TRANSFER) {
+      throw new BadRequestException('Only transfer transactions can be rejected');
+    }
+
+    return this.prisma.transaction.update({
+      where: { id },
+      data: { status: TransactionStatus.CANCELLED }
+    });
+  }
+
+  // Statistika
+  async getStatistics(branchId?: number, startDate?: string, endDate?: string) {
+    const where: any = {};
+    
+    if (branchId) where.branchId = branchId;
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+
+    const [totalSales, creditSales, cashSales, cardSales] = await Promise.all([
+      this.prisma.transaction.aggregate({
+        where: { ...where, type: TransactionType.SALE },
+        _sum: { finalTotal: true },
+        _count: true
+      }),
+      this.prisma.transaction.aggregate({
+        where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CREDIT },
+        _sum: { finalTotal: true },
+        _count: true
+      }),
+      this.prisma.transaction.aggregate({
+        where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CASH },
+        _sum: { finalTotal: true },
+        _count: true
+      }),
+      this.prisma.transaction.aggregate({
+        where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CARD },
+        _sum: { finalTotal: true },
+        _count: true
+      })
+    ]);
+
+    return {
+      totalSales: totalSales._sum.finalTotal || 0,
+      totalTransactions: totalSales._count || 0,
+      creditSales: creditSales._sum.finalTotal || 0,
+      creditTransactions: creditSales._count || 0,
+      cashSales: cashSales._sum.finalTotal || 0,
+      cashTransactions: cashSales._count || 0,
+      cardSales: cardSales._sum.finalTotal || 0,
+      cardTransactions: cardSales._count || 0
+    };
+  }
 }

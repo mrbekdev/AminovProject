@@ -1,38 +1,95 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { TransactionService } from './transaction.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { Transaction } from '@prisma/client';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @Controller('transactions')
+@UseGuards(JwtAuthGuard)
 export class TransactionController {
   constructor(private readonly transactionService: TransactionService) {}
 
   @Post()
-  create(@Body() createTransactionDto: CreateTransactionDto): Promise<Transaction> {
-    return this.transactionService.create(createTransactionDto);
+  create(@Body() createTransactionDto: CreateTransactionDto, @CurrentUser() user: any) {
+    return this.transactionService.create({
+      ...createTransactionDto,
+      userId: user.id
+    });
   }
 
   @Get()
-  findAll(@Query('branchId', new ParseIntPipe({ optional: true })) branchId?: number): Promise<Transaction[]> {
-    return this.transactionService.findAll(branchId);
+  findAll(@Query() query: any) {
+    return this.transactionService.findAll(query);
+  }
+
+  @Get('statistics')
+  getStatistics(
+    @Query('branchId') branchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string
+  ) {
+    return this.transactionService.getStatistics(
+      branchId ? parseInt(branchId) : undefined,
+      startDate,
+      endDate
+    );
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number): Promise<Transaction> {
-    return this.transactionService.findOne(id);
+  findOne(@Param('id') id: string) {
+    return this.transactionService.findOne(+id);
+  }
+
+  @Get(':id/payment-schedules')
+  getPaymentSchedules(@Param('id') id: string) {
+    return this.transactionService.getPaymentSchedules(+id);
   }
 
   @Patch(':id')
-  update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateTransactionDto: UpdateTransactionDto,
-  ): Promise<Transaction> {
-    return this.transactionService.update(id, updateTransactionDto);
+  update(@Param('id') id: string, @Body() updateTransactionDto: UpdateTransactionDto) {
+    return this.transactionService.update(+id, updateTransactionDto);
+  }
+
+  @Patch(':id/payment-status')
+  updatePaymentStatus(
+    @Param('id') id: string,
+    @Body() body: { month: number; paid: boolean }
+  ) {
+    return this.transactionService.updatePaymentStatus(+id, body.month, body.paid);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    return this.transactionService.remove(id);
+  remove(@Param('id') id: string) {
+    return this.transactionService.remove(+id);
+  }
+
+  // Filiallar orasida o'tkazma
+  @Post('transfer')
+  createTransfer(@Body() transferData: any, @CurrentUser() user: any) {
+    return this.transactionService.createTransfer({
+      ...transferData,
+      userId: user.id
+    });
+  }
+
+  @Post(':id/approve-transfer')
+  approveTransfer(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.transactionService.approveTransfer(+id, user.id);
+  }
+
+  @Post(':id/reject-transfer')
+  rejectTransfer(@Param('id') id: string) {
+    return this.transactionService.rejectTransfer(+id);
   }
 }

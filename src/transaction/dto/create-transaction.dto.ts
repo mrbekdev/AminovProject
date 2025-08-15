@@ -1,4 +1,5 @@
-import { IsEnum, IsOptional, IsNumber, IsArray, ValidateNested, IsString, IsPositive, Min, Max } from 'class-validator';
+// dto/create-transaction.dto.ts
+import { IsEnum, IsOptional, IsNumber, IsArray, ValidateNested, IsString, Min, Max, IsPositive } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TransactionStatus, PaymentType, TransactionType } from '@prisma/client';
 
@@ -31,8 +32,8 @@ export class TransactionItemDto {
   quantity: number;
 
   @IsNumber()
-  @IsPositive()
-  price: number;
+  @Min(0)
+  price: number; // Narx nol bo'lishi mumkin
 
   @IsOptional()
   @IsNumber()
@@ -44,12 +45,12 @@ export class TransactionItemDto {
   @IsNumber()
   @Min(0)
   @Max(1)
-  creditPercent?: number;
+  creditPercent?: number; // 0.05 = 5%
 
   @IsOptional()
   @IsNumber()
-  @IsPositive()
-  monthlyPayment?: number;
+  @Min(0)
+  monthlyPayment?: number; // Hisoblash uchun, client tomonidan berilmasa ham bo'ladi
 }
 
 export class CreateTransactionDto {
@@ -74,11 +75,11 @@ export class CreateTransactionDto {
   status?: TransactionStatus;
 
   @IsNumber()
-  @IsPositive()
+  @Min(0) // Nol ham bo'lishi mumkin
   total: number;
 
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   finalTotal: number;
 
   @IsOptional()
@@ -90,8 +91,10 @@ export class CreateTransactionDto {
   @Type(() => CustomerDto)
   customer?: CustomerDto;
 
-  @IsArray()
+  @IsArray({ message: 'Items must be an array' })
   @ValidateNested({ each: true })
   @Type(() => TransactionItemDto)
   items: TransactionItemDto[];
+
+  // Validationni service da qilish maqsadga muvofiq
 }
