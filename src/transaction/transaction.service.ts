@@ -21,6 +21,7 @@ export class TransactionService {
         status = TransactionStatus.PENDING,
         total: dtoTotal,
         finalTotal: dtoFinalTotal,
+        creditPercent,
       } = createTransactionDto;
 
       // Validate user
@@ -47,13 +48,13 @@ export class TransactionService {
         // Validate to branch
         const toBranch = await prisma.branch.findUnique({ where: { id: toBranchId } });
         if (!toBranch) throw new BadRequestException('Invalid toBranch ID');
-      } else {
-        if (toBranchId) throw new BadRequestException('toBranchId not allowed for non-TRANSFER');
-        // Validate branch (for non-TRANSFER)
+      } else if (type === TransactionType.SALE) {
+        if (toBranchId) throw new BadRequestException('toBranchId not allowed for SALE');
+        // Validate branch
         const branch = await prisma.branch.findUnique({ where: { id: branchId } });
         if (!branch) throw new BadRequestException('Invalid branch ID');
 
-        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT].includes('CREDIT')) {
+        if (paymentType && [PaymentType.CREDIT, PaymentType.INSTALLMENT].includes('INSTALLMENT')) {
           creditMonth = items[0]?.creditMonth;
           if (!creditMonth || items.some((item) => item.creditMonth !== creditMonth)) {
             throw new BadRequestException('All items must have the same credit month');
@@ -61,7 +62,10 @@ export class TransactionService {
           if (creditMonth <= 0 || creditMonth > 24) {
             throw new BadRequestException('Credit months must be between 1 and 24');
           }
-          interestRate = creditMonth <= 3 ? 0.05 : creditMonth <= 6 ? 0.10 : creditMonth <= 12 ? 0.15 : 0.20;
+          if (creditPercent === undefined || creditPercent < 0 || creditPercent > 1) {
+            throw new BadRequestException('Credit percent must be between 0 and 1');
+          }
+          interestRate = creditPercent;
           const expectedFinalTotal = dtoTotal * (1 + interestRate);
           if (Math.abs(expectedFinalTotal - dtoFinalTotal) > 0.01) {
             throw new BadRequestException(
@@ -71,6 +75,9 @@ export class TransactionService {
         } else if (Math.abs(dtoTotal - dtoFinalTotal) > 0.01) {
           throw new BadRequestException('Final total must match total when no credit payment type is specified');
         }
+        if (!customer) throw new BadRequestException('Customer is required for SALE');
+      } else {
+        throw new BadRequestException('Unsupported transaction type');
       }
 
       // Validate products and stock
@@ -102,9 +109,9 @@ export class TransactionService {
         throw new BadRequestException(`Calculated total (${calculatedTotal.toFixed(2)}) does not match provided total (${dtoTotal})`);
       }
 
-      // Create or find customer (only for non-TRANSFER)
+      // Create or find customer (only for SALE)
       let customerId: number | undefined;
-      if (type !== TransactionType.TRANSFER && customer) {
+      if (type === TransactionType.SALE && customer) {
         const existingCustomer = await prisma.customer.findFirst({ where: { phone: customer.phone } });
         if (existingCustomer) {
           customerId = existingCustomer.id;
@@ -166,48 +173,55 @@ export class TransactionService {
           data: { quantity: { decrement: item.quantity } },
         });
 
-        if (type === TransactionType.TRANSFER) {
-          // Find or create product in toBranch
-          let toProduct = await prisma.product.findFirst({
-            where: { barcode: product.barcode ?? null, branchId: toBranchId! },
-          });
-          if (!toProduct) {
-            try {
-              toProduct = await prisma.product.create({
-                data: {
-                  name: product.name,
-                  barcode: product.barcode ?? null,
-                  model: product.model ?? null,
-                  price: product.price,
-                  quantity: 0,
-                  defectiveQuantity: 0,
-                  initialQuantity: 0,
-                  status: 'IN_STORE',
-                  branchId: toBranchId!,
-                  categoryId: product.categoryId,
-                  marketPrice: product.marketPrice ?? null,
-                },
-              });
-            } catch (error) {
-              if (error.code === 'P2002') {
-                // Race condition, product was created concurrently
-                toProduct = await prisma.product.findFirst({
-                  where: { barcode: product.barcode ?? null, branchId: toBranchId! },
-                });
-                if (!toProduct) {
-                  throw new BadRequestException('Failed to create or find product in destination branch');
-                }
-              } else {
-                throw error;
-              }
-            }
-          }
-          // Increment in destination branch
-          await prisma.product.update({
-            where: { id: toProduct.id },
-            data: { quantity: { increment: item.quantity } },
-          });
-        }
+// Replace the upsert section in your code with this:
+
+if (type === TransactionType.TRANSFER) {
+  // Check if barcode exists before using upsert
+  if (product.barcode) {
+    // Use upsert when barcode exists
+    await prisma.product.upsert({
+      where: {
+        barcode_branchId: {
+          barcode: product.barcode,
+          branchId: toBranchId!,
+        },
+      },
+      update: {
+        quantity: { increment: item.quantity },
+      },
+      create: {
+        name: product.name,
+        barcode: product.barcode,
+        model: product.model,
+        price: product.price,
+        quantity: item.quantity,
+        defectiveQuantity: 0,
+        initialQuantity: item.quantity,
+        status: 'IN_STORE',
+        branchId: toBranchId!,
+        categoryId: product.categoryId,
+        marketPrice: product.marketPrice,
+      },
+    });
+  } else {
+    // When barcode is null, create a new product directly
+    await prisma.product.create({
+      data: {
+        name: product.name,
+        barcode: null,
+        model: product.model,
+        price: product.price,
+        quantity: item.quantity,
+        defectiveQuantity: 0,
+        initialQuantity: item.quantity,
+        status: 'IN_STORE',
+        branchId: toBranchId!,
+        categoryId: product.categoryId,
+        marketPrice: product.marketPrice,
+      },
+    });
+  }
+}
       }
 
       return transaction;

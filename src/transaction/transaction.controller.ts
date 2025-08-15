@@ -1,4 +1,3 @@
-// TransactionController (no major changes, but updated DTOs assumed to include toBranchId)
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseIntPipe } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
