@@ -20,7 +20,7 @@ const Chiqim = () => {
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [months, setMonths] = useState('');
-  const [interestRate, setInterestRate] = useState(''); // New state for custom interest rate
+  const [interestRate, setInterestRate] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
@@ -33,16 +33,18 @@ const Chiqim = () => {
     amount != null && Number.isFinite(Number(amount))
       ? new Intl.NumberFormat('uz-UZ').format(Number(amount)) + " so'm"
       : "Noma'lum";
+
   const formatQuantity = (qty) =>
     qty != null && Number.isFinite(Number(qty))
       ? new Intl.NumberFormat('uz-UZ').format(Number(qty)) + ' dona'
       : '0 dona';
+
   const formatDate = (date) =>
     date ? new Date(date).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' }) : "Noma'lum";
 
   const calculatePaymentSchedule = () => {
     const m = Number(months);
-    const rate = Number(interestRate) / 100; // Convert percentage to decimal
+    const rate = Number(interestRate) / 100;
     if (!m || m <= 0 || selectedItems.length === 0 || operationType !== 'SALE' || rate < 0) {
       return { totalWithInterest: 0, monthlyPayment: 0, schedule: [] };
     }
@@ -196,6 +198,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
       queryParams.append('branchId', branchId.toString());
       if (searchTerm.trim()) queryParams.append('search', searchTerm);
       queryParams.append('includeZeroQuantity', 'true');
+      
       let allProducts = [];
       let page = 1;
       while (true) {
@@ -245,6 +248,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
       const queryParams = new URLSearchParams();
       queryParams.append('branchId', branchId.toString());
       queryParams.append('includeZeroQuantity', 'true');
+      
       let allProducts = [];
       let page = 1;
       while (true) {
@@ -291,7 +295,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
     setPhone('');
     setPaymentType('');
     setMonths('');
-    setInterestRate(''); // Reset interest rate
+    setInterestRate('');
     setErrors({});
     setSelectedProductId('');
     setTempQuantity('');
@@ -349,7 +353,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
     setPhone('');
     setPaymentType('');
     setMonths('');
-    setInterestRate(''); // Reset interest rate
+    setInterestRate('');
     setErrors({});
     setNotification(null);
     setSelectedProductId('');
@@ -404,24 +408,16 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
     setSubmitting(true);
     setNotification(null);
     try {
-      const userId = Number(localStorage.getItem('userId')) || 1;
       const baseTotal = selectedItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0);
       let finalTotal = baseTotal;
-      let creditFields = {};
       let customerData = undefined;
       let toBranchId = undefined;
 
       if (operationType === 'SALE') {
         const m = Number(months);
-        const rate = Number(interestRate) / 100; // Convert percentage to decimal
+        const rate = Number(interestRate) / 100;
         if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
           finalTotal = baseTotal * (1 + rate);
-          const monthlyPayment = m > 0 ? finalTotal / m : 0;
-          creditFields = {
-            creditMonth: m,
-            creditPercent: rate,
-            monthlyPayment,
-          };
         }
         customerData = {
           firstName,
@@ -433,7 +429,6 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
       }
 
       const payload = {
-        userId,
         type: operationType,
         status: 'PENDING',
         total: baseTotal,
@@ -442,25 +437,48 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
         customer: customerData,
         branchId: Number(selectedBranch),
         toBranchId,
-        creditPercent: operationType === 'SALE' && (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? Number(interestRate) / 100 : undefined,
         items: selectedItems.map((item) => ({
           productId: item.id,
           quantity: Number(item.quantity),
           price: Number(item.price),
-          total: Number(item.quantity) * Number(item.price),
-          ...creditFields,
+          creditMonth: (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? Number(months) : undefined,
+          creditPercent: (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? Number(interestRate) / 100 : undefined,
+          monthlyPayment: (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? 
+            (Number(item.quantity) * Number(item.price) * (1 + Number(interestRate) / 100)) / Number(months) : undefined,
         })),
       };
+
       console.log('Submitting transaction:', JSON.stringify(payload, null, 2));
-      const response = await axiosWithAuth({
-        method: 'post',
-        url: `${API_URL}/transactions`,
-        data: payload,
-      });
+      
+      let response;
+      if (operationType === 'TRANSFER') {
+        response = await axiosWithAuth({
+          method: 'post',
+          url: `${API_URL}/transactions/transfer`,
+          data: {
+            fromBranchId: Number(selectedBranch),
+            toBranchId: Number(toBranch),
+            items: selectedItems.map((item) => ({
+              productId: item.id,
+              quantity: Number(item.quantity),
+              price: Number(item.price),
+            })),
+          },
+        });
+      } else {
+        response = await axiosWithAuth({
+          method: 'post',
+          url: `${API_URL}/transactions`,
+          data: payload,
+        });
+      }
+
       console.log('Transaction response:', response.data);
+      
       if (operationType === 'SALE' && (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT')) {
         generatePDF();
       }
+      
       setNotification({ message: 'Amal muvaffaqiyatli amalga oshirildi', type: 'success' });
       closeModal();
       loadData();

@@ -290,6 +290,9 @@ export class TransactionService {
   async createTransfer(transferData: any) {
     const { fromBranchId, toBranchId, items, ...data } = transferData;
 
+    // Umumiy summani hisoblash
+    const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
     // O'tkazma yaratish
     const transfer = await this.prisma.transaction.create({
       data: {
@@ -298,6 +301,8 @@ export class TransactionService {
         branchId: fromBranchId,
         toBranchId: toBranchId,
         status: TransactionStatus.PENDING,
+        total: total,
+        finalTotal: total, // Transfer uchun total va finalTotal bir xil
         items: {
           create: items.map(item => ({
             productId: item.productId,
