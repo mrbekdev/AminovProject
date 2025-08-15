@@ -73,6 +73,10 @@ export class CreateTransactionDto {
 
   @IsNumber()
   finalTotal: number;
+
+  @IsOptional()
+  @IsNumber()
+  creditPercent?: number; // User-provided interest rate
 }
 
 export class UpdateTransactionDto {

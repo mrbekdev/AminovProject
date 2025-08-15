@@ -172,21 +172,35 @@ export class TransactionService {
             where: { barcode: product.barcode ?? null, branchId: toBranchId! },
           });
           if (!toProduct) {
-            toProduct = await prisma.product.create({
-              data: {
-                name: product.name,
-                barcode: product.barcode ?? null,
-                model: product.model ?? null,
-                price: product.price,
-                quantity: 0,
-                defectiveQuantity: 0,
-                initialQuantity: 0,
-                status: 'IN_STORE',
-                branchId: toBranchId!,
-                categoryId: product.categoryId,
-                marketPrice: product.marketPrice ?? null,
-              },
-            });
+            try {
+              toProduct = await prisma.product.create({
+                data: {
+                  name: product.name,
+                  barcode: product.barcode ?? null,
+                  model: product.model ?? null,
+                  price: product.price,
+                  quantity: 0,
+                  defectiveQuantity: 0,
+                  initialQuantity: 0,
+                  status: 'IN_STORE',
+                  branchId: toBranchId!,
+                  categoryId: product.categoryId,
+                  marketPrice: product.marketPrice ?? null,
+                },
+              });
+            } catch (error) {
+              if (error.code === 'P2002') {
+                // Race condition, product was created concurrently
+                toProduct = await prisma.product.findFirst({
+                  where: { barcode: product.barcode ?? null, branchId: toBranchId! },
+                });
+                if (!toProduct) {
+                  throw new BadRequestException('Failed to create or find product in destination branch');
+                }
+              } else {
+                throw error;
+              }
+            }
           }
           // Increment in destination branch
           await prisma.product.update({
