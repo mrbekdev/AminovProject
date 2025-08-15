@@ -160,7 +160,7 @@ export class TransactionService {
     if (branchId) {
       // BranchId orqali filtrlash - bu filialdan chiqgan yoki kirgan transactionlarni olish
       where.OR = [
-        { branchId: parseInt(branchId) },
+        { fromBranchId: parseInt(branchId) },
         { toBranchId: parseInt(branchId) }
       ];
     }
@@ -326,8 +326,8 @@ export class TransactionService {
       data: {
         ...data,
         type: TransactionType.TRANSFER,
-        branchId: fromBranchId,
-        toBranchId: toBranchId,
+              fromBranchId: fromBranchId,
+      toBranchId: toBranchId,
         status: TransactionStatus.PENDING,
         total: total,
         finalTotal: total, // Transfer uchun total va finalTotal bir xil
@@ -441,7 +441,7 @@ export class TransactionService {
     const whereOr: any = [];
     
     if (branchId) {
-      whereOr.push({ branchId: branchId });
+      whereOr.push({ fromBranchId: branchId });
       whereOr.push({ toBranchId: branchId });
     }
     

@@ -129,7 +129,7 @@ const Kirim = () => {
         status: 'PENDING',
         total: selectedProduct.price * Number(quantity),
         finalTotal: selectedProduct.price * Number(quantity),
-        branchId: Number(branch),
+        fromBranchId: Number(branch),
         items: [
           {
             productId: Number(selectedProductId),

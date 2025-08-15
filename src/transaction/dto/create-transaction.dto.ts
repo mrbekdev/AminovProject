@@ -60,7 +60,7 @@ export class CreateTransactionDto {
 
   @IsNumber()
   @IsPositive()
-  branchId: number;
+  fromBranchId: number;
 
   @IsOptional()
   @IsNumber()

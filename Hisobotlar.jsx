@@ -184,20 +184,20 @@ const Hisobotlar = () => {
             purchases.push({
               ...baseData,
               type: 'Kirim',
-              branchName: branches.find(b => b.id === transaction.branchId)?.name || 'Noma\'lum'
+              branchName: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum'
             });
           } else if (transaction.type === 'SALE') {
             sales.push({
               ...baseData,
               type: 'Chiqim',
-              branchName: branches.find(b => b.id === transaction.branchId)?.name || 'Noma\'lum'
+              branchName: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum'
             });
           } else if (transaction.type === 'TRANSFER') {
             transfers.push({
               ...baseData,
               type: 'O\'tkazma',
-              direction: transaction.branchId?.toString() === selectedBranchId ? 'out' : 'in',
-              fromBranch: branches.find(b => b.id === transaction.branchId)?.name || 'Noma\'lum',
+              direction: transaction.fromBranchId?.toString() === selectedBranchId ? 'out' : 'in',
+              fromBranch: branches.find(b => b.id === transaction.fromBranchId)?.name || 'Noma\'lum',
               toBranch: branches.find(b => b.id === transaction.toBranchId)?.name || 'Noma\'lum'
             });
           }

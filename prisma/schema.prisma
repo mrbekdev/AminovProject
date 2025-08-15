@@ -181,8 +181,8 @@ model Transaction {
   id               Int               @id @default(autoincrement())
   customerId       Int?
   userId           Int?
-  branchId         Int? // fromBranchId for TRANSFER
-  toBranchId       Int? // Added for TRANSFER
+  fromBranchId     Int? // Qaysi filialdan chiqayotgani (SALE, PURCHASE, TRANSFER uchun)
+  toBranchId       Int? // Qaysi filialga ketayotgani (TRANSFER uchun)
   type             TransactionType
   status           TransactionStatus @default(PENDING)
   discount         Float             @default(0)
@@ -199,14 +199,14 @@ model Transaction {
 
   customer Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   user     User?             @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  branch   Branch?           @relation("FromBranch", fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  toBranch Branch?           @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  fromBranch Branch?         @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  toBranch  Branch?          @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   items    TransactionItem[]
   paymentSchedules PaymentSchedule[]
 
   @@index([customerId])
   @@index([userId])
-  @@index([branchId])
+  @@index([fromBranchId])
   @@index([toBranchId])
   @@index([type])
   @@index([status])

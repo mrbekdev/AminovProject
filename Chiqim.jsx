@@ -435,7 +435,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
         finalTotal,
         paymentType: operationType === 'SALE' ? paymentType : undefined,
         customer: customerData,
-        branchId: Number(selectedBranch),
+        fromBranchId: Number(selectedBranch),
         toBranchId,
         items: selectedItems.map((item) => ({
           productId: item.id,

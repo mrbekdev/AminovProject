@@ -346,7 +346,7 @@ const SalesManagement = ({ selectedBranchId }) => {
       amountPaid: amountPaid,
       remainingBalance: getRemainingBalance(),
       returnCode: Math.random().toString(36).substring(2, 10).toUpperCase(),
-      branchId: selectedBranchId || null,
+              fromBranchId: selectedBranchId || null,
       deliveryMethod,
       paymentMethod,
     };
@@ -392,7 +392,7 @@ const SalesManagement = ({ selectedBranchId }) => {
         finalTotal: getCreditTotal(),
         paymentType: paymentMethod.toUpperCase(),
         customer: customerData,
-        branchId: selectedBranchId || null,
+        fromBranchId: selectedBranchId || null,
         items: cart.map((item) => ({
           productId: item.id,
           quantity: item.quantity,
