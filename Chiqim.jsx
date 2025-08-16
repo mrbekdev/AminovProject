@@ -420,8 +420,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
           finalTotal = baseTotal * (1 + rate);
         }
         customerData = {
-          firstName,
-          lastName,
+          fullName: `${firstName} ${lastName}`.trim(),
           phone,
         };
       } else if (operationType === 'TRANSFER') {

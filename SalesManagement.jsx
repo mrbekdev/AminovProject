@@ -914,7 +914,7 @@ const SalesManagement = ({ selectedBranchId }) => {
             <div className="p-6">
               <p className="text-gray-600 mb-4">
                 <strong>{cart.length}</strong> та маҳсулотни{" "}
-                <strong>{customerInfo.firstName} {customerInfo.lastName}</strong> учун
+                <strong>{customerInfo.fullName}</strong> учун
                 сотишни тасдиқлайсизми? <br />
                 Етказиб бериш усули:{" "}
                 <strong>

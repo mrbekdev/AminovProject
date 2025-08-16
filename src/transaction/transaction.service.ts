@@ -157,6 +157,10 @@ export class TransactionService {
       paymentType
     } = query;
 
+    console.log('=== BACKEND DEBUG ===');
+    console.log('Query params:', query);
+    console.log('BranchId:', branchId);
+
     const where: any = {};
     
     if (type) where.type = type;
@@ -167,6 +171,7 @@ export class TransactionService {
         { fromBranchId: parseInt(branchId) },
         { toBranchId: parseInt(branchId) }
       ];
+      console.log('Where clause:', where);
     }
     if (customerId) where.customerId = parseInt(customerId);
     if (paymentType) where.paymentType = paymentType;

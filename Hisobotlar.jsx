@@ -100,9 +100,7 @@ const Hisobotlar = () => {
 
   // selectedBranchId o'zgarganda transactionlarni yuklash
   useEffect(() => {
-    console.log('useEffect triggered - selectedBranchId:', selectedBranchId, 'branches:', branches.length);
     if (selectedBranchId && branches.length > 0) {
-      console.log('Calling loadTransactions...');
       loadTransactions();
     }
   }, [selectedBranchId, branches]);
@@ -124,11 +122,9 @@ const Hisobotlar = () => {
     };
   };
 
-  const loadTransactions = async () => {
+  const loadTransactions = useCallback(async () => {
     setLoading(true);
     setNotification(null);
-
-    console.log('loadTransactions called with selectedBranchId:', selectedBranchId);
 
     if (!selectedBranchId) {
       setNotification({ message: 'Iltimos, filialni tanlang', type: 'error' });
@@ -143,14 +139,12 @@ const Hisobotlar = () => {
       const transactionsRes = await axiosWithAuth({
         method: 'get',
         url: `${API_URL}/transactions?branchId=${selectedBranchId}&startDate=${startDate}&endDate=${endDate}`,
-        timeout: 10000
+        timeout: 30000
       });
-
-      // Statistika yuklash
       const statsRes = await axiosWithAuth({
         method: 'get',
         url: `${API_URL}/transactions/statistics?branchId=${selectedBranchId}&startDate=${startDate}&endDate=${endDate}`,
-        timeout: 10000
+        timeout: 30000
       });
 
             // Backend dan kelgan ma'lumotlarni to'g'ri parse qilish
@@ -161,13 +155,7 @@ const Hisobotlar = () => {
         transactions = transactionsRes.data;
       }
       
-      console.log('=== DEBUG INFO ===');
-      console.log('API Response:', transactionsRes.data);
-      console.log('Parsed Transactions:', transactions);
-      console.log('Statistics:', statsRes.data);
-      console.log('Selected Branch ID:', selectedBranchId);
-      console.log('Branches:', branches);
-      console.log('==================');
+
       
       const statistics = statsRes.data || {};
 
@@ -191,7 +179,7 @@ const Hisobotlar = () => {
             total: item.total,
             status: transaction.status,
             paymentType: transaction.paymentType,
-            customerName: transaction.customer ? `${transaction.customer.firstName} ${transaction.customer.lastName}` : null,
+            customerName: transaction.customer ? transaction.customer.fullName : null,
             description: transaction.description
           };
 
@@ -258,11 +246,13 @@ const Hisobotlar = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedPeriod, selectedBranchId, branches]);
 
   useEffect(() => {
-    if (selectedBranchId) loadTransactions();
-  }, [loadTransactions, selectedBranchId]);
+    if (selectedBranchId && branches.length > 0) {
+      loadTransactions();
+    }
+  }, [selectedBranchId, branches, loadTransactions]);
 
   const generateReceipt = () => {
     const periodLabels = {
