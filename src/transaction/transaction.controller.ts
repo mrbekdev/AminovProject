@@ -23,10 +23,7 @@ export class TransactionController {
 
   @Post()
   create(@Body() createTransactionDto: CreateTransactionDto, @CurrentUser() user: any) {
-    return this.transactionService.create({
-      ...createTransactionDto,
-      userId: user.id
-    });
+    return this.transactionService.create(createTransactionDto, user.id);
   }
 
   @Get()

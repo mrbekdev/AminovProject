@@ -229,6 +229,12 @@ const Customers = () => {
                                 <p className="text-sm text-gray-500">
                                   Sana: {formatDate(transaction.createdAt)}
                                 </p>
+                                {transaction.user && (
+                                  <p className="text-sm text-gray-500">
+                                    Sotuvchi: {transaction.user.firstName || transaction.user.lastName || 'Noma\'lum'} 
+                                    ({transaction.user.role})
+                                  </p>
+                                )}
                               </div>
                               <div className="text-right">
                                 <div className="text-lg font-bold">

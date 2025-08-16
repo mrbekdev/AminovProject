@@ -8,8 +8,23 @@ import { TransactionType, TransactionStatus, PaymentType } from '@prisma/client'
 export class TransactionService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createTransactionDto: CreateTransactionDto) {
+  async create(createTransactionDto: CreateTransactionDto, userId?: number) {
     const { items, customer, ...transactionData } = createTransactionDto;
+
+    // User role ni tekshirish - faqat MARKETING roli bilan userlar sotish qilishi mumkin
+    if (userId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId }
+      });
+      
+      if (!user) {
+        throw new BadRequestException('User topilmadi');
+      }
+      
+      if (user.role !== 'MARKETING') {
+        throw new BadRequestException('Sotish qilish uchun MARKETING roli kerak');
+      }
+    }
 
     // Customer yaratish yoki mavjudini topish
     let customerId: number | null = null;
@@ -33,6 +48,7 @@ export class TransactionService {
       data: {
         ...transactionData,
         customerId,
+        userId, // Kim sotganini saqlaymiz
         items: {
           create: items.map(item => ({
             productId: item.productId,

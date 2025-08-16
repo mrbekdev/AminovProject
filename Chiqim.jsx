@@ -27,6 +27,7 @@ const Chiqim = () => {
   const [errors, setErrors] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const navigate = useNavigate();
   const API_URL = 'https://suddocs.uz';
 
@@ -288,6 +289,25 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
   useEffect(() => {
     if (showModal && selectedBranch) loadModalData();
   }, [showModal, selectedBranch, loadModalData]);
+
+  // Current user ni olish
+  useEffect(() => {
+    const loadCurrentUser = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (token) {
+          const response = await axios.get(`${API_URL}/auth/profile`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setCurrentUser(response.data);
+        }
+      } catch (error) {
+        console.error('Error loading current user:', error);
+      }
+    };
+    
+    loadCurrentUser();
+  }, []);
 
   const openModal = () => {
     setSelectedItems([]);
@@ -588,7 +608,15 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
                 <div className="flex justify-between mb-4">
-                  <h3 className="text-lg font-bold">Chiqim Qilish</h3>
+                  <div>
+                    <h3 className="text-lg font-bold">Chiqim Qilish</h3>
+                    {currentUser && (
+                      <p className="text-sm text-gray-600">
+                        Sotuvchi: {currentUser.firstName || currentUser.lastName || 'Noma\'lum'} 
+                        ({currentUser.role})
+                      </p>
+                    )}
+                  </div>
                   <button onClick={closeModal} className="text-gray-600 hover:text-gray-800 transition-all">X</button>
                 </div>
                 <table className="w-full text-sm">
