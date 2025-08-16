@@ -79,7 +79,7 @@ const Customers = () => {
       const newPaidAmount = currentPaidAmount + Number(paymentAmount);
       const isFullyPaid = newPaidAmount >= selectedSchedule.payment;
       
-      await axiosWithAuth.patch(`/payment-schedules/${selectedSchedule.id}`, {
+      await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, {
         paidAmount: newPaidAmount,
         isPaid: isFullyPaid,
         paidAt: new Date().toISOString()
@@ -91,7 +91,7 @@ const Customers = () => {
       const newTransactionPaid = currentTransactionPaid + Number(paymentAmount);
       const newRemainingBalance = Math.max(0, transaction.finalTotal - newTransactionPaid);
       
-      await axiosWithAuth.patch(`/transactions/${transaction.id}`, {
+      await axiosWithAuth.put(`/transactions/${transaction.id}`, {
         amountPaid: newTransactionPaid,
         remainingBalance: newRemainingBalance
       });

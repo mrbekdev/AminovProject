@@ -77,24 +77,34 @@ export class TransactionService {
   private async createPaymentSchedule(transactionId: number, items: any[], downPayment: number = 0) {
     const schedules: any[] = [];
     
+    // Bitta transaction uchun bitta payment schedule yaratamiz
+    // Barcha itemlarni birlashtirib umumiy summani hisoblaymiz
+    let totalWithInterest = 0;
+    let totalMonths = 0;
+    
     for (const item of items) {
       if (item.creditMonth && item.creditPercent) {
-        const totalWithInterest = item.price * item.quantity * (1 + item.creditPercent / 100);
-        const remainingAfterDownPayment = totalWithInterest - downPayment;
-        const monthlyPayment = remainingAfterDownPayment / item.creditMonth;
-        let remainingBalance = remainingAfterDownPayment;
+        const itemTotal = item.price * item.quantity * (1 + item.creditPercent / 100);
+        totalWithInterest += itemTotal;
+        totalMonths = Math.max(totalMonths, item.creditMonth);
+      }
+    }
+    
+    if (totalWithInterest > 0 && totalMonths > 0) {
+      const remainingAfterDownPayment = totalWithInterest - downPayment;
+      const monthlyPayment = remainingAfterDownPayment / totalMonths;
+      let remainingBalance = remainingAfterDownPayment;
 
-        for (let month = 1; month <= item.creditMonth; month++) {
-          remainingBalance -= monthlyPayment;
-          schedules.push({
-            transactionId,
-            month,
-            payment: monthlyPayment,
-            remainingBalance: Math.max(0, remainingBalance),
-            isPaid: false,
-            paidAmount: 0
-          });
-        }
+      for (let month = 1; month <= totalMonths; month++) {
+        remainingBalance -= monthlyPayment;
+        schedules.push({
+          transactionId,
+          month,
+          payment: monthlyPayment,
+          remainingBalance: Math.max(0, remainingBalance),
+          isPaid: false,
+          paidAmount: 0
+        });
       }
     }
 
