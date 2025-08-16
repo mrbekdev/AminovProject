@@ -98,6 +98,15 @@ const Hisobotlar = () => {
     fetchBranches();
   }, []);
 
+  // selectedBranchId o'zgarganda transactionlarni yuklash
+  useEffect(() => {
+    console.log('useEffect triggered - selectedBranchId:', selectedBranchId, 'branches:', branches.length);
+    if (selectedBranchId && branches.length > 0) {
+      console.log('Calling loadTransactions...');
+      loadTransactions();
+    }
+  }, [selectedBranchId, branches]);
+
   const getDateRange = () => {
     const today = new Date();
     const endDate = new Date(today);
@@ -115,9 +124,11 @@ const Hisobotlar = () => {
     };
   };
 
-  const loadTransactions = useCallback(async () => {
+  const loadTransactions = async () => {
     setLoading(true);
     setNotification(null);
+
+    console.log('loadTransactions called with selectedBranchId:', selectedBranchId);
 
     if (!selectedBranchId) {
       setNotification({ message: 'Iltimos, filialni tanlang', type: 'error' });
@@ -127,7 +138,7 @@ const Hisobotlar = () => {
 
     try {
       const { startDate, endDate } = getDateRange();
-      
+
       // Oddiy branchId orqali transactionlarni yuklash
       const transactionsRes = await axiosWithAuth({
         method: 'get',
@@ -142,7 +153,7 @@ const Hisobotlar = () => {
         timeout: 10000
       });
 
-      // Backend dan kelgan ma'lumotlarni to'g'ri parse qilish
+            // Backend dan kelgan ma'lumotlarni to'g'ri parse qilish
       let transactions = [];
       if (transactionsRes.data && transactionsRes.data.transactions) {
         transactions = transactionsRes.data.transactions;
@@ -150,7 +161,13 @@ const Hisobotlar = () => {
         transactions = transactionsRes.data;
       }
       
-
+      console.log('=== DEBUG INFO ===');
+      console.log('API Response:', transactionsRes.data);
+      console.log('Parsed Transactions:', transactions);
+      console.log('Statistics:', statsRes.data);
+      console.log('Selected Branch ID:', selectedBranchId);
+      console.log('Branches:', branches);
+      console.log('==================');
       
       const statistics = statsRes.data || {};
 
@@ -241,7 +258,7 @@ const Hisobotlar = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedPeriod, selectedBranchId, branches]);
+  };
 
   useEffect(() => {
     if (selectedBranchId) loadTransactions();

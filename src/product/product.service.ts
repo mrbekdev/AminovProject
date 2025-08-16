@@ -566,7 +566,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
     });
   }
 
-  async uploadExcel(file: Express.Multer.File, branchId: number, categoryId: number, status: string, userId: number) {
+  async uploadExcel(file: Express.Multer.File, fromBranchId: number, categoryId: number, status: string, userId: number) {
     try {
       const workbook = XLSX.read(file.buffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
@@ -582,7 +582,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
           marketPrice: row['marketPrice'] ? Number(row['marketPrice']) : undefined,
           model: row['model'] ? String(row['model']) : undefined,
           description: row['description'] ? String(row['description']) : undefined,
-          branchId: branchId,
+          branchId: fromBranchId,
           categoryId: categoryId,
           status: (status || 'IN_STORE') as ProductStatus,
         };
