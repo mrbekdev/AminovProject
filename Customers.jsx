@@ -15,7 +15,7 @@ const Customers = () => {
   const axiosWithAuth = axios.create({
     baseURL: API_URL,
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
       'Content-Type': 'application/json',
     },
   });
@@ -37,29 +37,44 @@ const Customers = () => {
     }
   };
 
-  const loadCustomerPaymentSchedules = async (customerId) => {
+  const loadCustomerTransactions = async (customerId) => {
     try {
       setLoading(true);
       const response = await axiosWithAuth.get(`/transactions?customerId=${customerId}`);
       const transactions = response.data.transactions || [];
       
-      // Har bir transaction uchun payment schedule larni olish
-      const allSchedules = [];
+      // Barcha transactionlarni va ularning payment schedule larini olish
+      const allTransactions = [];
       for (const transaction of transactions) {
         if (transaction.paymentSchedules && transaction.paymentSchedules.length > 0) {
-          allSchedules.push(...transaction.paymentSchedules.map(schedule => ({
+          // Kredit/bo'lib tolash uchun har bir payment schedule ni alohida ko'rsatish
+          allTransactions.push(...transaction.paymentSchedules.map(schedule => ({
             ...schedule,
             transaction: transaction,
-            customer: transaction.customer
+            customer: transaction.customer,
+            isPaymentSchedule: true
           })));
+        } else {
+          // Naqd pul yoki karta to'lovlari uchun transaction ni to'g'ridan-to'g'ri ko'rsatish
+          allTransactions.push({
+            id: `transaction-${transaction.id}`,
+            transaction: transaction,
+            customer: transaction.customer,
+            isPaymentSchedule: false,
+            payment: transaction.finalTotal,
+            paidAmount: transaction.amountPaid || 0,
+            remainingBalance: transaction.remainingBalance || 0,
+            month: 1,
+            isPaid: transaction.amountPaid >= transaction.finalTotal
+          });
         }
       }
       
-      setPaymentSchedules(allSchedules);
+      setPaymentSchedules(allTransactions);
       setSelectedCustomer(customers.find(c => c.id === customerId));
     } catch (error) {
-      console.error('Error loading payment schedules:', error);
-      setNotification({ message: 'To\'lov jadvalini yuklashda xatolik', type: 'error' });
+      console.error('Error loading customer transactions:', error);
+      setNotification({ message: 'Mijoz ma\'lumotlarini yuklashda xatolik', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -74,23 +89,25 @@ const Customers = () => {
     try {
       setLoading(true);
       
-      // PaymentSchedule ni yangilash
-      const currentPaidAmount = selectedSchedule.paidAmount || 0;
-      const newPaidAmount = currentPaidAmount + Number(paymentAmount);
-      const isFullyPaid = newPaidAmount >= selectedSchedule.payment;
-      
-      await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, {
-        paidAmount: newPaidAmount,
-        isPaid: isFullyPaid,
-        paidAt: new Date().toISOString()
-      });
-
-      // Transaction ni yangilash
       const transaction = selectedSchedule.transaction;
       const currentTransactionPaid = transaction.amountPaid || 0;
       const newTransactionPaid = currentTransactionPaid + Number(paymentAmount);
       const newRemainingBalance = Math.max(0, transaction.finalTotal - newTransactionPaid);
       
+      if (selectedSchedule.isPaymentSchedule) {
+        // PaymentSchedule ni yangilash (kredit/bo'lib tolash uchun)
+        const currentPaidAmount = selectedSchedule.paidAmount || 0;
+        const newPaidAmount = currentPaidAmount + Number(paymentAmount);
+        const isFullyPaid = newPaidAmount >= selectedSchedule.payment;
+        
+        await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, {
+          paidAmount: newPaidAmount,
+          isPaid: isFullyPaid,
+          paidAt: new Date().toISOString()
+        });
+      }
+
+      // Transaction ni yangilash
       await axiosWithAuth.put(`/transactions/${transaction.id}`, {
         amountPaid: newTransactionPaid,
         remainingBalance: newRemainingBalance
@@ -103,7 +120,7 @@ const Customers = () => {
       
       // Ma\'lumotlarni qayta yuklash
       if (selectedCustomer) {
-        loadCustomerPaymentSchedules(selectedCustomer.id);
+        loadCustomerTransactions(selectedCustomer.id);
       }
     } catch (error) {
       console.error('Error processing payment:', error);
@@ -153,7 +170,7 @@ const Customers = () => {
                 {customers.map((customer) => (
                   <div
                     key={customer.id}
-                    onClick={() => loadCustomerPaymentSchedules(customer.id)}
+                    onClick={() => loadCustomerTransactions(customer.id)}
                     className={`p-3 rounded-lg cursor-pointer transition-colors ${
                       selectedCustomer?.id === customer.id
                         ? 'bg-blue-100 border-blue-300 border'
@@ -209,82 +226,165 @@ const Customers = () => {
                   <h3 className="font-semibold mb-3">Sotib olingan mahsulotlar</h3>
                   <div className="space-y-3">
                     {paymentSchedules.length > 0 ? (
-                      paymentSchedules.map((schedule) => {
-                        const transaction = schedule.transaction;
-                        const status = getPaymentStatus(schedule);
-                        const remaining = schedule.payment - schedule.paidAmount;
+                      paymentSchedules.map((item) => {
+                        const transaction = item.transaction;
+                        const isPaymentSchedule = item.isPaymentSchedule;
                         
-                        return (
-                          <div key={schedule.id} className="border rounded-lg p-4 bg-white">
-                            <div className="flex justify-between items-start mb-3">
-                              <div>
-                                <h4 className="font-medium text-lg">
-                                  {transaction.items?.map(item => item.product?.name).join(', ')}
-                                </h4>
-                                <p className="text-sm text-gray-600">
-                                  {transaction.paymentType === 'CREDIT' ? 'Kredit' : 
-                                   transaction.paymentType === 'INSTALLMENT' ? 'Bo\'lib tolash' : 
-                                   transaction.paymentType === 'CASH' ? 'Naqd pul' : 'Karta'}
-                                </p>
-                                <p className="text-sm text-gray-500">
-                                  Sana: {formatDate(transaction.createdAt)}
-                                </p>
-                                {transaction.soldBy && (
-                                  <p className="text-sm text-gray-500">
-                                    Sotuvchi: {transaction.soldBy.firstName || transaction.soldBy.lastName || 'Noma\'lum'} 
-                                    ({transaction.soldBy.role})
+                        if (isPaymentSchedule) {
+                          // Kredit/bo'lib tolash uchun payment schedule ko'rsatish
+                          const status = getPaymentStatus(item);
+                          const remaining = item.payment - item.paidAmount;
+                          
+                          return (
+                            <div key={item.id} className="border rounded-lg p-4 bg-white">
+                              <div className="flex justify-between items-start mb-3">
+                                <div>
+                                  <h4 className="font-medium text-lg">
+                                    {transaction.items?.map(item => item.product?.name).join(', ')}
+                                  </h4>
+                                  <p className="text-sm text-gray-600">
+                                    {transaction.paymentType === 'CREDIT' ? 'Kredit' : 
+                                     transaction.paymentType === 'INSTALLMENT' ? 'Bo\'lib tolash' : 
+                                     transaction.paymentType === 'CASH' ? 'Naqd pul' : 'Karta'}
                                   </p>
-                                )}
-                              </div>
-                              <div className="text-right">
-                                <div className="text-lg font-bold">
-                                  {formatCurrency(transaction.finalTotal)}
+                                  <p className="text-sm text-gray-500">
+                                    Sana: {formatDate(transaction.createdAt)}
+                                  </p>
+                                  {transaction.soldBy && (
+                                    <p className="text-sm text-gray-500">
+                                      Sotuvchi: {transaction.soldBy.firstName || transaction.soldBy.lastName || 'Noma\'lum'} 
+                                      ({transaction.soldBy.role})
+                                    </p>
+                                  )}
                                 </div>
-                                {transaction.downPayment && transaction.downPayment > 0 && (
-                                  <div className="text-sm text-gray-600">
-                                    Boshlang'ich: {formatCurrency(transaction.downPayment)}
+                                <div className="text-right">
+                                  <div className="text-lg font-bold">
+                                    {formatCurrency(transaction.finalTotal)}
                                   </div>
+                                  {transaction.downPayment && transaction.downPayment > 0 && (
+                                    <div className="text-sm text-gray-600">
+                                      Boshlang'ich: {formatCurrency(transaction.downPayment)}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* Payment schedule */}
+                              <div className="bg-gray-50 p-3 rounded">
+                                <div className="flex justify-between items-center mb-2">
+                                  <span className="font-medium">{item.month}-oy to'lovi</span>
+                                  <span className={`px-2 py-1 rounded text-xs ${status.color}`}>
+                                    {status.text}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                  <div>
+                                    <span className="text-gray-600">To'lov:</span>
+                                    <div className="font-medium">{formatCurrency(item.payment)}</div>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">To'langan:</span>
+                                    <div className="font-medium">{formatCurrency(item.paidAmount)}</div>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">Qolgan:</span>
+                                    <div className="font-medium">{formatCurrency(remaining)}</div>
+                                  </div>
+                                </div>
+                                {remaining > 0 && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedSchedule(item);
+                                      setPaymentAmount(remaining.toString());
+                                      setShowPaymentModal(true);
+                                    }}
+                                    className="mt-2 bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 transition-colors"
+                                  >
+                                    To'lov qilish
+                                  </button>
                                 )}
                               </div>
                             </div>
-                            
-                            {/* Payment schedule */}
-                            <div className="bg-gray-50 p-3 rounded">
-                              <div className="flex justify-between items-center mb-2">
-                                <span className="font-medium">{schedule.month}-oy to'lovi</span>
-                                <span className={`px-2 py-1 rounded text-xs ${status.color}`}>
-                                  {status.text}
-                                </span>
+                          );
+                        } else {
+                          // Naqd pul yoki karta to'lovlari uchun oddiy ko'rsatish
+                          const isFullyPaid = item.paidAmount >= item.payment;
+                          const status = isFullyPaid ? 
+                            { text: 'To\'langan', color: 'text-green-600' } : 
+                            { text: 'To\'lanmagan', color: 'text-red-600' };
+                          
+                          return (
+                            <div key={item.id} className="border rounded-lg p-4 bg-white">
+                              <div className="flex justify-between items-start mb-3">
+                                <div>
+                                  <h4 className="font-medium text-lg">
+                                    {transaction.items?.map(item => item.product?.name).join(', ')}
+                                  </h4>
+                                  <p className="text-sm text-gray-600">
+                                    {transaction.paymentType === 'CREDIT' ? 'Kredit' : 
+                                     transaction.paymentType === 'INSTALLMENT' ? 'Bo\'lib tolash' : 
+                                     transaction.paymentType === 'CASH' ? 'Naqd pul' : 'Karta'}
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    Sana: {formatDate(transaction.createdAt)}
+                                  </p>
+                                  {transaction.soldBy && (
+                                    <p className="text-sm text-gray-500">
+                                      Sotuvchi: {transaction.soldBy.firstName || transaction.soldBy.lastName || 'Noma\'lum'} 
+                                      ({transaction.soldBy.role})
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-lg font-bold">
+                                    {formatCurrency(transaction.finalTotal)}
+                                  </div>
+                                  {transaction.downPayment && transaction.downPayment > 0 && (
+                                    <div className="text-sm text-gray-600">
+                                      Boshlang'ich: {formatCurrency(transaction.downPayment)}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div className="grid grid-cols-3 gap-4 text-sm">
-                                <div>
-                                  <span className="text-gray-600">To'lov:</span>
-                                  <div className="font-medium">{formatCurrency(schedule.payment)}</div>
+                              
+                              {/* To'lov ma'lumotlari */}
+                              <div className="bg-gray-50 p-3 rounded">
+                                <div className="flex justify-between items-center mb-2">
+                                  <span className="font-medium">To'lov ma'lumotlari</span>
+                                  <span className={`px-2 py-1 rounded text-xs ${status.color}`}>
+                                    {status.text}
+                                  </span>
                                 </div>
-                                <div>
-                                  <span className="text-gray-600">To'langan:</span>
-                                  <div className="font-medium">{formatCurrency(schedule.paidAmount)}</div>
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                  <div>
+                                    <span className="text-gray-600">Umumiy summa:</span>
+                                    <div className="font-medium">{formatCurrency(item.payment)}</div>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">To'langan:</span>
+                                    <div className="font-medium">{formatCurrency(item.paidAmount)}</div>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">Qolgan:</span>
+                                    <div className="font-medium">{formatCurrency(item.remainingBalance)}</div>
+                                  </div>
                                 </div>
-                                <div>
-                                  <span className="text-gray-600">Qolgan:</span>
-                                  <div className="font-medium">{formatCurrency(remaining)}</div>
-                                </div>
+                                {item.remainingBalance > 0 && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedSchedule(item);
+                                      setPaymentAmount(item.remainingBalance.toString());
+                                      setShowPaymentModal(true);
+                                    }}
+                                    className="mt-2 bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 transition-colors"
+                                  >
+                                    To'lov qilish
+                                  </button>
+                                )}
                               </div>
-                              {remaining > 0 && (
-                      <button
-                                  onClick={() => {
-                                    setSelectedSchedule(schedule);
-                                    setPaymentAmount(remaining.toString());
-                                    setShowPaymentModal(true);
-                                  }}
-                                  className="mt-2 bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 transition-colors"
-                                >
-                                  To'lov qilish
-                      </button>
-                              )}
                             </div>
-                          </div>
-                        );
+                          );
+                        }
                       })
                     ) : (
                       <div className="text-center text-gray-500 py-8">
@@ -327,15 +427,31 @@ const Customers = () => {
                     selectedSchedule.transaction.paymentType === 'CASH' ? 'Naqd pul' : 'Karta'
                   }
                 </p>
-                <p className="text-gray-600 mb-2">
-                  <strong>{selectedSchedule.month}-oy to'lovi:</strong> {formatCurrency(selectedSchedule.payment)}
-                </p>
-                <p className="text-gray-600 mb-2">
-                  <strong>To'langan:</strong> {formatCurrency(selectedSchedule.paidAmount)}
-                </p>
-                <p className="text-gray-600 mb-2">
-                  <strong>Qolgan:</strong> {formatCurrency(selectedSchedule.payment - selectedSchedule.paidAmount)}
-                </p>
+                {selectedSchedule.isPaymentSchedule ? (
+                  <>
+                    <p className="text-gray-600 mb-2">
+                      <strong>{selectedSchedule.month}-oy to'lovi:</strong> {formatCurrency(selectedSchedule.payment)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>To'langan:</strong> {formatCurrency(selectedSchedule.paidAmount)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>Qolgan:</strong> {formatCurrency(selectedSchedule.payment - selectedSchedule.paidAmount)}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-gray-600 mb-2">
+                      <strong>Umumiy summa:</strong> {formatCurrency(selectedSchedule.payment)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>To'langan:</strong> {formatCurrency(selectedSchedule.paidAmount)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>Qolgan:</strong> {formatCurrency(selectedSchedule.remainingBalance)}
+                    </p>
+                  </>
+                )}
                 {selectedSchedule.transaction.downPayment && selectedSchedule.transaction.downPayment > 0 && (
                   <p className="text-gray-600 mb-2">
                     <strong>Boshlang'ich to'lov:</strong> {formatCurrency(selectedSchedule.transaction.downPayment)}
@@ -353,7 +469,9 @@ const Customers = () => {
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   min="0.01"
-                  max={selectedSchedule.payment - selectedSchedule.paidAmount}
+                  max={selectedSchedule.isPaymentSchedule ? 
+                    selectedSchedule.payment - selectedSchedule.paidAmount : 
+                    selectedSchedule.remainingBalance}
                   step="0.01"
                 />
               </div>

@@ -18,6 +18,10 @@ export class UpdateTransactionDto {
   @IsOptional()
   status?: TransactionStatus;
 
+  @IsString()
+  @IsOptional()
+  transactionType?: string; // Qo'shimcha transaction turi
+
   @IsNumber()
   @IsOptional()
   total?: number;

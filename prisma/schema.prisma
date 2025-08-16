@@ -168,12 +168,16 @@ model Customer {
   phone     String  @unique
   email     String? @unique
   address   String?
+  passportSeries String? // Passport seriya raqami
+  jshshir   String? // JSHSHIR raqami
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   transactions Transaction[]
 
   @@index([phone])
+  @@index([passportSeries])
+  @@index([jshshir])
 }
 
 model Transaction {
@@ -184,6 +188,7 @@ model Transaction {
   fromBranchId     Int? // Qaysi filialdan chiqayotgani (SALE, PURCHASE, TRANSFER uchun)
   toBranchId       Int? // Qaysi filialga ketayotgani (TRANSFER uchun)
   type             TransactionType
+  transactionType  String?           // Qo'shimcha transaction turi (SALE, PURCHASE, TRANSFER, RETURN, etc.)
   status           TransactionStatus @default(PENDING)
   discount         Float             @default(0)
   total            Float
@@ -212,6 +217,7 @@ model Transaction {
   @@index([fromBranchId])
   @@index([toBranchId])
   @@index([type])
+  @@index([transactionType])
   @@index([status])
   @@index([createdAt])
 }

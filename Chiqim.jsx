@@ -296,7 +296,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
   useEffect(() => {
     const loadCurrentUser = async () => {
       try {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('access_token');
         if (token) {
           const response = await axios.get(`${API_URL}/auth/profile`, {
             headers: { Authorization: `Bearer ${token}` }
@@ -305,6 +305,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
         }
       } catch (error) {
         console.error('Error loading current user:', error);
+        setNotification({ message: 'Joriy foydalanuvchini yuklashda xatolik', type: 'error' });
       }
     };
     
@@ -315,7 +316,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
   useEffect(() => {
     const loadMarketingUsers = async () => {
       try {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('access_token');
         if (token) {
           const response = await axios.get(`${API_URL}/users`, {
             headers: { Authorization: `Bearer ${token}` }
@@ -326,6 +327,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
         }
       } catch (error) {
         console.error('Error loading marketing users:', error);
+        setNotification({ message: 'Marketing hodimlarini yuklashda xatolik', type: 'error' });
       }
     };
     

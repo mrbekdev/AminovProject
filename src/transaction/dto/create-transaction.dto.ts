@@ -17,6 +17,14 @@ export class CustomerDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  passportSeries?: string; // Passport seriya raqami
+
+  @IsOptional()
+  @IsString()
+  jshshir?: string; // JSHSHIR raqami
 }
 
 export class TransactionItemDto {
@@ -70,6 +78,10 @@ export class CreateTransactionDto {
 
   @IsEnum(TransactionType)
   type: TransactionType;
+
+  @IsOptional()
+  @IsString()
+  transactionType?: string; // Qo'shimcha transaction turi (SALE, PURCHASE, TRANSFER, RETURN, etc.)
 
   @IsOptional()
   @IsEnum(TransactionStatus)
