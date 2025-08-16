@@ -80,6 +80,11 @@ export class CreateTransactionDto {
   finalTotal: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  downPayment?: number; // Boshlang'ich to'lov
+
+  @IsOptional()
   @IsEnum(PaymentType)
   paymentType?: PaymentType;
 

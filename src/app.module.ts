@@ -10,13 +10,14 @@ import { TransactionModule } from './transaction/transaction.module';
 import { AuthModule } from './auth/auth.module';
 import { LocationModule } from './location/location.module';
 import { CustomerModule } from './customer/customer.module';
+import { PaymentScheduleModule } from './payment-schedule/payment-schedule.module';
 
 
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule, CustomerModule,
+    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule, CustomerModule, PaymentScheduleModule,
   ],
   controllers: [AppController],
   providers: [AppService],

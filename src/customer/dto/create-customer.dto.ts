@@ -2,12 +2,8 @@ import { IsString, IsOptional, IsEmail, Length } from 'class-validator';
 
 export class CreateCustomerDto {
   @IsString()
-  @Length(1, 100)
-  firstName: string;
-
-  @IsString()
-  @Length(1, 100)
-  lastName: string;
+  @Length(1, 200)
+  fullName: string;
 
   @IsOptional()
   @IsString()

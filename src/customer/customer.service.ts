@@ -12,16 +12,13 @@ export class CustomerService {
       return null;
     }
 
-    const [firstName, ...lastNameParts] = customerName.split(' ');
-    const lastName = lastNameParts.join(' ') || 'Unknown';
     const email = `${customerName.replace(/\s+/g, '').toLowerCase()}@example.com`;
 
     return this.prisma.customer.upsert({
       where: { email },
-      update: { firstName, lastName, updatedAt: new Date() },
+      update: { fullName: customerName, updatedAt: new Date() },
       create: {
-        firstName,
-        lastName,
+        fullName: customerName,
         email,
         phone: '',
         createdAt: new Date(),
@@ -33,8 +30,7 @@ export class CustomerService {
   async create(createCustomerDto: CreateCustomerDto) {
     return this.prisma.customer.create({
       data: {
-        firstName: createCustomerDto.firstName,
-        lastName: createCustomerDto.lastName,
+        fullName: createCustomerDto.fullName,
         phone: createCustomerDto.phone || '',
         address: createCustomerDto.address,
         email: createCustomerDto.email,
@@ -66,8 +62,7 @@ export class CustomerService {
     return this.prisma.customer.update({
       where: { id },
       data: {
-        firstName: updateCustomerDto.firstName,
-        lastName: updateCustomerDto.lastName,
+        fullName: updateCustomerDto.fullName,
         phone: updateCustomerDto.phone,
         address: updateCustomerDto.address,
         email: updateCustomerDto.email,

@@ -19,6 +19,7 @@ const Chiqim = () => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
+  const [downPayment, setDownPayment] = useState(''); // Boshlang'ich to'lov
   const [months, setMonths] = useState('');
   const [interestRate, setInterestRate] = useState('');
   const [loading, setLoading] = useState(false);
@@ -45,16 +46,19 @@ const Chiqim = () => {
   const calculatePaymentSchedule = () => {
     const m = Number(months);
     const rate = Number(interestRate) / 100;
+    const downPaymentAmount = Number(downPayment) || 0;
+    
     if (!m || m <= 0 || selectedItems.length === 0 || operationType !== 'SALE' || rate < 0) {
-      return { totalWithInterest: 0, monthlyPayment: 0, schedule: [] };
+      return { totalWithInterest: 0, monthlyPayment: 0, schedule: [], downPaymentAmount: 0 };
     }
 
     const baseTotal = selectedItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0);
     const totalWithInterest = baseTotal * (1 + rate);
-    const monthlyPayment = totalWithInterest / m;
+    const remainingAfterDownPayment = totalWithInterest - downPaymentAmount;
+    const monthlyPayment = remainingAfterDownPayment / m;
     const schedule = [];
 
-    let remainingBalance = totalWithInterest;
+    let remainingBalance = remainingAfterDownPayment;
     for (let i = 1; i <= m; i++) {
       schedule.push({
         month: i,
@@ -64,7 +68,7 @@ const Chiqim = () => {
       remainingBalance -= monthlyPayment;
     }
 
-    return { totalWithInterest, monthlyPayment, schedule };
+    return { totalWithInterest, monthlyPayment, schedule, downPaymentAmount, remainingAfterDownPayment };
   };
 
   const generatePDF = () => {
@@ -296,6 +300,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
     setPaymentType('');
     setMonths('');
     setInterestRate('');
+    setDownPayment('');
     setErrors({});
     setSelectedProductId('');
     setTempQuantity('');
@@ -354,6 +359,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
     setPaymentType('');
     setMonths('');
     setInterestRate('');
+    setDownPayment('');
     setErrors({});
     setNotification(null);
     setSelectedProductId('');
@@ -389,6 +395,9 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
         }
         if (!interestRate || isNaN(interestRate) || Number(interestRate) < 0 || Number(interestRate) > 100) {
           newErrors.interestRate = 'Foiz 0 dan 100 gacha bo\'lishi kerak';
+        }
+        if (downPayment && (isNaN(downPayment) || Number(downPayment) < 0)) {
+          newErrors.downPayment = 'Boshlang\'ich to\'lov 0 dan katta bo\'lishi kerak';
         }
       }
     } else if (operationType === 'TRANSFER') {
@@ -432,6 +441,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
         status: 'PENDING',
         total: baseTotal,
         finalTotal,
+        downPayment: (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? Number(downPayment) || 0 : undefined,
         paymentType: operationType === 'SALE' ? paymentType : undefined,
         customer: customerData,
         fromBranchId: Number(selectedBranch),
@@ -716,8 +726,31 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
                               </td>
                             </tr>
                             <tr>
+                              <td className="py-2">Boshlang'ich To'lov</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  value={downPayment}
+                                  onChange={(e) => setDownPayment(e.target.value)}
+                                  className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.downPayment ? 'border-red-500' : ''}`}
+                                  min="0"
+                                  step="0.01"
+                                  placeholder="Boshlang'ich to'lov miqdori"
+                                />
+                                {errors.downPayment && <span className="text-red-500 text-xs">{errors.downPayment}</span>}
+                              </td>
+                            </tr>
+                            <tr>
                               <td className="py-2">Umumiy Summa</td>
                               <td>{formatCurrency(totalWithInterest)}</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2">Boshlang'ich To'lov</td>
+                              <td>{formatCurrency(downPaymentAmount)}</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2">Qolgan Summa</td>
+                              <td>{formatCurrency(remainingAfterDownPayment)}</td>
                             </tr>
                             <tr>
                               <td className="py-2">Oylik To'lov</td>

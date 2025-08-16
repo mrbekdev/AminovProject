@@ -58,7 +58,7 @@ export class TransactionService {
 
     // Kredit bo'lsa, oylik to'lovlar jadvalini yaratish
     if (transaction.paymentType === PaymentType.CREDIT || transaction.paymentType === PaymentType.INSTALLMENT) {
-      await this.createPaymentSchedule(transaction.id, transaction.items);
+      await this.createPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0);
     }
 
     // Mahsulot miqdorlarini yangilash
@@ -74,14 +74,15 @@ export class TransactionService {
     return totalWithInterest / item.creditMonth;
   }
 
-  private async createPaymentSchedule(transactionId: number, items: any[]) {
+  private async createPaymentSchedule(transactionId: number, items: any[], downPayment: number = 0) {
     const schedules: any[] = [];
     
     for (const item of items) {
       if (item.creditMonth && item.creditPercent) {
         const totalWithInterest = item.price * item.quantity * (1 + item.creditPercent / 100);
-        const monthlyPayment = totalWithInterest / item.creditMonth;
-        let remainingBalance = totalWithInterest;
+        const remainingAfterDownPayment = totalWithInterest - downPayment;
+        const monthlyPayment = remainingAfterDownPayment / item.creditMonth;
+        let remainingBalance = remainingAfterDownPayment;
 
         for (let month = 1; month <= item.creditMonth; month++) {
           remainingBalance -= monthlyPayment;
@@ -89,7 +90,9 @@ export class TransactionService {
             transactionId,
             month,
             payment: monthlyPayment,
-            remainingBalance: Math.max(0, remainingBalance)
+            remainingBalance: Math.max(0, remainingBalance),
+            isPaid: false,
+            paidAmount: 0
           });
         }
       }
@@ -189,13 +192,13 @@ export class TransactionService {
         where,
         skip,
         take: parseInt(limit),
-        include: {
+      include: {
           customer: true,
           user: true,
           fromBranch: true,
           toBranch: true,
-          items: {
-            include: {
+        items: {
+          include: {
               product: true
             }
           },
@@ -280,10 +283,10 @@ export class TransactionService {
     }
 
     // Mahsulot miqdorlarini qaytarish
-    for (const item of transaction.items) {
+        for (const item of transaction.items) {
       if (item.productId) {
         await this.prisma.product.update({
-          where: { id: item.productId },
+              where: { id: item.productId },
           data: {
             quantity: {
               increment: item.quantity
@@ -319,9 +322,9 @@ export class TransactionService {
       data: { 
         // paid field yo'q, shuning uchun boshqa field bilan belgilaymiz
         remainingBalance: paid ? 0 : schedule.remainingBalance
-      }
-    });
-  }
+        }
+      });
+    }
 
   // Filiallar orasida o'tkazma
   async createTransfer(transferData: any) {
@@ -512,5 +515,5 @@ export class TransactionService {
       totalTransfers: transfers._sum.finalTotal || 0,
       transferTransactions: transfers._count || 0
     };
-  }
+}
 }

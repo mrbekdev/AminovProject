@@ -167,7 +167,6 @@ model Customer {
   phone     String  @unique
   email     String? @unique
   address   String?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -190,6 +189,7 @@ model Transaction {
   paymentType      PaymentType?
   deliveryMethod   String?
   amountPaid       Float?
+  downPayment      Float? // Boshlang'ich to'lov
   remainingBalance Float?
   receiptId        String?
   description      String?
@@ -261,6 +261,9 @@ model PaymentSchedule {
   month            Int
   payment          Float
   remainingBalance Float
+  isPaid           Boolean  @default(false)
+  paidAmount       Float    @default(0)
+  paidAt           DateTime?
   createdAt        DateTime @default(now())
 
   transaction      Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
