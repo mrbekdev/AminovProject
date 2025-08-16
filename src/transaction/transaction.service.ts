@@ -11,7 +11,7 @@ export class TransactionService {
   async create(createTransactionDto: CreateTransactionDto, userId?: number) {
     const { items, customer, ...transactionData } = createTransactionDto;
 
-    // User role ni tekshirish - faqat MARKETING roli bilan userlar sotish qilishi mumkin
+    // User role ni tekshirish - endi frontend da tanlanadi
     if (userId) {
       const user = await this.prisma.user.findUnique({
         where: { id: userId }
@@ -19,10 +19,6 @@ export class TransactionService {
       
       if (!user) {
         throw new BadRequestException('User topilmadi');
-      }
-      
-      if (user.role !== 'MARKETING') {
-        throw new BadRequestException('Sotish qilish uchun MARKETING roli kerak');
       }
     }
 

@@ -28,6 +28,8 @@ const Chiqim = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const [marketingUsers, setMarketingUsers] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
   const navigate = useNavigate();
   const API_URL = 'https://suddocs.uz';
 
@@ -309,6 +311,27 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
     loadCurrentUser();
   }, []);
 
+  // MARKETING roli bilan userlarni olish
+  useEffect(() => {
+    const loadMarketingUsers = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (token) {
+          const response = await axios.get(`${API_URL}/users`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          // Faqat MARKETING roli bilan userlarni filtrlash
+          const marketingUsersList = response.data.filter(user => user.role === 'MARKETING');
+          setMarketingUsers(marketingUsersList);
+        }
+      } catch (error) {
+        console.error('Error loading marketing users:', error);
+      }
+    };
+    
+    loadMarketingUsers();
+  }, []);
+
   const openModal = () => {
     setSelectedItems([]);
     setSelectedBranch(selectedBranchId || '');
@@ -321,6 +344,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
     setMonths('');
     setInterestRate('');
     setDownPayment('');
+    setSelectedUserId(''); // User ID ni tozalash
     setErrors({});
     setSelectedProductId('');
     setTempQuantity('');
@@ -408,6 +432,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
       if (!firstName.trim()) newErrors.firstName = 'Ism kiritilishi shart';
       if (!lastName.trim()) newErrors.lastName = 'Familiya kiritilishi shart';
       if (!phone.trim() || !/^\+?[1-9]\d{1,14}$/.test(phone)) newErrors.phone = 'Telefon raqami to\'g\'ri kiritilishi shart';
+      if (!selectedUserId) newErrors.userId = 'Sotuvchi tanlanishi shart';
       if (!paymentType) newErrors.paymentType = 'To\'lov turi tanlanishi shart';
       if ((paymentType === 'CREDIT' || paymentType === 'INSTALLMENT')) {
         if (!months || isNaN(months) || Number(months) <= 0 || !Number.isInteger(Number(months)) || Number(months) > 24) {
@@ -466,6 +491,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
         customer: customerData,
         fromBranchId: Number(selectedBranch),
         toBranchId,
+        userId: Number(selectedUserId), // Sotuvchi ID ni qo'shamiz
         items: selectedItems.map((item) => ({
           productId: item.id,
           quantity: Number(item.quantity),
@@ -701,6 +727,24 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
                               className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.phone ? 'border-red-500' : ''}`}
                             />
                             {errors.phone && <span className="text-red-500 text-xs">{errors.phone}</span>}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="py-2">Sotuvchi</td>
+                          <td>
+                            <select
+                              value={selectedUserId}
+                              onChange={(e) => setSelectedUserId(e.target.value)}
+                              className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.userId ? 'border-red-500' : ''}`}
+                            >
+                              <option value="">Sotuvchini tanlang</option>
+                              {marketingUsers.map((user) => (
+                                <option key={user.id} value={user.id}>
+                                  {user.firstName || user.lastName || 'Noma\'lum'} ({user.role})
+                                </option>
+                              ))}
+                            </select>
+                            {errors.userId && <span className="text-red-500 text-xs">{errors.userId}</span>}
                           </td>
                         </tr>
                         <tr>
