@@ -44,7 +44,8 @@ export class TransactionService {
       data: {
         ...transactionData,
         customerId,
-        userId, // Kim sotganini saqlaymiz
+        userId,
+        soldByUserId: transactionData.soldByUserId, // Kim sotganini saqlaymiz
         items: {
           create: items.map(item => ({
             productId: item.productId,
@@ -59,6 +60,8 @@ export class TransactionService {
       },
       include: {
         customer: true,
+        user: true,
+        soldBy: true,
         items: {
           include: {
             product: true
@@ -217,6 +220,7 @@ export class TransactionService {
       include: {
           customer: true,
           user: true,
+          soldBy: true,
           fromBranch: true,
           toBranch: true,
         items: {
@@ -250,6 +254,7 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
+        soldBy: true,
         fromBranch: true,
         toBranch: true,
         items: {
@@ -283,6 +288,7 @@ export class TransactionService {
       include: {
         customer: true,
         user: true,
+        soldBy: true,
         fromBranch: true,
         toBranch: true,
         items: {
@@ -376,6 +382,8 @@ export class TransactionService {
       },
       include: {
         customer: true,
+        user: true,
+        soldBy: true,
         items: {
           include: {
             product: true

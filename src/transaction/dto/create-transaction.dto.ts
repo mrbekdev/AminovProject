@@ -57,6 +57,10 @@ export class CreateTransactionDto {
 
   @IsNumber()
   @IsPositive()
+  soldByUserId: number; // Kim sotganini saqlash uchun
+
+  @IsNumber()
+  @IsPositive()
   fromBranchId: number;
 
   @IsOptional()

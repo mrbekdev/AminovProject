@@ -130,6 +130,7 @@ const Kirim = () => {
         total: selectedProduct.price * Number(quantity),
         finalTotal: selectedProduct.price * Number(quantity),
         fromBranchId: Number(branch),
+        soldByUserId: parseInt(localStorage.getItem('userId')) || null, // Kim sotganini saqlash
         items: [
           {
             productId: Number(selectedProductId),

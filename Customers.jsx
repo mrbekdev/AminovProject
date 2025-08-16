@@ -138,7 +138,7 @@ const Customers = () => {
           notification.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
         }`}>
           {notification.message}
-        </div>
+      </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -146,7 +146,7 @@ const Customers = () => {
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold mb-4">Mijozlar</h2>
-            {loading ? (
+      {loading ? (
               <div className="text-center py-4">Yuklanmoqda...</div>
             ) : (
               <div className="space-y-2">
@@ -229,10 +229,10 @@ const Customers = () => {
                                 <p className="text-sm text-gray-500">
                                   Sana: {formatDate(transaction.createdAt)}
                                 </p>
-                                {transaction.user && (
+                                {transaction.soldBy && (
                                   <p className="text-sm text-gray-500">
-                                    Sotuvchi: {transaction.user.firstName || transaction.user.lastName || 'Noma\'lum'} 
-                                    ({transaction.user.role})
+                                    Sotuvchi: {transaction.soldBy.firstName || transaction.soldBy.lastName || 'Noma\'lum'} 
+                                    ({transaction.soldBy.role})
                                   </p>
                                 )}
                               </div>
@@ -271,7 +271,7 @@ const Customers = () => {
                                 </div>
                               </div>
                               {remaining > 0 && (
-                                <button
+                      <button
                                   onClick={() => {
                                     setSelectedSchedule(schedule);
                                     setPaymentAmount(remaining.toString());
@@ -280,7 +280,7 @@ const Customers = () => {
                                   className="mt-2 bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 transition-colors"
                                 >
                                   To'lov qilish
-                                </button>
+                      </button>
                               )}
                             </div>
                           </div>
@@ -347,7 +347,7 @@ const Customers = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   To'lov Miqdori
                 </label>
-                <input
+                        <input
                   type="number"
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
@@ -359,7 +359,7 @@ const Customers = () => {
               </div>
 
               <div className="flex justify-end space-x-3">
-                <button
+                  <button
                   onClick={() => {
                     setShowPaymentModal(false);
                     setSelectedSchedule(null);
@@ -368,14 +368,14 @@ const Customers = () => {
                   className="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   Bekor qilish
-                </button>
-                <button
+                  </button>
+                  <button
                   onClick={handlePayment}
                   disabled={loading || !paymentAmount || Number(paymentAmount) <= 0}
                   className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50"
-                >
+                  >
                   {loading ? 'Jarayonda...' : 'To\'lov Qilish'}
-                </button>
+                  </button>
               </div>
             </div>
           </div>
@@ -383,6 +383,6 @@ const Customers = () => {
       )}
     </div>
   );
-  };
-  
-  export default Customers;
+};
+
+export default Customers;

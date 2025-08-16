@@ -492,6 +492,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
         fromBranchId: Number(selectedBranch),
         toBranchId,
         userId: Number(selectedUserId), // Sotuvchi ID ni qo'shamiz
+        soldByUserId: parseInt(localStorage.getItem('userId')) || null, // Kim sotganini saqlash
         items: selectedItems.map((item) => ({
           productId: item.id,
           quantity: Number(item.quantity),
@@ -513,6 +514,7 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
           data: {
             fromBranchId: Number(selectedBranch),
             toBranchId: Number(toBranch),
+            soldByUserId: parseInt(localStorage.getItem('userId')) || null, // Kim sotganini saqlash
             items: selectedItems.map((item) => ({
               productId: item.id,
               quantity: Number(item.quantity),

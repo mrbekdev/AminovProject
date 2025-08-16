@@ -23,7 +23,9 @@ export class TransactionController {
 
   @Post()
   create(@Body() createTransactionDto: CreateTransactionDto, @CurrentUser() user: any) {
-    return this.transactionService.create(createTransactionDto, user.id);
+    // soldByUserId ni DTO dan olamiz, agar yo'q bo'lsa current user ID sini ishlatamiz
+    const soldByUserId = createTransactionDto.soldByUserId || user.id;
+    return this.transactionService.create(createTransactionDto, soldByUserId);
   }
 
   @Get()
@@ -77,7 +79,8 @@ export class TransactionController {
   createTransfer(@Body() transferData: any, @CurrentUser() user: any) {
     return this.transactionService.createTransfer({
       ...transferData,
-      userId: user.id
+      userId: user.id,
+      soldByUserId: user.id // Kim sotganini saqlash
     });
   }
 

@@ -87,6 +87,7 @@ model User {
 
   branch              Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdTransactions Transaction[]     @relation("TransactionsCreatedBy")
+  soldTransactions    Transaction[]     @relation("TransactionsSoldBy")
   initiatedTransfers  ProductTransfer[] @relation("InitiatedTransfers")
   approvedTransfers   ProductTransfer[] @relation("ApprovedTransfers")
   userLocations       UserLocation[]
@@ -179,6 +180,7 @@ model Transaction {
   id               Int               @id @default(autoincrement())
   customerId       Int?
   userId           Int?
+  soldByUserId     Int? // Kim sotganini saqlash uchun
   fromBranchId     Int? // Qaysi filialdan chiqayotgani (SALE, PURCHASE, TRANSFER uchun)
   toBranchId       Int? // Qaysi filialga ketayotgani (TRANSFER uchun)
   type             TransactionType
@@ -189,7 +191,7 @@ model Transaction {
   paymentType      PaymentType?
   deliveryMethod   String?
   amountPaid       Float?
-  downPayment      Float? // Boshlang'ich to'lov
+  downPayment      Float? 
   remainingBalance Float?
   receiptId        String?
   description      String?
@@ -198,6 +200,7 @@ model Transaction {
 
   customer Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   user     User?             @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  soldBy   User?             @relation("TransactionsSoldBy", fields: [soldByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   fromBranch Branch?         @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   toBranch  Branch?          @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   items    TransactionItem[]
@@ -205,6 +208,7 @@ model Transaction {
 
   @@index([customerId])
   @@index([userId])
+  @@index([soldByUserId])
   @@index([fromBranchId])
   @@index([toBranchId])
   @@index([type])

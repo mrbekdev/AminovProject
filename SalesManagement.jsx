@@ -393,6 +393,7 @@ const SalesManagement = ({ selectedBranchId }) => {
         paymentType: paymentMethod.toUpperCase(),
         customer: customerData,
         fromBranchId: selectedBranchId || null,
+        soldByUserId: parseInt(localStorage.getItem('userId')) || null, // Kim sotganini saqlash
         items: cart.map((item) => ({
           productId: item.id,
           quantity: item.quantity,
