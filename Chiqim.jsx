@@ -742,19 +742,19 @@ ${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${forma
                             </tr>
                             <tr>
                               <td className="py-2">Umumiy Summa</td>
-                              <td>{formatCurrency(totalWithInterest)}</td>
+                              <td>{formatCurrency(calculatePaymentSchedule().totalWithInterest)}</td>
                             </tr>
                             <tr>
                               <td className="py-2">Boshlang'ich To'lov</td>
-                              <td>{formatCurrency(downPaymentAmount)}</td>
+                              <td>{formatCurrency(calculatePaymentSchedule().downPaymentAmount)}</td>
                             </tr>
                             <tr>
                               <td className="py-2">Qolgan Summa</td>
-                              <td>{formatCurrency(remainingAfterDownPayment)}</td>
+                              <td>{formatCurrency(calculatePaymentSchedule().remainingAfterDownPayment)}</td>
                             </tr>
                             <tr>
                               <td className="py-2">Oylik To'lov</td>
-                              <td>{formatCurrency(monthlyPayment)}</td>
+                              <td>{formatCurrency(calculatePaymentSchedule().monthlyPayment)}</td>
                             </tr>
                           </>
                         )}

@@ -5,6 +5,7 @@ import {
   Param,
   Body,
   UseGuards,
+  Put,
 } from '@nestjs/common';
 import { PaymentScheduleService } from './payment-schedule.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -19,7 +20,7 @@ export class PaymentScheduleController {
     return this.paymentScheduleService.findOne(+id);
   }
 
-  @Patch(':id')
+  @Put(':id')
   update(@Param('id') id: string, @Body() updateData: any) {
     return this.paymentScheduleService.update(+id, updateData);
   }
