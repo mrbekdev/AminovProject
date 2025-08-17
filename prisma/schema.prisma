@@ -204,6 +204,8 @@ model Transaction {
   finalTotal       Float
   paymentType      PaymentType?
   deliveryMethod   String?
+  deliveryType     String?           // PICKUP or DELIVERY
+  deliveryAddress  String?           // Delivery address for customer
   amountPaid       Float?
   downPayment      Float? 
   remainingBalance Float?

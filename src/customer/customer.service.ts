@@ -49,11 +49,29 @@ export class CustomerService {
     return customer;
   }
 
-  async findAll(skip: number, take: number, filters?: { phone?: string; email?: string }) {
+  async findAll(skip: number, take: number, filters?: { phone?: string; email?: string; fullName?: string }) {
+    let where: any = {};
+    
+    if (filters?.phone) {
+      where.phone = { contains: filters.phone, mode: 'insensitive' };
+    }
+    
+    if (filters?.email) {
+      where.email = { contains: filters.email, mode: 'insensitive' };
+    }
+    
+    if (filters?.fullName) {
+      where.OR = [
+        { fullName: { contains: filters.fullName, mode: 'insensitive' } },
+        { firstName: { contains: filters.fullName, mode: 'insensitive' } },
+        { lastName: { contains: filters.fullName, mode: 'insensitive' } }
+      ];
+    }
+
     return this.prisma.customer.findMany({
       skip,
       take,
-      where: filters,
+      where,
       include: { transactions: { include: { items: { include: { product: true } } } } },
     });
   }

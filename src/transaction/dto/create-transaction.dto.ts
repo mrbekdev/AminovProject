@@ -105,6 +105,14 @@ export class CreateTransactionDto {
   paymentType?: PaymentType;
 
   @IsOptional()
+  @IsString()
+  deliveryType?: string; // PICKUP or DELIVERY
+
+  @IsOptional()
+  @IsString()
+  deliveryAddress?: string; // Delivery address for customer
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => CustomerDto)
   customer?: CustomerDto;

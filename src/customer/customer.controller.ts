@@ -40,13 +40,17 @@ export class CustomerController {
   @ApiOperation({ summary: 'Get all customers' })
   @ApiQuery({ name: 'skip', required: false })
   @ApiQuery({ name: 'take', required: false })
+  @ApiQuery({ name: 'phone', required: false })
+  @ApiQuery({ name: 'email', required: false })
+  @ApiQuery({ name: 'fullName', required: false })
   async findAll(
     @Query('skip') skip = '0',
     @Query('take') take = '10',
     @Query('phone') phone?: string,
     @Query('email') email?: string,
+    @Query('fullName') fullName?: string,
   ) {
-    return this.customerService.findAll(+skip, +take, { phone, email });
+    return this.customerService.findAll(+skip, +take, { phone, email, fullName });
   }
 
   @Put(':id')
