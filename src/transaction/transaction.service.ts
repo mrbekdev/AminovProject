@@ -428,6 +428,8 @@ export class TransactionService {
   private async updateProductQuantitiesForTransfer(transfer: any) {
     for (const item of transfer.items) {
       if (item.productId && item.product) {
+        console.log(`🔄 Processing transfer item: ${item.product.name} (${item.quantity})`);
+        
         // Manba filialdan mahsulotni topish va miqdorini kamaytirish
         const sourceProduct = await this.prisma.product.findFirst({
           where: {
@@ -437,6 +439,7 @@ export class TransactionService {
         });
 
         if (sourceProduct) {
+          console.log(`📤 Source product found: ${sourceProduct.name}, current quantity: ${sourceProduct.quantity}`);
           // Manba filialdan kamaytirish
           await this.prisma.product.update({
             where: { id: sourceProduct.id },
@@ -445,30 +448,73 @@ export class TransactionService {
               status: sourceProduct.quantity - item.quantity === 0 ? 'SOLD' : 'IN_STORE'
             }
           });
+          console.log(`📤 Source product updated: new quantity: ${Math.max(0, sourceProduct.quantity - item.quantity)}`);
         }
 
         // Maqsad filialda mahsulotni topish yoki yaratish
-        // Barcode va branchId kombinatsiyasi bo'yicha qidirish
-        const targetProduct = await this.prisma.product.findFirst({
-          where: {
-            barcode: item.product.barcode,
-            branchId: transfer.toBranchId
+        // Avval barcode bilan qidirish, keyin name bilan (case-insensitive)
+        let targetProduct: any = null;
+        
+        if (item.product.barcode) {
+          console.log(`🔍 Searching by barcode: ${item.product.barcode}`);
+          // Barcode bilan qidirish
+          targetProduct = await this.prisma.product.findFirst({
+            where: {
+              barcode: item.product.barcode,
+              branchId: transfer.toBranchId
+            }
+          });
+          if (targetProduct) {
+            console.log(`✅ Found existing product by barcode: ${targetProduct.name}`);
           }
-        });
+        }
+        
+        // Agar barcode bilan topilmagan bo'lsa, name bilan qidirish (case-insensitive)
+        if (!targetProduct) {
+          console.log(`🔍 Searching by name: "${item.product.name}"`);
+          
+          // Prisma da case-insensitive qidirish uchun contains va mode: 'insensitive' ishlatamiz
+          targetProduct = await this.prisma.product.findFirst({
+            where: {
+              AND: [
+                {
+                  OR: [
+                    { name: { equals: item.product.name, mode: 'insensitive' } },
+                    { name: { contains: item.product.name, mode: 'insensitive' } },
+                    { name: { contains: item.product.name.trim(), mode: 'insensitive' } }
+                  ]
+                },
+                { branchId: transfer.toBranchId }
+              ]
+            }
+          });
+          
+          if (targetProduct) {
+            console.log(`✅ Found existing product by name: ${targetProduct.name} (current quantity: ${targetProduct.quantity})`);
+          } else {
+            console.log(`❌ No existing product found by name: "${item.product.name}"`);
+          }
+        }
 
         if (targetProduct) {
           // Mavjud mahsulotga qo'shish
+          const newQuantity = targetProduct.quantity + item.quantity;
+          console.log(`📥 Updating existing product: ${targetProduct.name}, adding ${item.quantity} to current ${targetProduct.quantity} = ${newQuantity}`);
+          
           await this.prisma.product.update({
             where: { id: targetProduct.id },
             data: {
-              quantity: targetProduct.quantity + item.quantity,
+              quantity: newQuantity,
               status: 'IN_WAREHOUSE'
             }
           });
+          console.log(`✅ Existing product updated successfully`);
         } else {
           // Yangi mahsulot yaratish - barcode unique constraint ni hisobga olish
+          console.log(`🆕 Creating new product: ${item.product.name} in branch ${transfer.toBranchId} with quantity ${item.quantity}`);
+          
           try {
-            await this.prisma.product.create({
+            const newProduct = await this.prisma.product.create({
               data: {
                 name: item.product.name,
                 barcode: item.product.barcode || `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -481,11 +527,14 @@ export class TransactionService {
                 marketPrice: item.product.marketPrice
               }
             });
+            console.log(`✅ New product created successfully: ${newProduct.name} (ID: ${newProduct.id})`);
           } catch (error) {
+            console.error(`❌ Error creating new product:`, error);
             // Agar barcode bilan xatolik bo'lsa, unique barcode yaratish
             if (error.code === 'P2002') {
+              console.log(`🔄 Retrying with unique barcode...`);
               const uniqueBarcode = `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-              await this.prisma.product.create({
+              const newProduct = await this.prisma.product.create({
                 data: {
                   name: item.product.name,
                   barcode: uniqueBarcode,
@@ -498,6 +547,7 @@ export class TransactionService {
                   marketPrice: item.product.marketPrice
                 }
               });
+              console.log(`✅ New product created with unique barcode: ${newProduct.name} (ID: ${newProduct.id})`);
             } else {
               throw error;
             }
