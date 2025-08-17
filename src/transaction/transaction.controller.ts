@@ -46,16 +46,10 @@ export class TransactionController {
     );
   }
 
-  @Get('credit-statistics')
-  getCreditPaymentStatistics(
-    @Query('branchId') branchId?: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string
-  ) {
-    return this.transactionService.getCreditPaymentStatistics(
-      branchId ? parseInt(branchId) : undefined,
-      startDate,
-      endDate
+  @Get('pending-transfers')
+  getPendingTransfers(@Query('branchId') branchId?: string) {
+    return this.transactionService.getPendingTransfers(
+      branchId ? parseInt(branchId) : undefined
     );
   }
 

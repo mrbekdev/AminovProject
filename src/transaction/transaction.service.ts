@@ -39,16 +39,6 @@ export class TransactionService {
       }
     }
 
-    // Cash/Card transactions uchun to'lov ma'lumotlarini o'rnatish
-    let amountPaid = 0;
-    let remainingBalance = 0;
-    
-    if (transactionData.paymentType === PaymentType.CASH || transactionData.paymentType === PaymentType.CARD) {
-      // Naqd pul yoki karta to'lovlari darhol to'lanadi
-      amountPaid = transactionData.finalTotal;
-      remainingBalance = 0;
-    }
-
     // Transaction yaratish
     const transaction = await this.prisma.transaction.create({
       data: {
@@ -56,8 +46,6 @@ export class TransactionService {
         customerId,
         userId,
         soldByUserId: transactionData.soldByUserId, // Kim sotganini saqlaymiz
-        amountPaid,
-        remainingBalance,
         items: {
           create: items.map(item => ({
             productId: item.productId,
@@ -166,12 +154,8 @@ export class TransactionService {
           // Kirim - mahsulot soniga qo'shish
           newQuantity = product.quantity + item.quantity;
           newStatus = 'IN_WAREHOUSE';
-        } else if (transaction.type === 'TRANSFER') {
-          // O'tkazma - faqat manba filialdan kamaytirish
-          // Maqsad filialga qo'shish approveTransfer da amalga oshiriladi
-          newQuantity = Math.max(0, product.quantity - item.quantity);
-          newStatus = newQuantity === 0 ? 'SOLD' : 'IN_STORE';
         }
+        // TRANSFER uchun alohida metod ishlatiladi - updateProductQuantitiesForTransfer
 
         await this.prisma.product.update({
           where: { id: item.productId },
@@ -203,12 +187,7 @@ export class TransactionService {
 
     const where: any = {};
     
-    // Default to SALE transactions if no type specified
-    if (type) {
-      where.type = type;
-    } else {
-      where.type = 'SALE'; // Only show sales transactions by default
-    }
+    if (type) where.type = type;
     if (status) where.status = status;
     if (branchId) {
       // BranchId orqali filtrlash - bu filialdan chiqgan yoki kirgan transactionlarni olish
@@ -218,10 +197,7 @@ export class TransactionService {
       ];
       console.log('Where clause:', where);
     }
-    if (customerId) {
-      where.customerId = parseInt(customerId);
-      console.log('Filtering by customerId:', customerId);
-    }
+    if (customerId) where.customerId = parseInt(customerId);
     if (paymentType) where.paymentType = paymentType;
     
     if (startDate || endDate) {
@@ -245,12 +221,7 @@ export class TransactionService {
           toBranch: true,
         items: {
           include: {
-              product: {
-                include: {
-                  category: true,
-                  branch: true
-                }
-              }
+              product: true
             }
           },
           paymentSchedules: {
@@ -261,21 +232,6 @@ export class TransactionService {
       }),
       this.prisma.transaction.count({ where })
     ]);
-
-    console.log('=== TRANSACTIONS FOUND ===');
-    console.log('Total transactions found:', total);
-    console.log('Transactions returned:', transactions.length);
-    transactions.forEach((t, index) => {
-      console.log(`Transaction ${index + 1}:`, {
-        id: t.id,
-        customerId: t.customerId,
-        customerName: t.customer?.fullName,
-        paymentType: t.paymentType,
-        type: t.type,
-        total: t.total,
-        finalTotal: t.finalTotal
-      });
-    });
 
     return {
       transactions,
@@ -299,12 +255,7 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: {
-            product: {
-              include: {
-                category: true,
-                branch: true
-              }
-            }
+            product: true
           }
         },
         paymentSchedules: {
@@ -338,12 +289,7 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: {
-            product: {
-              include: {
-                category: true,
-                branch: true
-              }
-            }
+            product: true
           }
         },
         paymentSchedules: {
@@ -416,8 +362,8 @@ export class TransactionService {
       data: {
         ...data,
         type: TransactionType.TRANSFER,
-              fromBranchId: fromBranchId,
-      toBranchId: toBranchId,
+        fromBranchId: fromBranchId,
+        toBranchId: toBranchId,
         status: TransactionStatus.PENDING,
         total: total,
         finalTotal: total, // Transfer uchun total va finalTotal bir xil
@@ -443,34 +389,69 @@ export class TransactionService {
       }
     });
 
-    // Mahsulot miqdorlarini yangilash - manba filialdan kamaytirish
-    await this.updateProductQuantities(transfer);
+    // Mahsulot miqdorlarini darhol yangilash - manba filialdan kamaytirish va maqsad filialga qo'shish
+    await this.updateProductQuantitiesForTransfer(transfer);
 
     return transfer;
   }
 
-  async approveTransfer(id: number, approvedById: number) {
-    const transaction = await this.findOne(id);
-    
-    if (transaction.type !== TransactionType.TRANSFER) {
-      throw new BadRequestException('Only transfer transactions can be approved');
+  // Pending transferlarni olish
+  async getPendingTransfers(branchId?: number) {
+    const where: any = {
+      type: TransactionType.TRANSFER,
+      status: TransactionStatus.PENDING
+    };
+
+    if (branchId) {
+      where.OR = [
+        { fromBranchId: branchId },
+        { toBranchId: branchId }
+      ];
     }
 
-    if (transaction.status !== TransactionStatus.PENDING) {
-      throw new BadRequestException('Transaction is not pending');
-    }
+    return this.prisma.transaction.findMany({
+      where,
+      include: {
+        fromBranch: true,
+        toBranch: true,
+        soldBy: true,
+        items: {
+          include: {
+            product: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
 
-    // Mahsulotlarni o'tkazish
-    for (const item of transaction.items) {
+  private async updateProductQuantitiesForTransfer(transfer: any) {
+    for (const item of transfer.items) {
       if (item.productId && item.product) {
-        // Manba filialdan chiqarish - bu allaqachon createTransfer da amalga oshirilgan
-        // Faqat maqsad filialga qo'shish qilamiz
-        
-        // Maqsad filialda mavjud mahsulotni topish
+        // Manba filialdan mahsulotni topish va miqdorini kamaytirish
+        const sourceProduct = await this.prisma.product.findFirst({
+          where: {
+            id: item.productId,
+            branchId: transfer.fromBranchId
+          }
+        });
+
+        if (sourceProduct) {
+          // Manba filialdan kamaytirish
+          await this.prisma.product.update({
+            where: { id: sourceProduct.id },
+            data: {
+              quantity: Math.max(0, sourceProduct.quantity - item.quantity),
+              status: sourceProduct.quantity - item.quantity === 0 ? 'SOLD' : 'IN_STORE'
+            }
+          });
+        }
+
+        // Maqsad filialda mahsulotni topish yoki yaratish
         const targetProduct = await this.prisma.product.findFirst({
           where: {
             barcode: item.product.barcode,
-            branchId: transaction.toBranchId || 0
+            branchId: transfer.toBranchId
           }
         });
 
@@ -479,9 +460,7 @@ export class TransactionService {
           await this.prisma.product.update({
             where: { id: targetProduct.id },
             data: {
-              quantity: {
-                increment: item.quantity
-              },
+              quantity: targetProduct.quantity + item.quantity,
               status: 'IN_WAREHOUSE'
             }
           });
@@ -495,7 +474,7 @@ export class TransactionService {
               price: item.product.price,
               quantity: item.quantity,
               status: 'IN_WAREHOUSE',
-              branchId: transaction.toBranchId || 0,
+              branchId: transfer.toBranchId,
               categoryId: item.product.categoryId,
               marketPrice: item.product.marketPrice
             }
@@ -503,8 +482,20 @@ export class TransactionService {
         }
       }
     }
+  }
 
-    // O'tkazmani tasdiqlash
+  async approveTransfer(id: number, approvedById: number) {
+    const transaction = await this.findOne(id);
+    
+    if (transaction.type !== TransactionType.TRANSFER) {
+      throw new BadRequestException('Only transfer transactions can be approved');
+    }
+
+    if (transaction.status !== TransactionStatus.PENDING) {
+      throw new BadRequestException('Transaction is not pending');
+    }
+
+    // O'tkazmani tasdiqlash - mahsulotlar allaqachon ko'chirilgan
     return this.prisma.transaction.update({
       where: { id },
       data: {
@@ -595,70 +586,5 @@ export class TransactionService {
       totalTransfers: transfers._sum.finalTotal || 0,
       transferTransactions: transfers._count || 0
     };
-  }
-
-  // Kredit to'lovlari statistikasi
-  async getCreditPaymentStatistics(branchId?: number, startDate?: string, endDate?: string) {
-    const where: any = {
-      paymentType: { in: [PaymentType.CREDIT, PaymentType.INSTALLMENT] }
-    };
-    
-    if (branchId) {
-      where.OR = [
-        { fromBranchId: branchId },
-        { toBranchId: branchId }
-      ];
-    }
-    
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
-    }
-
-    const [creditTransactions, paymentSchedules] = await Promise.all([
-      this.prisma.transaction.findMany({
-        where,
-        include: {
-          customer: true,
-          paymentSchedules: true
-        }
-      }),
-      this.prisma.paymentSchedule.findMany({
-        where: {
-          transaction: where
-        },
-        include: {
-          transaction: {
-            include: {
-              customer: true
-            }
-          }
-        }
-      })
-    ]);
-
-    // Kredit to'lovlari statistikasi
-    const totalCreditAmount = creditTransactions.reduce((sum, tx) => sum + tx.finalTotal, 0);
-    const totalPaidAmount = paymentSchedules.reduce((sum, ps) => sum + ps.paidAmount, 0);
-    const totalRemainingBalance = paymentSchedules.reduce((sum, ps) => sum + ps.remainingBalance, 0);
-    
-    // Oylik to'lovlar statistikasi
-    const monthlyPayments = paymentSchedules.reduce((sum, ps) => sum + ps.payment, 0);
-    
-    // To'lanmagan oylar
-    const unpaidMonths = paymentSchedules.filter(ps => !ps.isPaid).length;
-    const paidMonths = paymentSchedules.filter(ps => ps.isPaid).length;
-
-    return {
-      totalCreditAmount,
-      totalPaidAmount,
-      totalRemainingBalance,
-      monthlyPayments,
-      unpaidMonths,
-      paidMonths,
-      creditTransactions: creditTransactions.length,
-      customersWithCredit: [...new Set(creditTransactions.map(tx => tx.customerId))].length
-    };
-  }
+}
 }
