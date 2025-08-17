@@ -53,12 +53,14 @@ enum ProductStatus {
   RETURNED
   CARRIER
   FIXED
+  EXCHANGED
 }
 
 model Branch {
   id        Int      @id @default(autoincrement())
   name      String
   address   String?
+  cashBalance Float  @default(0) // Kassadagi pul miqdori
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -69,6 +71,7 @@ model Branch {
   categories     Category[]
   fromTransfers  ProductTransfer[] @relation("FromBranch")
   toTransfers    ProductTransfer[] @relation("ToBranch")
+  defectiveLogs  DefectiveLog[]
 
   @@index([name])
 }
@@ -133,6 +136,8 @@ model Product {
   price             Float
   quantity          Int
   defectiveQuantity Int            @default(0)
+  returnedQuantity  Int            @default(0) // Qaytib olingan miqdori
+  exchangedQuantity Int            @default(0) // Almashtirilgan miqdori
   initialQuantity   Int            @default(0)
   status            ProductStatus  @default(IN_STORE)
   branchId          Int
@@ -154,10 +159,14 @@ model DefectiveLog {
   quantity    Int
   description String
   userId      Int?
+  branchId    Int?
+  cashAmount  Float    @default(0) // Kassadan chiqadigan yoki kiruvchi pul
+  actionType  String   @default("DEFECTIVE") // DEFECTIVE, FIXED, RETURN, EXCHANGE
   createdAt   DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id])
   user    User?   @relation(fields: [userId], references: [id])
+  branch  Branch? @relation(fields: [branchId], references: [id])
 
   @@map("defective_logs")
 }

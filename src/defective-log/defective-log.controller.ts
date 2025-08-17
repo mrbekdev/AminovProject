@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Query } from '@nestjs/common';
 import { DefectiveLogService } from './defective-log.service';
 import { CreateDefectiveLogDto } from './dto/create-defective-log.dto';
 import { UpdateDefectiveLogDto } from './dto/update-defective-log.dto';
@@ -18,18 +18,41 @@ export class DefectiveLogController {
   }
 
   @Get()
-  findAll() {
-    return this.defectiveLogService.findAll();
+  findAll(@Query() query: any) {
+    return this.defectiveLogService.findAll(query);
   }
 
   @Get('defective-products')
-  getDefectiveProducts() {
-    return this.defectiveLogService.getDefectiveProducts();
+  getDefectiveProducts(@Query('branchId') branchId?: string) {
+    return this.defectiveLogService.getDefectiveProducts(branchId ? +branchId : undefined);
   }
 
   @Get('fixed-products')
-  getFixedProducts() {
-    return this.defectiveLogService.getFixedProducts();
+  getFixedProducts(@Query('branchId') branchId?: string) {
+    return this.defectiveLogService.getFixedProducts(branchId ? +branchId : undefined);
+  }
+
+  @Get('returned-products')
+  getReturnedProducts(@Query('branchId') branchId?: string) {
+    return this.defectiveLogService.getReturnedProducts(branchId ? +branchId : undefined);
+  }
+
+  @Get('exchanged-products')
+  getExchangedProducts(@Query('branchId') branchId?: string) {
+    return this.defectiveLogService.getExchangedProducts(branchId ? +branchId : undefined);
+  }
+
+  @Get('statistics')
+  getStatistics(
+    @Query('branchId') branchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string
+  ) {
+    return this.defectiveLogService.getStatistics(
+      branchId ? +branchId : undefined,
+      startDate,
+      endDate
+    );
   }
 
   @Get('product/:productId')
@@ -48,8 +71,47 @@ export class DefectiveLogController {
   }
 
   @Post('mark-as-fixed/:productId')
-  markAsFixed(@Param('productId') productId: string, @Request() req) {
-    return this.defectiveLogService.markAsFixed(+productId, req.user?.id);
+  markAsFixed(
+    @Param('productId') productId: string,
+    @Body() body: { quantity: number; branchId?: number },
+    @Request() req
+  ) {
+    return this.defectiveLogService.markAsFixed(
+      +productId,
+      body.quantity,
+      req.user?.id,
+      body.branchId
+    );
+  }
+
+  @Post('return/:productId')
+  returnProduct(
+    @Param('productId') productId: string,
+    @Body() body: { quantity: number; description: string; branchId?: number },
+    @Request() req
+  ) {
+    return this.defectiveLogService.returnProduct(
+      +productId,
+      body.quantity,
+      body.description,
+      req.user?.id,
+      body.branchId
+    );
+  }
+
+  @Post('exchange/:productId')
+  exchangeProduct(
+    @Param('productId') productId: string,
+    @Body() body: { quantity: number; description: string; branchId?: number },
+    @Request() req
+  ) {
+    return this.defectiveLogService.exchangeProduct(
+      +productId,
+      body.quantity,
+      body.description,
+      req.user?.id,
+      body.branchId
+    );
   }
 
   @Delete(':id')

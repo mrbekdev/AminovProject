@@ -39,6 +39,16 @@ export class TransactionService {
       }
     }
 
+    // Cash/Card transactions uchun to'lov ma'lumotlarini o'rnatish
+    let amountPaid = 0;
+    let remainingBalance = 0;
+    
+    if (transactionData.paymentType === PaymentType.CASH || transactionData.paymentType === PaymentType.CARD) {
+      // Naqd pul yoki karta to'lovlari darhol to'lanadi
+      amountPaid = transactionData.finalTotal;
+      remainingBalance = 0;
+    }
+
     // Transaction yaratish
     const transaction = await this.prisma.transaction.create({
       data: {
@@ -46,6 +56,8 @@ export class TransactionService {
         customerId,
         userId,
         soldByUserId: transactionData.soldByUserId, // Kim sotganini saqlaymiz
+        amountPaid,
+        remainingBalance,
         items: {
           create: items.map(item => ({
             productId: item.productId,
@@ -583,5 +595,70 @@ export class TransactionService {
       totalTransfers: transfers._sum.finalTotal || 0,
       transferTransactions: transfers._count || 0
     };
-}
+  }
+
+  // Kredit to'lovlari statistikasi
+  async getCreditPaymentStatistics(branchId?: number, startDate?: string, endDate?: string) {
+    const where: any = {
+      paymentType: { in: [PaymentType.CREDIT, PaymentType.INSTALLMENT] }
+    };
+    
+    if (branchId) {
+      where.OR = [
+        { fromBranchId: branchId },
+        { toBranchId: branchId }
+      ];
+    }
+    
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+
+    const [creditTransactions, paymentSchedules] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where,
+        include: {
+          customer: true,
+          paymentSchedules: true
+        }
+      }),
+      this.prisma.paymentSchedule.findMany({
+        where: {
+          transaction: where
+        },
+        include: {
+          transaction: {
+            include: {
+              customer: true
+            }
+          }
+        }
+      })
+    ]);
+
+    // Kredit to'lovlari statistikasi
+    const totalCreditAmount = creditTransactions.reduce((sum, tx) => sum + tx.finalTotal, 0);
+    const totalPaidAmount = paymentSchedules.reduce((sum, ps) => sum + ps.paidAmount, 0);
+    const totalRemainingBalance = paymentSchedules.reduce((sum, ps) => sum + ps.remainingBalance, 0);
+    
+    // Oylik to'lovlar statistikasi
+    const monthlyPayments = paymentSchedules.reduce((sum, ps) => sum + ps.payment, 0);
+    
+    // To'lanmagan oylar
+    const unpaidMonths = paymentSchedules.filter(ps => !ps.isPaid).length;
+    const paidMonths = paymentSchedules.filter(ps => ps.isPaid).length;
+
+    return {
+      totalCreditAmount,
+      totalPaidAmount,
+      totalRemainingBalance,
+      monthlyPayments,
+      unpaidMonths,
+      paidMonths,
+      creditTransactions: creditTransactions.length,
+      customersWithCredit: [...new Set(creditTransactions.map(tx => tx.customerId))].length
+    };
+  }
 }

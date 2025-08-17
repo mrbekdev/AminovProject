@@ -1,17 +1,27 @@
-import { IsInt, IsString, IsOptional, Min, Max } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsString, IsOptional, IsEnum } from 'class-validator';
 
 export class CreateDefectiveLogDto {
-  @IsInt()
+  @IsNotEmpty()
+  @IsNumber()
   productId: number;
 
-  @IsInt()
-  @Min(1)
+  @IsNotEmpty()
+  @IsNumber()
   quantity: number;
 
+  @IsNotEmpty()
   @IsString()
   description: string;
 
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   userId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  branchId?: number;
+
+  @IsOptional()
+  @IsEnum(['DEFECTIVE', 'FIXED', 'RETURN', 'EXCHANGE'])
+  actionType?: string;
 }

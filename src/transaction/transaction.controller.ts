@@ -46,6 +46,19 @@ export class TransactionController {
     );
   }
 
+  @Get('credit-statistics')
+  getCreditPaymentStatistics(
+    @Query('branchId') branchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string
+  ) {
+    return this.transactionService.getCreditPaymentStatistics(
+      branchId ? parseInt(branchId) : undefined,
+      startDate,
+      endDate
+    );
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.transactionService.findOne(+id);
