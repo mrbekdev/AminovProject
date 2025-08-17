@@ -191,7 +191,12 @@ export class TransactionService {
 
     const where: any = {};
     
-    if (type) where.type = type;
+    // Default to SALE transactions if no type specified
+    if (type) {
+      where.type = type;
+    } else {
+      where.type = 'SALE'; // Only show sales transactions by default
+    }
     if (status) where.status = status;
     if (branchId) {
       // BranchId orqali filtrlash - bu filialdan chiqgan yoki kirgan transactionlarni olish
@@ -201,7 +206,10 @@ export class TransactionService {
       ];
       console.log('Where clause:', where);
     }
-    if (customerId) where.customerId = parseInt(customerId);
+    if (customerId) {
+      where.customerId = parseInt(customerId);
+      console.log('Filtering by customerId:', customerId);
+    }
     if (paymentType) where.paymentType = paymentType;
     
     if (startDate || endDate) {
@@ -225,7 +233,12 @@ export class TransactionService {
           toBranch: true,
         items: {
           include: {
-              product: true
+              product: {
+                include: {
+                  category: true,
+                  branch: true
+                }
+              }
             }
           },
           paymentSchedules: {
@@ -236,6 +249,21 @@ export class TransactionService {
       }),
       this.prisma.transaction.count({ where })
     ]);
+
+    console.log('=== TRANSACTIONS FOUND ===');
+    console.log('Total transactions found:', total);
+    console.log('Transactions returned:', transactions.length);
+    transactions.forEach((t, index) => {
+      console.log(`Transaction ${index + 1}:`, {
+        id: t.id,
+        customerId: t.customerId,
+        customerName: t.customer?.fullName,
+        paymentType: t.paymentType,
+        type: t.type,
+        total: t.total,
+        finalTotal: t.finalTotal
+      });
+    });
 
     return {
       transactions,
@@ -259,7 +287,12 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: {
-            product: true
+            product: {
+              include: {
+                category: true,
+                branch: true
+              }
+            }
           }
         },
         paymentSchedules: {
@@ -293,7 +326,12 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: {
-            product: true
+            product: {
+              include: {
+                category: true,
+                branch: true
+              }
+            }
           }
         },
         paymentSchedules: {
