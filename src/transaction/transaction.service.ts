@@ -448,6 +448,7 @@ export class TransactionService {
         }
 
         // Maqsad filialda mahsulotni topish yoki yaratish
+        // Barcode va branchId kombinatsiyasi bo'yicha qidirish
         const targetProduct = await this.prisma.product.findFirst({
           where: {
             barcode: item.product.barcode,
@@ -465,20 +466,42 @@ export class TransactionService {
             }
           });
         } else {
-          // Yangi mahsulot yaratish
-          await this.prisma.product.create({
-            data: {
-              name: item.product.name,
-              barcode: item.product.barcode,
-              model: item.product.model,
-              price: item.product.price,
-              quantity: item.quantity,
-              status: 'IN_WAREHOUSE',
-              branchId: transfer.toBranchId,
-              categoryId: item.product.categoryId,
-              marketPrice: item.product.marketPrice
+          // Yangi mahsulot yaratish - barcode unique constraint ni hisobga olish
+          try {
+            await this.prisma.product.create({
+              data: {
+                name: item.product.name,
+                barcode: item.product.barcode || `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                model: item.product.model,
+                price: item.product.price,
+                quantity: item.quantity,
+                status: 'IN_WAREHOUSE',
+                branchId: transfer.toBranchId,
+                categoryId: item.product.categoryId,
+                marketPrice: item.product.marketPrice
+              }
+            });
+          } catch (error) {
+            // Agar barcode bilan xatolik bo'lsa, unique barcode yaratish
+            if (error.code === 'P2002') {
+              const uniqueBarcode = `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+              await this.prisma.product.create({
+                data: {
+                  name: item.product.name,
+                  barcode: uniqueBarcode,
+                  model: item.product.model,
+                  price: item.product.price,
+                  quantity: item.quantity,
+                  status: 'IN_WAREHOUSE',
+                  branchId: transfer.toBranchId,
+                  categoryId: item.product.categoryId,
+                  marketPrice: item.product.marketPrice
+                }
+              });
+            } else {
+              throw error;
             }
-          });
+          }
         }
       }
     }
