@@ -245,6 +245,11 @@ export class TransactionService {
   }
 
   async findOne(id: number) {
+    // Validate that id is provided and is a valid number
+    if (id === undefined || id === null || isNaN(id) || id <= 0) {
+      throw new BadRequestException('Invalid transaction ID provided');
+    }
+
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },
       include: {
@@ -272,6 +277,11 @@ export class TransactionService {
   }
 
   async update(id: number, updateTransactionDto: UpdateTransactionDto) {
+    // Validate that id is provided and is a valid number
+    if (id === undefined || id === null || isNaN(id) || id <= 0) {
+      throw new BadRequestException('Invalid transaction ID provided');
+    }
+
     const transaction = await this.findOne(id);
     
     if (transaction.status === TransactionStatus.COMPLETED) {
@@ -300,6 +310,11 @@ export class TransactionService {
   }
 
   async remove(id: number) {
+    // Validate that id is provided and is a valid number
+    if (id === undefined || id === null || isNaN(id) || id <= 0) {
+      throw new BadRequestException('Invalid transaction ID provided');
+    }
+
     const transaction = await this.findOne(id);
     
     if (transaction.status === TransactionStatus.COMPLETED) {
@@ -327,11 +342,21 @@ export class TransactionService {
 
   // Kredit to'lovlarini boshqarish
   async getPaymentSchedules(transactionId: number) {
+    // Validate that transactionId is provided and is a valid number
+    if (transactionId === undefined || transactionId === null || isNaN(transactionId) || transactionId <= 0) {
+      throw new BadRequestException('Invalid transaction ID provided');
+    }
+
     const transaction = await this.findOne(transactionId);
     return transaction.paymentSchedules;
   }
 
   async updatePaymentStatus(transactionId: number, month: number, paid: boolean) {
+    // Validate that transactionId is provided and is a valid number
+    if (transactionId === undefined || transactionId === null || isNaN(transactionId) || transactionId <= 0) {
+      throw new BadRequestException('Invalid transaction ID provided');
+    }
+
     const schedule = await this.prisma.paymentSchedule.findFirst({
       where: { transactionId, month }
     });
@@ -558,6 +583,11 @@ export class TransactionService {
   }
 
   async approveTransfer(id: number, approvedById: number) {
+    // Validate that id is provided and is a valid number
+    if (id === undefined || id === null || isNaN(id) || id <= 0) {
+      throw new BadRequestException('Invalid transaction ID provided');
+    }
+
     const transaction = await this.findOne(id);
     
     if (transaction.type !== TransactionType.TRANSFER) {
@@ -579,6 +609,11 @@ export class TransactionService {
   }
 
   async rejectTransfer(id: number) {
+    // Validate that id is provided and is a valid number
+    if (id === undefined || id === null || isNaN(id) || id <= 0) {
+      throw new BadRequestException('Invalid transaction ID provided');
+    }
+
     const transaction = await this.findOne(id);
     
     if (transaction.type !== TransactionType.TRANSFER) {
