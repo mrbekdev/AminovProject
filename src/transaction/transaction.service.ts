@@ -206,40 +206,40 @@ export class TransactionService {
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
-    const skip = (page - 1) * limit;
+    // Pagination handling: support limit=all or limit<=0 to return all
+    const parsedLimit = typeof limit === 'string' ? parseInt(limit) : limit;
+    const returnAll = limit === 'all' || parsedLimit <= 0 || Number.isNaN(parsedLimit as number);
 
-    const [transactions, total] = await Promise.all([
-      this.prisma.transaction.findMany({
-        where,
-        skip,
-        take: parseInt(limit),
+    const total = await this.prisma.transaction.count({ where });
+
+    const effectiveTake = returnAll ? undefined : parsedLimit;
+    const effectiveSkip = returnAll ? undefined : (parseInt(page) - 1) * parsedLimit;
+
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      skip: effectiveSkip,
+      take: effectiveTake,
       include: {
-          customer: true,
-          user: true,
-          soldBy: true,
-          fromBranch: true,
-          toBranch: true,
+        customer: true,
+        user: true,
+        soldBy: true,
+        fromBranch: true,
+        toBranch: true,
         items: {
-          include: {
-              product: true
-            }
-          },
-          paymentSchedules: {
-            orderBy: { month: 'asc' }
-          }
+          include: { product: true }
         },
-        orderBy: { createdAt: 'desc' }
-      }),
-      this.prisma.transaction.count({ where })
-    ]);
+        paymentSchedules: { orderBy: { month: 'asc' } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
     return {
       transactions,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: returnAll ? 1 : parseInt(page),
+        limit: returnAll ? total : parsedLimit,
         total,
-        pages: Math.ceil(total / limit)
+        pages: returnAll ? 1 : Math.ceil(total / parsedLimit)
       }
     };
   }
@@ -338,6 +338,225 @@ export class TransactionService {
     return this.prisma.transaction.delete({
       where: { id }
     });
+  }
+
+  // Qarzdorliklar ro'yxati (kredit / bo'lib to'lash)
+  async getDebts(params: { branchId?: number; customerId?: number }) {
+    const { branchId, customerId } = params || {};
+
+    const where: any = {
+      paymentType: {
+        in: [PaymentType.CREDIT, PaymentType.INSTALLMENT]
+      },
+      status: { not: TransactionStatus.CANCELLED }
+    };
+
+    if (customerId) where.customerId = customerId;
+    if (branchId) {
+      // Filial bo'yicha mos keladigan transactionlar
+      where.OR = [{ fromBranchId: branchId }, { toBranchId: branchId }];
+    }
+
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      include: {
+        customer: true,
+        items: { include: { product: true } },
+        paymentSchedules: { orderBy: { month: 'asc' } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const debts = transactions
+      .map((t) => {
+        const schedules = t.paymentSchedules || [];
+        const totalPayable = schedules.reduce((sum, s) => sum + (s.payment || 0), 0);
+        const totalPaidFromSchedules = schedules.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
+        const upfrontPaid = (t.downPayment || 0) + (t.amountPaid || 0);
+        const totalPaid = totalPaidFromSchedules + upfrontPaid;
+        const outstanding = Math.max(0, totalPayable - totalPaid);
+
+        // Keyingi to'lov (to'lanmagan birinchi oy)
+        const nextDue = schedules.find(
+          (s) => (s.paidAmount || 0) < (s.payment || 0) && !s.isPaid
+        );
+
+        const monthlyPayment = schedules.length > 0 ? schedules[0].payment : 0;
+
+        return {
+          transactionId: t.id,
+          customer: t.customer
+            ? {
+                id: t.customer.id,
+                fullName: t.customer.fullName,
+                phone: t.customer.phone
+              }
+            : null,
+          createdAt: t.createdAt,
+          paymentType: t.paymentType,
+          totalPayable,
+          totalPaid,
+          outstanding,
+          monthlyPayment,
+          nextDue: nextDue
+            ? {
+                month: nextDue.month,
+                amountDue: Math.max(0, (nextDue.payment || 0) - (nextDue.paidAmount || 0)),
+                remainingBalance: nextDue.remainingBalance
+              }
+            : null,
+          items: (t.items || []).map((it) => ({
+            id: it.id,
+            productId: it.productId,
+            productName: it.product?.name,
+            quantity: it.quantity,
+            price: it.price,
+            total: it.total
+          }))
+        };
+      })
+      .filter((d) => d.outstanding > 0);
+
+    // Mijoz bo'yicha jamlama
+    const customerMap = new Map<
+      number,
+      {
+        customerId: number;
+        fullName: string | null;
+        phone: string | null;
+        totalPayable: number;
+        totalPaid: number;
+        outstanding: number;
+        transactions: typeof debts;
+      }
+    >();
+
+    for (const d of debts) {
+      const key = d.customer?.id || 0;
+      if (!customerMap.has(key)) {
+        customerMap.set(key, {
+          customerId: key,
+          fullName: d.customer?.fullName || null,
+          phone: d.customer?.phone || null,
+          totalPayable: 0,
+          totalPaid: 0,
+          outstanding: 0,
+          transactions: []
+        });
+      }
+      const agg = customerMap.get(key)!;
+      agg.totalPayable += d.totalPayable;
+      agg.totalPaid += d.totalPaid;
+      agg.outstanding += d.outstanding;
+      agg.transactions.push(d);
+    }
+
+    const customers = Array.from(customerMap.values()).sort(
+      (a, b) => b.outstanding - a.outstanding
+    );
+
+    const totalOutstanding = debts.reduce((sum, d) => sum + d.outstanding, 0);
+
+    return {
+      debts,
+      customers,
+      summary: {
+        totalOutstanding,
+        totalCustomers: customers.length,
+        totalDebtTransactions: debts.length
+      }
+    };
+  }
+
+  // Mahsulot bo'yicha sotuvlar (sodda hisobot)
+  async getProductSales(params: {
+    productId?: number;
+    branchId?: number;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const { productId, branchId, startDate, endDate } = params || {};
+
+    const where: any = {
+      transaction: {
+        type: TransactionType.SALE as any
+      }
+    };
+
+    if (productId) where.productId = productId;
+    if (branchId) where.transaction.fromBranchId = branchId;
+
+    if (startDate || endDate) {
+      where.transaction.createdAt = {};
+      if (startDate) where.transaction.createdAt.gte = new Date(startDate);
+      if (endDate) where.transaction.createdAt.lte = new Date(endDate);
+    }
+
+    const items = await this.prisma.transactionItem.findMany({
+      where,
+      include: {
+        product: true,
+        transaction: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Mahsulot bo'yicha jamlash
+    const productMap = new Map<
+      number,
+      { productId: number; productName: string | null; totalQuantity: number; totalAmount: number }
+    >();
+
+    // Sana bo'yicha jamlash (kunlik)
+    const dailyMap = new Map<
+      string,
+      { date: string; totalQuantity: number; totalAmount: number }
+    >();
+
+    for (const it of items) {
+      const pid = it.productId || 0;
+      const pname = it.product?.name || null;
+      if (!productMap.has(pid)) {
+        productMap.set(pid, {
+          productId: pid,
+          productName: pname,
+          totalQuantity: 0,
+          totalAmount: 0
+        });
+      }
+      const pAgg = productMap.get(pid)!;
+      pAgg.totalQuantity += it.quantity;
+      pAgg.totalAmount += it.total;
+
+      const d = it.transaction?.createdAt
+        ? new Date(it.transaction.createdAt)
+        : new Date(it.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+        d.getDate()
+      ).padStart(2, '0')}`;
+      if (!dailyMap.has(key)) {
+        dailyMap.set(key, { date: key, totalQuantity: 0, totalAmount: 0 });
+      }
+      const dAgg = dailyMap.get(key)!;
+      dAgg.totalQuantity += it.quantity;
+      dAgg.totalAmount += it.total;
+    }
+
+    const products = Array.from(productMap.values()).sort(
+      (a, b) => b.totalQuantity - a.totalQuantity
+    );
+    const daily = Array.from(dailyMap.values()).sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    const totals = products.reduce(
+      (acc, p) => {
+        acc.totalQuantity += p.totalQuantity;
+        acc.totalAmount += p.totalAmount;
+        return acc;
+      },
+      { totalQuantity: 0, totalAmount: 0 }
+    );
+
+    return { products, daily, totals };
   }
 
   // Kredit to'lovlarini boshqarish
