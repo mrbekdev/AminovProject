@@ -11,16 +11,15 @@ export class TransactionService {
   async create(createTransactionDto: CreateTransactionDto, userId?: number) {
     const { items, customer, ...transactionData } = createTransactionDto;
 
-    // Seller (kim sotgan) ni aniqlash: DTO.soldByUserId -> current userId -> DTO.userId
-    const sellerUserId = transactionData.soldByUserId || userId || transactionData.userId;
-    if (!sellerUserId) {
-      throw new BadRequestException('Seller userId is required');
-    }
-
-    // Seller mavjudligini tekshirish
-    const sellerUser = await this.prisma.user.findUnique({ where: { id: sellerUserId } });
-    if (!sellerUser) {
-      throw new BadRequestException('User topilmadi');
+    // User role ni tekshirish - endi frontend da tanlanadi
+    if (userId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId }
+      });
+      
+      if (!user) {
+        throw new BadRequestException('User topilmadi');
+      }
     }
 
     // Customer yaratish yoki mavjudini topish
@@ -45,8 +44,8 @@ export class TransactionService {
       data: {
         ...transactionData,
         customerId,
-        userId: sellerUserId,
-        soldByUserId: sellerUserId, // Kim sotganini saqlaymiz (user relation ham shu bo'ladi)
+        userId,
+        soldByUserId: transactionData.soldByUserId, // Kim sotganini saqlaymiz
         items: {
           create: items.map(item => ({
             productId: item.productId,
