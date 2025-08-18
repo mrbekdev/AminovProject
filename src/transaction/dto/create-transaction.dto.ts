@@ -59,13 +59,15 @@ export class TransactionItemDto {
 }
 
 export class CreateTransactionDto {
+  @IsOptional()
   @IsNumber()
   @IsPositive()
-  userId: number;
+  userId?: number;
 
+  @IsOptional()
   @IsNumber()
   @IsPositive()
-  soldByUserId: number; // Kim sotganini saqlash uchun
+  soldByUserId?: number; // Kim sotganini saqlash uchun
 
   @IsNumber()
   @IsPositive()
