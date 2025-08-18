@@ -33,7 +33,10 @@ export class TransactionService {
         customerId = existingCustomer.id;
       } else {
         const newCustomer = await this.prisma.customer.create({
-          data: customer
+          data: {
+            fullName: customer.fullName ? customer.fullName : '',
+            phone: customer.phone ? customer.phone : '',
+          }
         });
         customerId = newCustomer.id;
       }

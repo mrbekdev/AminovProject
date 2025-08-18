@@ -137,7 +137,7 @@ model Product {
   quantity          Int
   defectiveQuantity Int            @default(0)
   returnedQuantity  Int            @default(0) // Qaytib olingan miqdori
-  exchangedQuantity Int            @default(0) // Almashtirilgan miqdori
+  exchangedQuantity Int            @default(0) 
   initialQuantity   Int            @default(0)
   status            ProductStatus  @default(IN_STORE)
   branchId          Int

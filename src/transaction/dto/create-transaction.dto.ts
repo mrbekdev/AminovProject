@@ -5,10 +5,10 @@ import { TransactionStatus, PaymentType, TransactionType } from '@prisma/client'
 
 export class CustomerDto {
   @IsString()
-  fullName: string;
+  fullName?: string;
 
   @IsString()
-  phone: string;
+  phone?: string;
 
   @IsOptional()
   @IsString()
