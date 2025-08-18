@@ -46,6 +46,17 @@ export class TransactionController {
     );
   }
 
+  @Get('debts')
+  getDebts(
+    @Query('branchId') branchId?: string,
+    @Query('customerId') customerId?: string
+  ) {
+    return this.transactionService.getDebts({
+      branchId: branchId ? parseInt(branchId) : undefined,
+      customerId: customerId ? parseInt(customerId) : undefined,
+    });
+  }
+
   @Get('pending-transfers')
   getPendingTransfers(@Query('branchId') branchId?: string) {
     return this.transactionService.getPendingTransfers(
