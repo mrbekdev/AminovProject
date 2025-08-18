@@ -181,7 +181,8 @@ export class TransactionService {
       customerId,
       startDate,
       endDate,
-      paymentType
+      paymentType,
+      productId
     } = query;
 
     console.log('=== BACKEND DEBUG ===');
@@ -202,6 +203,13 @@ export class TransactionService {
     }
     if (customerId) where.customerId = parseInt(customerId);
     if (paymentType) where.paymentType = paymentType;
+    if (productId) {
+      where.items = {
+        some: {
+          productId: parseInt(productId)
+        }
+      };
+    }
     
     if (startDate || endDate) {
       where.createdAt = {};
