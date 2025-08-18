@@ -44,7 +44,7 @@ export class TransactionService {
       data: {
         ...transactionData,
         customerId,
-        userId,
+        userId :transactionData.userId, // Agar userId berilmagan bo'lsa, current user ID sini ishlatamiz
         soldByUserId: transactionData.soldByUserId, // Kim sotganini saqlaymiz
         items: {
           create: items.map(item => ({

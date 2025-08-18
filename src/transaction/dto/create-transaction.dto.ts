@@ -20,7 +20,7 @@ export class CustomerDto {
 
   @IsOptional()
   @IsString()
-  passportSeries?: string; // Passport seriya raqami
+  passportSeries?: string; 
 
   @IsOptional()
   @IsString()
