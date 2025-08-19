@@ -647,4 +647,18 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
       return { message: 'Mahsulotlar muvaffaqiyatli o\'chirildi', count: ids.length };
     });
   }
+
+  // Hard delete many products
+  async hardRemoveMany(ids: number[]) {
+    return this.prisma.$transaction(async (tx) => {
+      const products = await tx.product.findMany({ where: { id: { in: ids } } });
+      if (products.length !== ids.length) {
+        throw new NotFoundException('Ba\'zi mahsulotlar topilmadi');
+      }
+      await tx.transactionItem.deleteMany({ where: { productId: { in: ids } } });
+      await tx.defectiveLog.deleteMany({ where: { productId: { in: ids } } });
+      const result = await tx.product.deleteMany({ where: { id: { in: ids } } });
+      return { message: 'Mahsulotlar to\'liq o\'chirildi', count: result.count };
+    });
+  }
 }

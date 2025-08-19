@@ -145,7 +145,14 @@ restoreDefectiveProduct(
   }
 
   @Delete('bulk')
-  bulkRemove(@Req() req: AuthRequest, @Body() body: { ids: number[] }) {
+  bulkRemove(
+    @Req() req: AuthRequest,
+    @Body() body: { ids: number[] },
+    @Query('hard') hard?: string,
+  ) {
+    if (hard === 'true') {
+      return this.productService.hardRemoveMany(body.ids);
+    }
     return this.productService.removeMany(body.ids, req.user.id);
   }
 }
