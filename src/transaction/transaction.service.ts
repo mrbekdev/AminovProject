@@ -22,7 +22,7 @@ export class TransactionService {
       }
     }
 
-    // Customer yaratish yoki mavjudini topish
+    // Customer yaratish yoki mavjudini yangilash (passportSeries va jshshir-ni ham saqlash)
     let customerId: number | null = null;
     if (customer) {
       const existingCustomer = await this.prisma.customer.findFirst({
@@ -31,11 +31,30 @@ export class TransactionService {
       
       if (existingCustomer) {
         customerId = existingCustomer.id;
+        // Agar yangi ma'lumotlar kelgan bo'lsa, ularni yangilaymiz
+        const updateData: any = {};
+        if (customer.fullName && customer.fullName !== existingCustomer.fullName) {
+          updateData.fullName = customer.fullName;
+        }
+        if (customer.passportSeries && customer.passportSeries !== existingCustomer.passportSeries) {
+          updateData.passportSeries = customer.passportSeries;
+        }
+        if (customer.jshshir && customer.jshshir !== existingCustomer.jshshir) {
+          updateData.jshshir = customer.jshshir;
+        }
+        if (Object.keys(updateData).length > 0) {
+          await this.prisma.customer.update({
+            where: { id: existingCustomer.id },
+            data: updateData
+          });
+        }
       } else {
         const newCustomer = await this.prisma.customer.create({
           data: {
             fullName: customer.fullName ? customer.fullName : '',
             phone: customer.phone ? customer.phone : '',
+            passportSeries: customer.passportSeries || null,
+            jshshir: customer.jshshir || null,
           }
         });
         customerId = newCustomer.id;
