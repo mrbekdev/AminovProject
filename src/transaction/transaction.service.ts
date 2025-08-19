@@ -203,11 +203,11 @@ export class TransactionService {
       paymentType,
       productId
     } = query;
-
+  
     console.log('=== BACKEND DEBUG ===');
     console.log('Query params:', query);
     console.log('BranchId:', branchId);
-
+  
     const where: any = {};
     
     if (type) where.type = type;
@@ -235,20 +235,11 @@ export class TransactionService {
       if (startDate) where.createdAt.gte = new Date(startDate);
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
-
-    // Pagination handling: support limit=all or limit<=0 to return all
-    const parsedLimit = typeof limit === 'string' ? parseInt(limit) : limit;
-    const returnAll = limit === 'all' || parsedLimit <= 0 || Number.isNaN(parsedLimit as number);
-
+  
     const total = await this.prisma.transaction.count({ where });
-
-    const effectiveTake = returnAll ? undefined : parsedLimit;
-    const effectiveSkip = returnAll ? undefined : (parseInt(page) - 1) * parsedLimit;
-
+  
     const transactions = await this.prisma.transaction.findMany({
       where,
-      skip: effectiveSkip,
-      take: effectiveTake,
       include: {
         customer: true,
         user: true,
@@ -262,14 +253,16 @@ export class TransactionService {
       },
       orderBy: { createdAt: 'desc' }
     });
-
+  
+    console.log('Transactions found:', transactions);
+  
     return {
       transactions,
       pagination: {
-        page: returnAll ? 1 : parseInt(page),
-        limit: returnAll ? total : parsedLimit,
+        page: parseInt(page),
+        limit: parseInt(limit),
         total,
-        pages: returnAll ? 1 : Math.ceil(total / parsedLimit)
+        pages: Math.ceil(total / limit)
       }
     };
   }
