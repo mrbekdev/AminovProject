@@ -8,9 +8,11 @@ export class BranchService {
   constructor(private prisma: PrismaService) {}
 
   async create(createBranchDto: CreateBranchDto) {
+    const { name, location } = createBranchDto as { name: string; location?: string };
     return this.prisma.branch.create({
       data: {
-        ...createBranchDto,
+        name,
+        address: location || null,
         createdAt: new Date(),
         updatedAt: new Date(),
       },
@@ -31,9 +33,14 @@ export class BranchService {
   }
 
   async update(id: number, updateBranchDto: UpdateBranchDto) {
+    const { name, location } = updateBranchDto as { name?: string; location?: string };
     return this.prisma.branch.update({
       where: { id },
-      data: { ...updateBranchDto, updatedAt: new Date() },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(location !== undefined ? { address: location } : {}),
+        updatedAt: new Date(),
+      },
     });
   }
 
