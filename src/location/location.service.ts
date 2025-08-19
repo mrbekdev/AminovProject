@@ -12,7 +12,7 @@ export interface UserLocationWithUser {
   user: {
     id: number;
     name: string;
-    email: string;
+    username?: string;
     role: string;
     branch?: {
       id: number;

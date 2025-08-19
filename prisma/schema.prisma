@@ -81,7 +81,7 @@ model User {
   firstName String?
   lastName  String?
   phone     String?  @unique
-  email     String?  @unique
+  username  String   @unique
   password  String?
   role      UserRole
   branchId  Int?

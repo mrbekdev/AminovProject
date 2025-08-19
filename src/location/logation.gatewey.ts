@@ -15,7 +15,7 @@ import { debounce } from 'lodash';
 
 interface AuthenticatedSocket extends Socket {
   userId?: number;
-  userData?: { sub: number; role: string; name?: string; email?: string; branch?: string };
+  userData?: { sub: number; role: string; name?: string; username?: string; branch?: string };
 }
 
 @WebSocketGateway({
@@ -71,7 +71,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         sub: payload.sub,
         role: payload.role,
         name: payload.name,
-        email: payload.email,
+        username: payload.username,
         branch: payload.branch,
       };
 

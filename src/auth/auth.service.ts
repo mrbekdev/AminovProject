@@ -12,10 +12,10 @@ export class AuthService {
         private prisma: PrismaService,
     ) { }
 
-    async login(email: string, password: string) {
-        console.log(email)
+    async login(username: string, password: string) {
+        console.log(username)
         console.log(password)
-        const user = await this.prisma.user.findUnique({ where: { email: email } });
+        const user = await this.prisma.user.findUnique({ where: { username } });
         if (!user) {
             throw new UnauthorizedException('Invalid credentials');
         }
@@ -29,7 +29,7 @@ export class AuthService {
             throw new UnauthorizedException('Invalid credentials');
         }
     
-        const payload = { email: user.email, sub: user.id, role: user.role };
+        const payload = { username: user.username, sub: user.id, role: user.role };
         const token = this.jwtService.sign(payload);
     
         return {
@@ -37,7 +37,7 @@ export class AuthService {
             access_token: token,
             user: {
                 id: user.id,
-                email: user.email,
+                username: user.username,
                 role: user.role,
                 branchId: user.branchId,
             },

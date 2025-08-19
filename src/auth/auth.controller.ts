@@ -15,7 +15,7 @@ export class AuthController {
     @ApiResponse({ status: 200, description: 'Muvaffaqiyatli kirish' })
     @ApiResponse({ status: 401, description: 'Noto\'g\'ri ma\'lumotlar' })
     async login(@Body() loginDto: LoginDto) {
-        return this.authService.login(loginDto.email, loginDto.password);
+        return this.authService.login(loginDto.username, loginDto.password);
     }
 
     @Get('profile')
