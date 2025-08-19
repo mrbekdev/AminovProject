@@ -524,43 +524,9 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
         throw new NotFoundException('Mahsulot topilmadi');
       }
 
-      const updatedProduct = await tx.product.update({
+      const updatedProduct = await this.prisma.product.delete({
         where: { id },
-        data: {
-          status: 'DEFECTIVE',
-          defectiveQuantity: product.quantity,
-          quantity: 0,
-        },
       });
-
-      if (product.quantity > 0) {
-        const transDesc = 'Mahsulot o\'chirilgani uchun defective qilindi';
-
-        const transaction = await tx.transaction.create({
-          data: {
-            userId,
-
-            type: 'WRITE_OFF',
-            status: 'COMPLETED',
-            discount: 0,
-            total: 0,
-            finalTotal: 0,
-            amountPaid: 0,
-            remainingBalance: 0,
-            description: transDesc,
-          },
-        });
-
-        await tx.transactionItem.create({
-          data: {
-            transactionId: transaction.id,
-            productId: id,
-            quantity: product.quantity,
-            price: 0,
-            total: 0,
-          },
-        });
-      }
 
       return updatedProduct;
     });
@@ -645,20 +611,6 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
       }
 
       return { message: 'Mahsulotlar muvaffaqiyatli o\'chirildi', count: ids.length };
-    });
-  }
-
-  // Hard delete many products
-  async hardRemoveMany(ids: number[]) {
-    return this.prisma.$transaction(async (tx) => {
-      const products = await tx.product.findMany({ where: { id: { in: ids } } });
-      if (products.length !== ids.length) {
-        throw new NotFoundException('Ba\'zi mahsulotlar topilmadi');
-      }
-      await tx.transactionItem.deleteMany({ where: { productId: { in: ids } } });
-      await tx.defectiveLog.deleteMany({ where: { productId: { in: ids } } });
-      const result = await tx.product.deleteMany({ where: { id: { in: ids } } });
-      return { message: 'Mahsulotlar to\'liq o\'chirildi', count: result.count };
     });
   }
 }
