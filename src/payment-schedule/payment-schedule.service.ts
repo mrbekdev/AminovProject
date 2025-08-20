@@ -30,7 +30,7 @@ export class PaymentScheduleService {
   }
 
   async update(id: number, updateData: any) {
-    const { paidAmount, isPaid, paidAt, ...rest } = updateData;
+    const { paidAmount, isPaid, paidAt, paidChannel, ...rest } = updateData;
 
     // Read existing schedule to compute effective values and access transactionId
     const existing = await this.prisma.paymentSchedule.findUnique({
@@ -53,6 +53,7 @@ export class PaymentScheduleService {
     if (effectivePaidAt) data.paidAt = effectivePaidAt;
     if (effectivePaidAt) data.repaymentDate = effectivePaidAt;
     if (paidAmount !== undefined) data.creditRepaymentAmount = newPaidAmount;
+    if (paidChannel) data.paidChannel = paidChannel;
 
     const schedule = await this.prisma.paymentSchedule.update({
       where: { id },

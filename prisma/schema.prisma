@@ -290,6 +290,7 @@ model PaymentSchedule {
   isPaid           Boolean  @default(false)
   paidAmount       Float    @default(0)
   paidAt           DateTime?
+  paidChannel      String?
   createdAt        DateTime @default(now())
   
   // Credit repayment tracking fields
