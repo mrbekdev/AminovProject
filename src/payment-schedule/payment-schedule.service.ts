@@ -18,7 +18,12 @@ export class PaymentScheduleService {
               }
             }
           }
-        }
+        },
+        repayments: {
+          include: { paidBy: true },
+          orderBy: { paidAt: 'asc' }
+        },
+        paidBy: true
       }
     });
 
@@ -30,79 +35,101 @@ export class PaymentScheduleService {
   }
 
   async update(id: number, updateData: any) {
-    const { paidAmount, isPaid, paidAt, paidChannel, paidByUserId, ...rest } = updateData;
+    const { paidAmount, isPaid, paidAt, paidChannel, paidByUserId, amountDelta, ...rest } = updateData;
 
-    // Read existing schedule to compute effective values and access transactionId
+    // Read existing schedule and related data to compute deltas and targets
     const existing = await this.prisma.paymentSchedule.findUnique({
       where: { id },
-      select: { transactionId: true, paidAmount: true, isPaid: true }
+      include: {
+        transaction: true
+      }
     });
 
     if (!existing) {
       throw new HttpException('Payment schedule not found', HttpStatus.NOT_FOUND);
     }
 
-    const newPaidAmount = paidAmount !== undefined ? Number(paidAmount) : existing.paidAmount || 0;
-    const effectivePaidAt = paidAt
-      ? new Date(paidAt)
-      : (newPaidAmount > 0 ? new Date() : undefined);
+    const existingPaidAmount = existing.paidAmount || 0;
+    const inputHasPaidAmount = paidAmount !== undefined && paidAmount !== null;
+    const inputHasDelta = amountDelta !== undefined && amountDelta !== null;
+    const deltaPaid = inputHasDelta
+      ? Math.max(0, Number(amountDelta))
+      : (inputHasPaidAmount ? Math.max(0, Number(paidAmount) - existingPaidAmount) : 0);
+    const requestedPaidAmount = inputHasDelta
+      ? existingPaidAmount + deltaPaid
+      : (inputHasPaidAmount ? Number(paidAmount) : existingPaidAmount);
+    const effectivePaidAt = paidAt ? new Date(paidAt) : (deltaPaid > 0 ? new Date() : undefined);
 
+    // Build schedule update data
     const data: any = { ...rest };
-    if (paidAmount !== undefined) data.paidAmount = newPaidAmount;
+    if (inputHasPaidAmount) data.paidAmount = requestedPaidAmount;
     if (typeof isPaid === 'boolean') data.isPaid = isPaid;
-    if (effectivePaidAt) data.paidAt = effectivePaidAt;
-    if (effectivePaidAt) data.repaymentDate = effectivePaidAt;
-    if (paidAmount !== undefined) data.creditRepaymentAmount = newPaidAmount;
+    if (effectivePaidAt) {
+      data.paidAt = effectivePaidAt;
+      data.repaymentDate = effectivePaidAt;
+    }
+    if (inputHasPaidAmount) data.creditRepaymentAmount = deltaPaid;
     if (paidChannel) data.paidChannel = paidChannel;
     if (paidByUserId) data.paidByUserId = Number(paidByUserId);
 
-    const schedule = await this.prisma.paymentSchedule.update({
-      where: { id },
-      data,
-      include: {
-        transaction: {
-          include: {
-            customer: true,
-            items: {
-              include: {
-                product: true
-              }
+    // Execute as a single DB transaction to keep ledger consistent
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updatedSchedule = await tx.paymentSchedule.update({
+        where: { id },
+        data,
+        include: {
+          transaction: {
+            include: {
+              customer: true,
+              items: { include: { product: true } }
             }
           }
         }
-      }
-    });
+      });
 
-    // Append a repayment history row if a payment occurred
-    try {
-      if (newPaidAmount && newPaidAmount > 0 && effectivePaidAt) {
-        await this.prisma.paymentRepayment.create({
+      // Append a repayment history row and update branch cash if there is a positive delta
+      if (deltaPaid > 0 && effectivePaidAt) {
+        await tx.paymentRepayment.create({
           data: {
-            transactionId: schedule.transactionId,
-            scheduleId: schedule.id,
-            amount: newPaidAmount,
+            transactionId: updatedSchedule.transactionId,
+            scheduleId: updatedSchedule.id,
+            amount: deltaPaid,
             channel: (paidChannel || 'CASH') as any,
             paidAt: effectivePaidAt,
-            paidByUserId: paidByUserId ? Number(paidByUserId) : null,
+            paidByUserId: paidByUserId ? Number(paidByUserId) : null
           }
         });
-      }
-    } catch (e) {
-      // ignore history write failures
-    }
 
-    // Update parent transaction with the last repayment date if we have a payment timestamp
-    if (effectivePaidAt) {
-      try {
-        await this.prisma.transaction.update({
-          where: { id: existing.transactionId },
-          data: { lastRepaymentDate: effectivePaidAt as any }
-        });
-      } catch (e) {
-        // If the column does not exist yet in DB, ignore silently to avoid breaking payment flow
-      }
-    }
+        // Decide which branch cashbox to increment: prefer cashier's branch, fallback to transaction's fromBranch
+        let targetBranchId: number | null = null;
+        if (paidByUserId) {
+          const cashier = await tx.user.findUnique({ where: { id: Number(paidByUserId) }, select: { branchId: true } });
+          if (cashier && cashier.branchId) targetBranchId = cashier.branchId;
+        }
+        if (!targetBranchId && existing.transaction?.fromBranchId) {
+          targetBranchId = existing.transaction.fromBranchId;
+        }
 
-    return schedule;
+        // Update branch cash only for CASH channel
+        if (targetBranchId && ((paidChannel || 'CASH').toUpperCase() === 'CASH')) {
+          await tx.branch.update({
+            where: { id: targetBranchId },
+            data: { cashBalance: { increment: deltaPaid } }
+          });
+        }
+
+        // Update parent transaction last repayment date
+        try {
+          await tx.transaction.update({
+            where: { id: existing.transactionId },
+            data: { lastRepaymentDate: effectivePaidAt as any }
+          });
+        } catch (_) {}
+      }
+
+      return updatedSchedule;
+    });
+
+    return result;
   }
 }

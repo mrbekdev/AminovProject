@@ -26,7 +26,7 @@ export class PaymentScheduleController {
   update(@Param('id') id: string, @Body() updateData: any, @Req() req: Request) {
     const body = updateData || {};
     const paidByUserId = body.paidByUserId ?? (req as any)?.user?.id ?? null;
-    const paidChannel = body.paidChannel;
+    const paidChannel = (body.paidChannel || 'CASH').toString();
     const paidAt = body.paidAt;
     return this.paymentScheduleService.update(+id, { ...body, paidByUserId, paidChannel, paidAt });
   }

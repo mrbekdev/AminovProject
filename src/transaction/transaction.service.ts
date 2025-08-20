@@ -65,13 +65,17 @@ export class TransactionService {
       }
     }
 
+    // Resolve created-by and sold-by users
+    const createdByUserId = userId ?? transactionData.userId ?? null;
+    const soldByUserId = (transactionData as any).soldByUserId ?? userId ?? createdByUserId ?? null;
+
     // Transaction yaratish
     const transaction = await this.prisma.transaction.create({
       data: {
         ...transactionData,
         customerId,
-        userId :transactionData.userId, // Agar userId berilmagan bo'lsa, current user ID sini ishlatamiz
-        soldByUserId: transactionData.soldByUserId, // Kim sotganini saqlaymiz
+        userId: createdByUserId || null, // yaratgan foydalanuvchi
+        soldByUserId: soldByUserId || null, // sotgan kassir
         items: {
           create: items.map(item => ({
             productId: item.productId,
@@ -300,8 +304,7 @@ export class TransactionService {
         paymentSchedules: {
           orderBy: { month: 'asc' },
           include: { paidBy: true }
-        },
-
+        }
       }
     });
 

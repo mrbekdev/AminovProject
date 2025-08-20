@@ -23,9 +23,13 @@ export class TransactionController {
 
   @Post()
   create(@Body() createTransactionDto: CreateTransactionDto, @CurrentUser() user: any) {
-    // soldByUserId ni DTO dan olamiz, agar yo'q bo'lsa current user ID sini ishlatamiz
-    const soldByUserId = createTransactionDto.soldByUserId || user.id;
-    return this.transactionService.create(createTransactionDto, soldByUserId);
+    // created-by va sold-by ni alohida beramiz: created-by = current user, sold-by = DTO yoki current user
+    const dtoWithSoldBy = {
+      ...createTransactionDto,
+      soldByUserId: createTransactionDto.soldByUserId || user.id,
+      userId: createTransactionDto.userId || user.id
+    } as any;
+    return this.transactionService.create(dtoWithSoldBy, user.id);
   }
 
   @Get()
