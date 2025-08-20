@@ -211,6 +211,11 @@ model Transaction {
   remainingBalance Float?
   receiptId        String?
   description      String?
+  
+  // Credit repayment tracking fields
+  creditRepaymentAmount Float? @default(0)
+  lastRepaymentDate    DateTime?
+  
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -286,6 +291,10 @@ model PaymentSchedule {
   paidAmount       Float    @default(0)
   paidAt           DateTime?
   createdAt        DateTime @default(now())
+  
+  // Credit repayment tracking fields
+  creditRepaymentAmount Float? @default(0)
+  repaymentDate        DateTime?
 
   transaction      Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 }
