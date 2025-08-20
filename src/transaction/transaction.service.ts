@@ -113,24 +113,31 @@ export class TransactionService {
 
   private async createPaymentSchedule(transactionId: number, items: any[], downPayment: number = 0) {
     const schedules: any[] = [];
-    
-    // Bitta transaction uchun bitta payment schedule yaratamiz
-    // Barcha itemlarni birlashtirib umumiy summani hisoblaymiz
-    let totalWithInterest = 0;
+
+    // Aggregate principal and determine weighted interest and months
+    let totalPrincipal = 0;
+    let weightedPercentSum = 0;
+    let percentWeightBase = 0;
     let totalMonths = 0;
-    
+
     for (const item of items) {
-      if (item.creditMonth && item.creditPercent) {
-        const itemTotal = item.price * item.quantity * (1 + item.creditPercent / 100);
-        totalWithInterest += itemTotal;
-        totalMonths = Math.max(totalMonths, item.creditMonth);
+      const principal = (item.price || 0) * (item.quantity || 0);
+      totalPrincipal += principal;
+      if (item.creditPercent) {
+        weightedPercentSum += principal * (item.creditPercent || 0);
+        percentWeightBase += principal;
+      }
+      if (item.creditMonth) {
+        totalMonths = Math.max(totalMonths, item.creditMonth || 0);
       }
     }
-    
-    if (totalWithInterest > 0 && totalMonths > 0) {
-      const remainingAfterDownPayment = totalWithInterest - downPayment;
-      const monthlyPayment = remainingAfterDownPayment / totalMonths;
-      let remainingBalance = remainingAfterDownPayment;
+
+    if (totalPrincipal > 0 && totalMonths > 0) {
+      const remainingPrincipal = Math.max(0, totalPrincipal - (downPayment || 0));
+      const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
+      const totalWithInterest = remainingPrincipal * (1 + (effectivePercent / 100));
+      const monthlyPayment = totalWithInterest / totalMonths;
+      let remainingBalance = totalWithInterest;
 
       for (let month = 1; month <= totalMonths; month++) {
         remainingBalance -= monthlyPayment;
