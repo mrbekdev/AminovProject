@@ -42,6 +42,9 @@ export class TransactionService {
         if (customer.jshshir && customer.jshshir !== existingCustomer.jshshir) {
           updateData.jshshir = customer.jshshir;
         }
+        if (typeof customer.address === 'string' && customer.address !== existingCustomer.address) {
+          updateData.address = customer.address;
+        }
         if (Object.keys(updateData).length > 0) {
           await this.prisma.customer.update({
             where: { id: existingCustomer.id },
@@ -55,6 +58,7 @@ export class TransactionService {
             phone: customer.phone ? customer.phone : '',
             passportSeries: customer.passportSeries || null,
             jshshir: customer.jshshir || null,
+            address: customer.address || null,
           }
         });
         customerId = newCustomer.id;
@@ -296,7 +300,7 @@ export class TransactionService {
         paymentSchedules: {
           orderBy: { month: 'asc' },
           include: { paidBy: true }
-        }
+        },
 
       }
     });
