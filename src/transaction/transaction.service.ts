@@ -256,7 +256,7 @@ export class TransactionService {
         items: {
           include: { product: true }
         },
-        paymentSchedules: { orderBy: { month: 'asc' } }
+        paymentSchedules: { orderBy: { month: 'asc' }, include: { paidBy: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -294,7 +294,8 @@ export class TransactionService {
           }
         },
         paymentSchedules: {
-          orderBy: { month: 'asc' }
+          orderBy: { month: 'asc' },
+          include: { paidBy: true }
         }
       }
     });
