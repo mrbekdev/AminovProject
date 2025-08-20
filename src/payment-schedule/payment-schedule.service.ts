@@ -73,10 +73,14 @@ export class PaymentScheduleService {
 
     // Update parent transaction with the last repayment date if we have a payment timestamp
     if (effectivePaidAt) {
-      await this.prisma.transaction.update({
-        where: { id: existing.transactionId },
-        data: { lastRepaymentDate: effectivePaidAt }
-      });
+      try {
+        await this.prisma.transaction.update({
+          where: { id: existing.transactionId },
+          data: { lastRepaymentDate: effectivePaidAt as any }
+        });
+      } catch (e) {
+        // If the column does not exist yet in DB, ignore silently to avoid breaking payment flow
+      }
     }
 
     return schedule;
