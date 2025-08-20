@@ -57,12 +57,12 @@ enum ProductStatus {
 }
 
 model Branch {
-  id        Int      @id @default(autoincrement())
-  name      String
-  address   String?
-  cashBalance Float  @default(0) // Kassadagi pul miqdori
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  name        String
+  address     String?
+  cashBalance Float    @default(0) // Kassadagi pul miqdori
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   products       Product[]
   transactions   Transaction[]     @relation("FromBranch")
@@ -95,6 +95,7 @@ model User {
   approvedTransfers   ProductTransfer[] @relation("ApprovedTransfers")
   userLocations       UserLocation[]
   defectiveLogs       DefectiveLog[]
+  PaymentSchedule     PaymentSchedule[]
 
   @@index([phone])
   @@index([branchId])
@@ -129,17 +130,17 @@ model Category {
 }
 
 model Product {
-  id                Int            @id @default(autoincrement())
+  id                Int           @id @default(autoincrement())
   name              String
-  barcode           String?        @unique
+  barcode           String?       @unique
   model             String?
   price             Float
   quantity          Int
-  defectiveQuantity Int            @default(0)
-  returnedQuantity  Int            @default(0) // Qaytib olingan miqdori
-  exchangedQuantity Int            @default(0) 
-  initialQuantity   Int            @default(0)
-  status            ProductStatus  @default(IN_STORE)
+  defectiveQuantity Int           @default(0)
+  returnedQuantity  Int           @default(0) // Qaytib olingan miqdori
+  exchangedQuantity Int           @default(0)
+  initialQuantity   Int           @default(0)
+  status            ProductStatus @default(IN_STORE)
   branchId          Int
   categoryId        Int
   marketPrice       Float?
@@ -172,15 +173,15 @@ model DefectiveLog {
 }
 
 model Customer {
-  id        Int     @id @default(autoincrement())
-  fullName  String
-  phone     String  @unique
-  email     String? @unique
-  address   String?
+  id             Int      @id @default(autoincrement())
+  fullName       String
+  phone          String   @unique
+  email          String?  @unique
+  address        String?
   passportSeries String? // Passport seriya raqami
-  jshshir   String? // JSHSHIR raqami
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  jshshir        String? // JSHSHIR raqami
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   transactions Transaction[]
 
@@ -197,34 +198,34 @@ model Transaction {
   fromBranchId     Int? // Qaysi filialdan chiqayotgani (SALE, PURCHASE, TRANSFER uchun)
   toBranchId       Int? // Qaysi filialga ketayotgani (TRANSFER uchun)
   type             TransactionType
-  transactionType  String?           // Qo'shimcha transaction turi (SALE, PURCHASE, TRANSFER, RETURN, etc.)
+  transactionType  String? // Qo'shimcha transaction turi (SALE, PURCHASE, TRANSFER, RETURN, etc.)
   status           TransactionStatus @default(PENDING)
   discount         Float             @default(0)
   total            Float
   finalTotal       Float
   paymentType      PaymentType?
   deliveryMethod   String?
-  deliveryType     String?           // PICKUP or DELIVERY
-  deliveryAddress  String?           // Delivery address for customer
+  deliveryType     String? // PICKUP or DELIVERY
+  deliveryAddress  String? // Delivery address for customer
   amountPaid       Float?
-  downPayment      Float? 
+  downPayment      Float?
   remainingBalance Float?
   receiptId        String?
   description      String?
-  
-  // Credit repayment tracking fields
-  creditRepaymentAmount Float? @default(0)
-  lastRepaymentDate    DateTime?
-  
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
 
-  customer Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  user     User?             @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  soldBy   User?             @relation("TransactionsSoldBy", fields: [soldByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  fromBranch Branch?         @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  toBranch  Branch?          @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  items    TransactionItem[]
+  // Credit repayment tracking fields
+  creditRepaymentAmount Float?    @default(0)
+  lastRepaymentDate     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  user             User?             @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  soldBy           User?             @relation("TransactionsSoldBy", fields: [soldByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  fromBranch       Branch?           @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  toBranch         Branch?           @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  items            TransactionItem[]
   paymentSchedules PaymentSchedule[]
 
   @@index([customerId])
@@ -282,20 +283,22 @@ model ProductTransfer {
 }
 
 model PaymentSchedule {
-  id               Int      @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   transactionId    Int
   month            Int
   payment          Float
   remainingBalance Float
-  isPaid           Boolean  @default(false)
-  paidAmount       Float    @default(0)
+  isPaid           Boolean   @default(false)
+  paidAmount       Float     @default(0)
   paidAt           DateTime?
   paidChannel      String?
-  createdAt        DateTime @default(now())
-  
-  // Credit repayment tracking fields
-  creditRepaymentAmount Float? @default(0)
-  repaymentDate        DateTime?
+  paidByUserId     Int?
+  createdAt        DateTime  @default(now())
 
-  transaction      Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  // Credit repayment tracking fields
+  creditRepaymentAmount Float?    @default(0)
+  repaymentDate         DateTime?
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  paidBy      User?       @relation(fields: [paidByUserId], references: [id])
 }
