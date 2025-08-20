@@ -8,6 +8,8 @@ import {
   Put,
 } from '@nestjs/common';
 import { PaymentScheduleService } from './payment-schedule.service';
+import { Request } from 'express';
+import { Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('payment-schedules')
@@ -21,7 +23,11 @@ export class PaymentScheduleController {
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() updateData: any) {
-    return this.paymentScheduleService.update(+id, updateData);
+  update(@Param('id') id: string, @Body() updateData: any, @Req() req: Request) {
+    const body = updateData || {};
+    const paidByUserId = body.paidByUserId ?? (req as any)?.user?.id ?? null;
+    const paidChannel = body.paidChannel;
+    const paidAt = body.paidAt;
+    return this.paymentScheduleService.update(+id, { ...body, paidByUserId, paidChannel, paidAt });
   }
 }

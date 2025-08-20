@@ -73,6 +73,24 @@ export class PaymentScheduleService {
       }
     });
 
+    // Append a repayment history row if a payment occurred
+    try {
+      if (newPaidAmount && newPaidAmount > 0 && effectivePaidAt) {
+        await this.prisma.paymentRepayment.create({
+          data: {
+            transactionId: schedule.transactionId,
+            scheduleId: schedule.id,
+            amount: newPaidAmount,
+            channel: (paidChannel || 'CASH') as any,
+            paidAt: effectivePaidAt,
+            paidByUserId: paidByUserId ? Number(paidByUserId) : null,
+          }
+        });
+      }
+    } catch (e) {
+      // ignore history write failures
+    }
+
     // Update parent transaction with the last repayment date if we have a payment timestamp
     if (effectivePaidAt) {
       try {

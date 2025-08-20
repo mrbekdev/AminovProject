@@ -297,6 +297,7 @@ export class TransactionService {
           orderBy: { month: 'asc' },
           include: { paidBy: true }
         }
+
       }
     });
 

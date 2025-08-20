@@ -88,14 +88,15 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branch              Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  createdTransactions Transaction[]     @relation("TransactionsCreatedBy")
-  soldTransactions    Transaction[]     @relation("TransactionsSoldBy")
-  initiatedTransfers  ProductTransfer[] @relation("InitiatedTransfers")
-  approvedTransfers   ProductTransfer[] @relation("ApprovedTransfers")
+  branch              Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdTransactions Transaction[]      @relation("TransactionsCreatedBy")
+  soldTransactions    Transaction[]      @relation("TransactionsSoldBy")
+  initiatedTransfers  ProductTransfer[]  @relation("InitiatedTransfers")
+  approvedTransfers   ProductTransfer[]  @relation("ApprovedTransfers")
   userLocations       UserLocation[]
   defectiveLogs       DefectiveLog[]
   PaymentSchedule     PaymentSchedule[]
+  PaymentRepayment    PaymentRepayment[]
 
   @@index([phone])
   @@index([branchId])
@@ -220,13 +221,14 @@ model Transaction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  user             User?             @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  soldBy           User?             @relation("TransactionsSoldBy", fields: [soldByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  fromBranch       Branch?           @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  toBranch         Branch?           @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  customer         Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  user             User?              @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  soldBy           User?              @relation("TransactionsSoldBy", fields: [soldByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  fromBranch       Branch?            @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  toBranch         Branch?            @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   items            TransactionItem[]
   paymentSchedules PaymentSchedule[]
+  PaymentRepayment PaymentRepayment[]
 
   @@index([customerId])
   @@index([userId])
@@ -299,6 +301,26 @@ model PaymentSchedule {
   creditRepaymentAmount Float?    @default(0)
   repaymentDate         DateTime?
 
-  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  paidBy      User?       @relation(fields: [paidByUserId], references: [id])
+  transaction Transaction        @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  paidBy      User?              @relation(fields: [paidByUserId], references: [id])
+  repayments  PaymentRepayment[]
+}
+
+model PaymentRepayment {
+  id            Int      @id @default(autoincrement())
+  transactionId Int
+  scheduleId    Int
+  amount        Float
+  channel       String   @default("CASH") // CASH or CARD
+  paidAt        DateTime @default(now())
+  paidByUserId  Int?
+  createdAt     DateTime @default(now())
+
+  transaction Transaction     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  schedule    PaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  paidBy      User?           @relation(fields: [paidByUserId], references: [id])
+
+  @@index([transactionId])
+  @@index([scheduleId])
+  @@index([paidAt])
 }
