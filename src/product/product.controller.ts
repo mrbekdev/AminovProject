@@ -58,10 +58,6 @@ export class ProductController {
     return this.productService.getFixedProducts(parsedBranchId);
   }
 
-  @Get('barcode/:barcode')
-  findByBarcode(@Param('barcode') barcode: string) {
-    return this.productService.findByBarcode(barcode);
-  }
 
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {

@@ -135,7 +135,7 @@ model Category {
 model Product {
   id                Int           @id @default(autoincrement())
   name              String
-  barcode           String?       @unique
+  barcode           String?       
   model             String?
   price             Float
   quantity          Int

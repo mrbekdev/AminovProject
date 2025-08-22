@@ -158,17 +158,6 @@ export class ProductService {
     };
   }
 
-  async findByBarcode(barcode: string) {
-    const product = await this.prisma.product.findUnique({
-      where: { barcode },
-      include: { category: true, branch: true },
-    });
-    if (!product) {
-      throw new NotFoundException('Mahsulot topilmadi');
-    }
-    return product;
-  }
-
   async update(id: number, updateProductDto: UpdateProductDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
       const product = await tx.product.findUnique({ where: { id } });
