@@ -4,10 +4,14 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Prisma, ProductStatus } from '@prisma/client';
 import * as XLSX from 'xlsx';
+import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
 
 @Injectable()
 export class ProductService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private currencyExchangeRateService: CurrencyExchangeRateService,
+  ) {}
 
   async create(createProductDto: CreateProductDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
@@ -69,22 +73,89 @@ export class ProductService {
     if (!includeZeroQuantity) {
       where.quantity = { gt: 0 };
     }
-    return this.prisma.product.findMany({
+    const products = await this.prisma.product.findMany({
       where,
       include: { category: true, branch: true },
       orderBy: { id: 'asc' },
     });
+
+    // Convert prices to som for display
+    const productsWithSomPrices = await Promise.all(
+      products.map(async (product) => {
+        const priceInSom = await this.currencyExchangeRateService.convertCurrency(
+          product.price,
+          'USD',
+          'UZS',
+          product.branchId,
+        );
+        return {
+          ...product,
+          priceInSom,
+          priceInDollar: product.price,
+        };
+      }),
+    );
+
+    return productsWithSomPrices;
   }
 
   async findOne(id: number) {
     const product = await this.prisma.product.findUnique({
       where: { id },
-      include: { category: true, branch: true },
+      include: {
+        branch: true,
+        category: true,
+      },
     });
+
     if (!product) {
       throw new NotFoundException('Mahsulot topilmadi');
     }
-    return product;
+    
+    // Convert price to som for display
+    const priceInSom = await this.currencyExchangeRateService.convertCurrency(
+      product.price,
+      'USD',
+      'UZS',
+      product.branchId,
+    );
+
+    return {
+      ...product,
+      priceInSom,
+      priceInDollar: product.price,
+    };
+  }
+
+  async findOneByBranch(id: number, branchId: number) {
+    const product = await this.prisma.product.findFirst({
+      where: { 
+        id,
+        branchId 
+      },
+      include: {
+        branch: true,
+        category: true,
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Mahsulot topilmadi');
+    }
+    
+    // Convert price to som for display
+    const priceInSom = await this.currencyExchangeRateService.convertCurrency(
+      product.price,
+      'USD',
+      'UZS',
+      product.branchId,
+    );
+
+    return {
+      ...product,
+      priceInSom,
+      priceInDollar: product.price,
+    };
   }
 
   async findByBarcode(barcode: string) {
@@ -487,7 +558,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
       where.branchId = branchId;
     }
 
-    return this.prisma.product.findMany({
+    const products = await this.prisma.product.findMany({
       where,
       include: {
         category: true,
@@ -495,6 +566,25 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
       },
       orderBy: { id: 'asc' },
     });
+
+    // Convert prices to som for display
+    const productsWithSomPrices = await Promise.all(
+      products.map(async (product) => {
+        const priceInSom = await this.currencyExchangeRateService.convertCurrency(
+          product.price,
+          'USD',
+          'UZS',
+          product.branchId,
+        );
+        return {
+          ...product,
+          priceInSom,
+          priceInDollar: product.price,
+        };
+      }),
+    );
+
+    return productsWithSomPrices;
   }
 
   // Fixed mahsulotlar ro'yxati
@@ -507,7 +597,7 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
       where.branchId = branchId;
     }
 
-    return this.prisma.product.findMany({
+    const products = await this.prisma.product.findMany({
       where,
       include: {
         category: true,
@@ -515,6 +605,25 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
       },
       orderBy: { id: 'asc' },
     });
+
+    // Convert prices to som for display
+    const productsWithSomPrices = await Promise.all(
+      products.map(async (product) => {
+        const priceInSom = await this.currencyExchangeRateService.convertCurrency(
+          product.price,
+          'USD',
+          'UZS',
+          product.branchId,
+        );
+        return {
+          ...product,
+          priceInSom,
+          priceInDollar: product.price,
+        };
+      }),
+    );
+
+    return productsWithSomPrices;
   }
 
   async remove(id: number, userId: number) {
@@ -612,5 +721,31 @@ async markPartialDefective(id: number, defectiveCount: number, description: stri
 
       return { message: 'Mahsulotlar muvaffaqiyatli o\'chirildi', count: ids.length };
     });
+  }
+
+  async getPriceInSom(productId: number, branchId?: number) {
+    const product = branchId 
+      ? await this.findOneByBranch(productId, branchId)
+      : await this.findOne(productId);
+      
+    if (!product) return null;
+
+    return {
+      priceInDollar: product.price,
+      priceInSom: product.priceInSom,
+    };
+  }
+
+  async getPriceInDollar(productId: number, branchId?: number) {
+    const product = branchId 
+      ? await this.findOneByBranch(productId, branchId)
+      : await this.findOne(productId);
+      
+    if (!product) return null;
+
+    return {
+      priceInDollar: product.price,
+      priceInSom: product.priceInSom,
+    };
   }
 }

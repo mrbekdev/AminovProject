@@ -3,10 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { TransactionType, TransactionStatus, PaymentType } from '@prisma/client';
+import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
 
 @Injectable()
 export class TransactionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private currencyExchangeRateService: CurrencyExchangeRateService,
+  ) {}
 
   async create(createTransactionDto: CreateTransactionDto, userId?: number) {
     const { items, customer, ...transactionData } = createTransactionDto;
@@ -952,5 +956,68 @@ export class TransactionService {
       totalTransfers: transfers._sum.finalTotal || 0,
       transferTransactions: transfers._count || 0
     };
-}
+  }
+
+  // Currency conversion methods
+  async getTransactionWithCurrencyConversion(id: number, branchId?: number) {
+    const transaction = await this.findOne(id);
+    if (!transaction) return null;
+
+    // Convert totals to som
+    const totalInSom = await this.currencyExchangeRateService.convertCurrency(
+      transaction.total,
+      'USD',
+      'UZS',
+      branchId || transaction.fromBranchId || undefined,
+    );
+
+    const finalTotalInSom = await this.currencyExchangeRateService.convertCurrency(
+      transaction.finalTotal,
+      'USD',
+      'UZS',
+      branchId || transaction.fromBranchId || undefined,
+    );
+
+    return {
+      ...transaction,
+      totalInSom,
+      finalTotalInSom,
+      totalInDollar: transaction.total,
+      finalTotalInDollar: transaction.finalTotal,
+    };
+  }
+
+  async getTransactionsWithCurrencyConversion(branchId?: number, startDate?: string, endDate?: string) {
+    const result = await this.findAll({ branchId, startDate, endDate });
+    const transactions = result.transactions;
+    
+    // Convert all transaction totals to som
+    const transactionsWithCurrency = await Promise.all(
+      transactions.map(async (transaction) => {
+        const totalInSom = await this.currencyExchangeRateService.convertCurrency(
+          transaction.total,
+          'USD',
+          'UZS',
+          branchId || transaction.fromBranchId || undefined,
+        );
+
+        const finalTotalInSom = await this.currencyExchangeRateService.convertCurrency(
+          transaction.finalTotal,
+          'USD',
+          'UZS',
+          branchId || transaction.fromBranchId || undefined,
+        );
+
+        return {
+          ...transaction,
+          totalInSom,
+          finalTotalInSom,
+          totalInDollar: transaction.total,
+          finalTotalInDollar: transaction.finalTotal,
+        };
+      }),
+    );
+
+    return transactionsWithCurrency;
+  }
 }

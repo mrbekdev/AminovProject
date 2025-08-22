@@ -72,6 +72,7 @@ model Branch {
   fromTransfers  ProductTransfer[] @relation("FromBranch")
   toTransfers    ProductTransfer[] @relation("ToBranch")
   defectiveLogs  DefectiveLog[]
+  exchangeRates  CurrencyExchangeRate[]
 
   @@index([name])
 }
@@ -97,6 +98,7 @@ model User {
   defectiveLogs       DefectiveLog[]
   PaymentSchedule     PaymentSchedule[]
   PaymentRepayment    PaymentRepayment[]
+  exchangeRates       CurrencyExchangeRate[]
 
   @@index([phone])
   @@index([branchId])
@@ -323,4 +325,25 @@ model PaymentRepayment {
   @@index([transactionId])
   @@index([scheduleId])
   @@index([paidAt])
+}
+
+model CurrencyExchangeRate {
+  id          Int      @id @default(autoincrement())
+  fromCurrency String  @default("USD") // From currency (e.g., USD)
+  toCurrency   String  @default("UZS") // To currency (e.g., UZS)
+  rate         Float   // Exchange rate (e.g., 1 USD = 12500 UZS)
+  isActive     Boolean @default(true)
+  branchId     Int?    // If null, applies to all branches
+  createdBy    Int?    // User who created this rate
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  user   User?   @relation(fields: [createdBy], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@unique([fromCurrency, toCurrency, branchId])
+  @@index([fromCurrency])
+  @@index([toCurrency])
+  @@index([branchId])
+  @@index([isActive])
 }
