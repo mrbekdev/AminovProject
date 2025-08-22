@@ -12,13 +12,14 @@ import { LocationModule } from './location/location.module';
 import { CustomerModule } from './customer/customer.module';
 import { PaymentScheduleModule } from './payment-schedule/payment-schedule.module';
 import { DefectiveLogModule } from './defective-log/defective-log.module';
+import { CurrencyExchangeRateModule } from './currency-exchange-rate/currency-exchange-rate.module';
 
 
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule,
+    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule,CurrencyExchangeRateModule
   ],
   controllers: [AppController],
   providers: [AppService],
