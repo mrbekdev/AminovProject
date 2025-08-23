@@ -682,7 +682,7 @@ export class ProductService {
     }
   }
 
-async removeMany(ids: number[],userId:number) {
+async removeMany(ids: number[]) {
   const [products, deleted] = await this.prisma.$transaction([
     this.prisma.product.findMany({
       where: { id: { in: ids } },
