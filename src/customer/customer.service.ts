@@ -68,12 +68,86 @@ export class CustomerService {
       ];
     }
 
-    return this.prisma.customer.findMany({
+    const customers = await this.prisma.customer.findMany({
       skip,
       take,
       where,
-      include: { transactions: { include: { items: { include: { product: true } } } } },
+      include: { 
+        transactions: { 
+          include: { 
+            items: { include: { product: true } },
+            paymentSchedules: {
+              include: {
+                paidBy: true
+              }
+            }
+          } 
+        } 
+      },
     });
+
+    // Calculate rating for each customer and sort by rating
+    const customersWithRating = customers.map(customer => {
+      const creditTransactions = customer.transactions.filter(t => 
+        t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT'
+      );
+
+      let totalMonths = 0;
+      let goodMonths = 0;
+      let badMonths = 0;
+      let totalCredit = 0;
+      let totalPaid = 0;
+      let totalRemaining = 0;
+
+      creditTransactions.forEach(transaction => {
+        totalCredit += transaction.finalTotal || 0;
+        totalPaid += transaction.amountPaid || 0;
+        totalRemaining += transaction.remainingBalance || 0;
+
+        transaction.paymentSchedules.forEach(schedule => {
+          totalMonths++;
+          if (schedule.rating === 'YAXSHI') {
+            goodMonths++;
+          } else if (schedule.rating === 'YOMON') {
+            badMonths++;
+          }
+        });
+      });
+
+      // Calculate rating score (bad customers first, good customers last)
+      let ratingScore = 0;
+      if (totalMonths > 0) {
+        const badRatio = badMonths / totalMonths;
+        const goodRatio = goodMonths / totalMonths;
+        
+        if (badRatio > goodRatio) {
+          ratingScore = badRatio; // Higher score = worse rating
+        } else {
+          ratingScore = 0.5 - goodRatio; // Lower score = better rating
+        }
+      }
+
+      return {
+        ...customer,
+        rating: {
+          totalMonths,
+          goodMonths,
+          badMonths,
+          totalCredit,
+          totalPaid,
+          totalRemaining,
+          ratingScore,
+          isGood: goodMonths > badMonths,
+          isBad: badMonths > goodMonths,
+          isNeutral: goodMonths === badMonths
+        }
+      };
+    });
+
+    // Sort by rating score (bad customers first)
+    customersWithRating.sort((a, b) => b.rating.ratingScore - a.rating.ratingScore);
+
+    return customersWithRating;
   }
 
   async update(id: number, updateCustomerDto: UpdateCustomerDto) {

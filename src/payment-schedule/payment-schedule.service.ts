@@ -35,7 +35,7 @@ export class PaymentScheduleService {
   }
 
   async update(id: number, updateData: any) {
-    const { paidAmount, isPaid, paidAt, paidChannel, paidByUserId, amountDelta, ...rest } = updateData;
+    const { paidAmount, isPaid, paidAt, paidChannel, paidByUserId, amountDelta, rating, ...rest } = updateData;
 
     // Read existing schedule and related data to compute deltas and targets
     const existing = await this.prisma.paymentSchedule.findUnique({
@@ -71,6 +71,7 @@ export class PaymentScheduleService {
     if (inputHasPaidAmount) data.creditRepaymentAmount = deltaPaid;
     if (paidChannel) data.paidChannel = paidChannel;
     if (paidByUserId) data.paidByUserId = Number(paidByUserId);
+    if (rating) data.rating = rating;
 
     // Execute as a single DB transaction to keep ledger consistent
     const result = await this.prisma.$transaction(async (tx) => {

@@ -141,7 +141,7 @@ restoreDefectiveProduct(
   }
 
   @Delete('bulk')
-  bulkRemove(@Req()  @Body() body: { ids: number[] }) {
+  bulkRemove(@Req() req: AuthRequest, @Body() body: { ids: number[] }) {
     return this.productService.removeMany(body.ids);
   }
 }

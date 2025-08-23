@@ -700,6 +700,8 @@ async removeMany(ids: number[]) {
   };
 }
 
+
+
   async getPriceInSom(productId: number, branchId?: number) {
     const product = branchId 
       ? await this.findOneByBranch(productId, branchId)

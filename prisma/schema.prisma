@@ -308,6 +308,9 @@ model PaymentSchedule {
   creditRepaymentAmount Float?    @default(0)
   repaymentDate         DateTime?
 
+  // Credit rating field
+  rating              String?    // "YAXSHI" or "YOMON"
+
   transaction Transaction        @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   paidBy      User?              @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   repayments  PaymentRepayment[]
