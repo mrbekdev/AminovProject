@@ -690,7 +690,7 @@ async removeMany(ids: number[]) {
   }
   return await tx.product.deleteMany({ where: { id: { in: ids } } });
 }, {
-  timeout: 200000, 
+  timeout: 2000000, 
 });
     return `${products.count} ta mahsulot muvaffaqiyatli o'chirildi`;
 }
