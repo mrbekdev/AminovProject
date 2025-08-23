@@ -683,17 +683,22 @@ export class ProductService {
   }
 
 async removeMany(ids: number[],userId:number) {
-  const result = await this.prisma.product.deleteMany({
-    where: { id: { in: ids } },
-  });
+  const [products, deleted] = await this.prisma.$transaction([
+    this.prisma.product.findMany({
+      where: { id: { in: ids } },
+    }),
+    this.prisma.product.deleteMany({
+      where: { id: { in: ids } },
+    }),
+  ]);
 
-  if (result.count !== ids.length) {
+  if (products.length !== ids.length) {
     throw new NotFoundException("Ba'zi mahsulotlar topilmadi");
   }
 
   return {
     message: "Mahsulotlar muvaffaqiyatli o'chirildi",
-    count: result.count,
+    count: deleted.count,
   };
 }
 
