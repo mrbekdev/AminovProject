@@ -683,10 +683,6 @@ export class ProductService {
   }
 
 async removeMany(ids: number[]) {
-  const batchSize = 7;
-  let totalDeleted = 0;
-
-  // Hammasini oldin tekshirib olamiz
   const products = await this.prisma.product.findMany({
     where: { id: { in: ids } },
   });
@@ -695,20 +691,14 @@ async removeMany(ids: number[]) {
     throw new NotFoundException("Ba'zi mahsulotlar topilmadi");
   }
 
-  // 7 tadan bo‘lib o‘chiramiz
-  for (let i = 0; i < ids.length; i += batchSize) {
-    const batch = ids.slice(i, i + batchSize);
-
-    const deleted = await this.prisma.product.deleteMany({
-      where: { id: { in: batch } },
-    });
-
-    totalDeleted += deleted.count;
-  }
-
-  return `${totalDeleted} ta mahsulot muvaffaqiyatli o'chirildi`;
+  const deleted = await this.prisma.product.deleteMany({
+    where: { id: { in: ids } },
+  });
+  return {
+    message: "Mahsulotlar muvaffaqiyatli o'chirildi",
+    count: deleted.count,
+  };
 }
-
 
   async getPriceInSom(productId: number, branchId?: number) {
     const product = branchId 
