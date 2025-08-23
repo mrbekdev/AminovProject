@@ -19,7 +19,7 @@ import { CurrencyExchangeRateModule } from './currency-exchange-rate/currency-ex
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, LocationModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule,CurrencyExchangeRateModule
+    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule,CurrencyExchangeRateModule
   ],
   controllers: [AppController],
   providers: [AppService],
