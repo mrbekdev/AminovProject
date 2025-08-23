@@ -682,15 +682,23 @@ export class ProductService {
     }
   }
 
-async removeAll() {
-  const deleted = await this.prisma.product.deleteMany();
+async removeMany(ids: number[]) {
+  const products = await this.prisma.product.findMany({
+    where: { id: { in: ids } },
+  });
+
+  if (products.length !== ids.length) {
+    throw new NotFoundException("Ba'zi mahsulotlar topilmadi");
+  }
+
+  const deleted = await this.prisma.product.deleteMany({
+    where: { id: { in: ids } },
+  });
   return {
-    message: "Barcha mahsulotlar muvaffaqiyatli o'chirildi",
+    message: "Mahsulotlar muvaffaqiyatli o'chirildi",
     count: deleted.count,
   };
 }
-
-
 
   async getPriceInSom(productId: number, branchId?: number) {
     const product = branchId 

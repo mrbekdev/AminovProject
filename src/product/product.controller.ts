@@ -21,7 +21,6 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { BulkDeleteDto } from './dto/bulk-delete.dto';
 
 interface AuthRequest extends Request {
   user: { id: number };
@@ -141,10 +140,8 @@ restoreDefectiveProduct(
     return this.productService.uploadExcel(file, branchId, categoryId, status, req.user.id);
   }
 
-@Delete('bulk')
-async bulkRemove() {
-  return this.productService.removeAll();
-}
-
-
+  @Delete('bulk')
+  bulkRemove(@Req()  @Body() body: { ids: number[] }) {
+    return this.productService.removeMany(body.ids);
+  }
 }
