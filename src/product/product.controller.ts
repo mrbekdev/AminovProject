@@ -143,7 +143,7 @@ restoreDefectiveProduct(
 
 @Delete('bulk')
 bulkRemove() {
-  return this.productService.removeMany();
+  return this.productService.removeAll();
 }
 
 }
