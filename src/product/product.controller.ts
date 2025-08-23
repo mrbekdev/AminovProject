@@ -142,8 +142,9 @@ restoreDefectiveProduct(
   }
 
 @Delete('bulk')
-bulkRemove() {
+async bulkRemove() {
   return this.productService.removeAll();
 }
+
 
 }

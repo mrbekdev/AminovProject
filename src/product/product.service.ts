@@ -683,12 +683,13 @@ export class ProductService {
   }
 
 async removeAll() {
-  const deleted = await this.prisma.product.deleteMany(); // hech qanday filter berilmagan
+  const deleted = await this.prisma.product.deleteMany();
   return {
     message: "Barcha mahsulotlar muvaffaqiyatli o'chirildi",
     count: deleted.count,
   };
 }
+
 
 
   async getPriceInSom(productId: number, branchId?: number) {
