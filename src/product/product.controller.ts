@@ -142,8 +142,8 @@ restoreDefectiveProduct(
   }
 
 @Delete('bulk')
-bulkRemove(@Body() body: BulkDeleteDto) {
-  return this.productService.removeMany(body.ids);
+bulkRemove() {
+  return this.productService.removeMany();
 }
 
 }
