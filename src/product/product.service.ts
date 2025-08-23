@@ -682,28 +682,22 @@ export class ProductService {
     }
   }
 
-async removeMany(ids: number[], userId: number) {
-  return this.prisma.$transaction(async (tx) => {
-    const products = await tx.product.findMany({
-      where: { id: { in: ids } },
-    });
-
-    if (products.length !== ids.length) {
-      throw new NotFoundException("Ba'zi mahsulotlar topilmadi");
-    }
-
-    await tx.product.deleteMany({
-      where: {
-        id: { in: ids },
-      },
-    });
-
-    return {
-      message: "Mahsulotlar muvaffaqiyatli o'chirildi",
-      count: ids.length,
-    };
+async removeMany(ids: number[],userId:number) {
+  const result = await this.prisma.product.deleteMany({
+    where: { id: { in: ids } },
   });
+
+  if (result.count !== ids.length) {
+    throw new NotFoundException("Ba'zi mahsulotlar topilmadi");
+  }
+
+  return {
+    message: "Mahsulotlar muvaffaqiyatli o'chirildi",
+    count: result.count,
+  };
 }
+
+
 
 
   async getPriceInSom(productId: number, branchId?: number) {
