@@ -682,58 +682,29 @@ export class ProductService {
     }
   }
 
-  async removeMany(ids: number[], userId: number) {
-    return this.prisma.$transaction(async (tx) => {
-      const products = await tx.product.findMany({
-        where: { id: { in: ids } },
-      });
-
-      if (products.length !== ids.length) {
-        throw new NotFoundException('Ba\'zi mahsulotlar topilmadi');
-      }
-
-      for (const product of products) {
-        await tx.product.update({
-          where: { id: product.id },
-          data: {
-            status: 'DEFECTIVE',
-            defectiveQuantity: product.quantity,
-            quantity: 0,
-          },
-        });
-
-        if (product.quantity > 0) {
-          const transDesc = 'Mahsulot o\'chirilgani uchun defective qilindi';
-
-          const transaction = await tx.transaction.create({
-            data: {
-              userId,
-              type: 'WRITE_OFF',
-              status: 'COMPLETED',
-              discount: 0,
-              total: 0,
-              finalTotal: 0,
-              amountPaid: 0,
-              remainingBalance: 0,
-              description: transDesc,
-            },
-          });
-
-          await tx.transactionItem.create({
-            data: {
-              transactionId: transaction.id,
-              productId: product.id,
-              quantity: product.quantity,
-              price: 0,
-              total: 0,
-            },
-          });
-        }
-      }
-
-      return { message: 'Mahsulotlar muvaffaqiyatli o\'chirildi', count: ids.length };
+async removeMany(ids: number[], userId: number) {
+  return this.prisma.$transaction(async (tx) => {
+    const products = await tx.product.findMany({
+      where: { id: { in: ids } },
     });
-  }
+
+    if (products.length !== ids.length) {
+      throw new NotFoundException("Ba'zi mahsulotlar topilmadi");
+    }
+
+    await tx.product.deleteMany({
+      where: {
+        id: { in: ids },
+      },
+    });
+
+    return {
+      message: "Mahsulotlar muvaffaqiyatli o'chirildi",
+      count: ids.length,
+    };
+  });
+}
+
 
   async getPriceInSom(productId: number, branchId?: number) {
     const product = branchId 
