@@ -24,4 +24,17 @@ export class CreateDefectiveLogDto {
   @IsOptional()
   @IsEnum(['DEFECTIVE', 'FIXED', 'RETURN', 'EXCHANGE'])
   actionType?: string;
+
+  // Indicates if this defective log is created from a sale context
+  @IsOptional()
+  isFromSale?: boolean;
+
+  // Optional sale linkage for better auditing/logic
+  @IsOptional()
+  @IsNumber()
+  transactionId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  customerId?: number;
 }

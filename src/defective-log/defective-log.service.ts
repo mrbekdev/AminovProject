@@ -9,7 +9,7 @@ export class DefectiveLogService {
   constructor(private prisma: PrismaService) {}
 
   async create(createDefectiveLogDto: CreateDefectiveLogDto) {
-    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE' } = createDefectiveLogDto;
+    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE', isFromSale, transactionId, customerId } = createDefectiveLogDto;
 
     // Check if product exists
     const product = await this.prisma.product.findUnique({
@@ -32,9 +32,11 @@ export class DefectiveLogService {
 
     // Validate quantity based on action type
     if (actionType === 'DEFECTIVE') {
-      // Defective quantity cannot exceed available quantity
-      if (quantity > product.quantity) {
-        throw new BadRequestException(`Defective miqdori mavjud miqdordan ko'p bo'lishi mumkin emas. Mavjud: ${product.quantity}, so'ralgan: ${quantity}`);
+      // If this is from a sale, do not validate against current store quantity
+      if (!isFromSale) {
+        if (quantity > product.quantity) {
+          throw new BadRequestException(`Defective miqdori mavjud miqdordan ko'p bo'lishi mumkin emas. Mavjud: ${product.quantity}, so'ralgan: ${quantity}`);
+        }
       }
     }
 
@@ -50,7 +52,12 @@ export class DefectiveLogService {
       case 'DEFECTIVE':
         // Kassadan pul chiqadi (mahsulot narhi)
         cashAmount = -(product.price * quantity);
-        newQuantity = Math.max(0, product.quantity - quantity);
+        // If from sale, do not reduce store quantity, only track defective count
+        if (isFromSale) {
+          newQuantity = product.quantity; // unchanged in store
+        } else {
+          newQuantity = Math.max(0, product.quantity - quantity);
+        }
         newDefectiveQuantity = product.defectiveQuantity + quantity;
         newStatus = newQuantity === 0 ? ProductStatus.DEFECTIVE : ProductStatus.IN_STORE;
         break;
@@ -84,7 +91,7 @@ export class DefectiveLogService {
     // Use transaction to ensure data consistency
     const result = await this.prisma.$transaction(async (prisma) => {
       // Create defective log
-      const defectiveLog = await prisma.defectiveLog.create({
+const defectiveLog = await prisma.defectiveLog.create({
         data: {
           productId,
           quantity,
