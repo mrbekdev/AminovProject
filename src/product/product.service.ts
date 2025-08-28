@@ -13,12 +13,52 @@ export class ProductService {
     private currencyExchangeRateService: CurrencyExchangeRateService,
   ) {}
 
+  private async generateUniqueBarcode(tx: any): Promise<string> {
+    let counterRecord = await tx.barcodeCounter.findFirst();
+
+    let newCounter: number;
+
+    if (!counterRecord) {
+      // Initialize counter from max existing barcode
+      const lastProduct = await tx.product.findFirst({
+        where: { barcode: { not: null } },
+        orderBy: { barcode: 'desc' },
+        select: { barcode: true },
+      });
+
+      let maxBarcode = 0;
+      if (lastProduct && lastProduct.barcode) {
+        const parsed = parseInt(lastProduct.barcode, 10);
+        if (!isNaN(parsed)) {
+          maxBarcode = parsed;
+        } else {
+          throw new BadRequestException('Existing barcodes are not numeric; cannot auto-generate.');
+        }
+      }
+
+      newCounter = maxBarcode + 1;
+
+      counterRecord = await tx.barcodeCounter.create({
+        data: { counter: newCounter },
+      });
+    } else {
+      newCounter = counterRecord.counter + 1;
+      await tx.barcodeCounter.update({
+        where: { id: counterRecord.id },
+        data: { counter: newCounter },
+      });
+    }
+
+    return newCounter.toString().padStart(6, '0');
+  }
+
   async create(createProductDto: CreateProductDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
+
       const product = await tx.product.create({
         data: {
           name: createProductDto.name,
-          barcode: createProductDto.barcode || null,
+          barcode: await this.generateUniqueBarcode(tx),
           categoryId: createProductDto.categoryId,
           branchId: createProductDto.branchId,
           price: createProductDto.price,
@@ -165,11 +205,11 @@ export class ProductService {
         throw new NotFoundException('Mahsulot topilmadi');
       }
 
+
       const updatedProduct = await tx.product.update({
         where: { id },
         data: {
           name: updateProductDto.name,
-          barcode: updateProductDto.barcode,
           categoryId: updateProductDto.categoryId,
           branchId: updateProductDto.branchId,
           price: updateProductDto.price,
@@ -630,23 +670,27 @@ export class ProductService {
       const worksheet = workbook.Sheets[sheetName];
       const data: { [key: string]: any }[] = XLSX.utils.sheet_to_json(worksheet);
 
-      for (const row of data) {
-        const barcode = row['barcode'] ? String(row['barcode']) : undefined;
-        const createProductDto: CreateProductDto = {
-          barcode: barcode,
-          name: String(row['name'] || ''),
-          quantity: Number(row['quantity']) || 0,
-          price: Number(row['price']) || 0,
-          marketPrice: row['marketPrice'] ? Number(row['marketPrice']) : undefined,
-          model: row['model'] ? String(row['model']) : undefined,
-          description: row['description'] ? String(row['description']) : undefined,
-          branchId: fromBranchId,
-          categoryId: categoryId,
-          status: (status || 'IN_STORE') as ProductStatus,
-        };
+      return this.prisma.$transaction(async (tx) => {
+        for (const row of data) {
+          let barcode = row['barcode'] ? String(row['barcode']) : null;
+          if (!barcode) {
+            barcode = await this.generateUniqueBarcode(tx);
+          }
 
-        if (barcode) {
-          const existing = await this.prisma.product.findUnique({
+          const createProductDto: CreateProductDto = {
+            barcode:  await this.generateUniqueBarcode(tx),
+            name: String(row['name'] || ''),
+            quantity: Number(row['quantity']) || 0,
+            price: Number(row['price']) || 0,
+            marketPrice: row['marketPrice'] ? Number(row['marketPrice']) : undefined,
+            model: row['model'] ? String(row['model']) : undefined,
+            description: row['description'] ? String(row['description']) : undefined,
+            branchId: fromBranchId,
+            categoryId: categoryId,
+            status: (status || 'IN_STORE') as ProductStatus,
+          };
+
+          const existing = await tx.product.findUnique({
             where: {
               barcode_branchId: {
                 barcode,
@@ -659,7 +703,7 @@ export class ProductService {
             const newQuantity = existing.quantity + createProductDto.quantity;
             const updateDto: UpdateProductDto = {
               name: createProductDto.name,
-              barcode: createProductDto.barcode,
+              barcode:  await this.generateUniqueBarcode(tx),
               categoryId: createProductDto.categoryId,
               branchId: createProductDto.branchId,
               price: createProductDto.price,
@@ -672,35 +716,31 @@ export class ProductService {
           } else {
             await this.create(createProductDto, userId);
           }
-        } else {
-          await this.create(createProductDto, userId);
         }
-      }
-      return { message: 'Mahsulotlar muvaffaqiyatli yuklandi' };
+        return { message: 'Mahsulotlar muvaffaqiyatli yuklandi' };
+      });
     } catch (error) {
       throw new BadRequestException('Excel faylini o\'qishda xatolik: ' + error.message);
     }
   }
 
-async removeMany(ids: number[]) {
-  const products = await this.prisma.product.findMany({
-    where: { id: { in: ids } },
-  });
+  async removeMany(ids: number[]) {
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: ids } },
+    });
 
-  if (products.length !== ids.length) {
-    throw new NotFoundException("Ba'zi mahsulotlar topilmadi");
+    if (products.length !== ids.length) {
+      throw new NotFoundException("Ba'zi mahsulotlar topilmadi");
+    }
+
+    const deleted = await this.prisma.product.deleteMany({
+      where: { id: { in: ids } },
+    });
+    return {
+      message: "Mahsulotlar muvaffaqiyatli o'chirildi",
+      count: deleted.count,
+    };
   }
-
-  const deleted = await this.prisma.product.deleteMany({
-    where: { id: { in: ids } },
-  });
-  return {
-    message: "Mahsulotlar muvaffaqiyatli o'chirildi",
-    count: deleted.count,
-  };
-}
-
-
 
   async getPriceInSom(productId: number, branchId?: number) {
     const product = branchId 
