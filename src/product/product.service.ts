@@ -13,44 +13,42 @@ export class ProductService {
     private currencyExchangeRateService: CurrencyExchangeRateService,
   ) {}
 
-  private async generateUniqueBarcode(tx: any): Promise<string> {
-    let counterRecord = await tx.barcodeCounter.findFirst();
+private async generateUniqueBarcode(tx: any): Promise<string> {
+  let counterRecord = await tx.barcodeCounter.findFirst();
 
-    let newCounter: number;
+  let newCounter: bigint;
 
-    if (!counterRecord) {
-      // Initialize counter from max existing barcode
-      const lastProduct = await tx.product.findFirst({
-        where: { barcode: { not: null } },
-        orderBy: { barcode: 'desc' },
-        select: { barcode: true },
-      });
+  if (!counterRecord) {
+    // Initialize counter from max existing barcode
+    const lastProduct = await tx.product.findFirst({
+      where: { barcode: { not: null } },
+      orderBy: { barcode: 'desc' },
+      select: { barcode: true },
+    });
 
-      let maxBarcode = 0;
-      if (lastProduct && lastProduct.barcode) {
-        const parsed = parseInt(lastProduct.barcode, 10);
-        if (!isNaN(parsed)) {
-          maxBarcode = parsed;
-        } else {
-          throw new BadRequestException('Existing barcodes are not numeric; cannot auto-generate.');
-        }
-      }
-
-      newCounter = maxBarcode + 1;
-
-      counterRecord = await tx.barcodeCounter.create({
-        data: { counter: newCounter },
-      });
-    } else {
-      newCounter = counterRecord.counter + 1;
-      await tx.barcodeCounter.update({
-        where: { id: counterRecord.id },
-        data: { counter: newCounter },
-      });
+    let maxBarcode = 0n;
+    if (lastProduct && lastProduct.barcode) {
+      const parsed = BigInt(lastProduct.barcode);
+      maxBarcode = parsed;
     }
 
-    return newCounter.toString().padStart(6, '0');
+    newCounter = maxBarcode + 1n;
+
+    counterRecord = await tx.barcodeCounter.create({
+      data: { counter: newCounter },
+    });
+  } else {
+    newCounter = counterRecord.counter + 1n;
+    await tx.barcodeCounter.update({
+      where: { id: counterRecord.id },
+      data: { counter: newCounter },
+    });
   }
+
+  // 15 xonali qilib qaytarish
+  return newCounter.toString().padStart(15, '0');
+}
+
 
   async create(createProductDto: CreateProductDto, userId: number) {
     return this.prisma.$transaction(async (tx) => {
