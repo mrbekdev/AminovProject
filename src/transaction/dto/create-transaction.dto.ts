@@ -42,6 +42,16 @@ export class TransactionItemDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  sellingPrice?: number; // Actual selling price (can be different from product.price)
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  originalPrice?: number; // Original product price at time of sale
+
+  @IsOptional()
+  @IsNumber()
   @Min(1)
   @Max(24)
   creditMonth?: number;

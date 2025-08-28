@@ -85,6 +85,8 @@ export class TransactionService {
             productId: item.productId,
             quantity: item.quantity,
             price: item.price,
+            sellingPrice: item.sellingPrice || item.price, // Use selling price if provided, otherwise use price
+            originalPrice: item.originalPrice || item.price, // Use original price if provided, otherwise use price
             total: item.price * item.quantity,
             creditMonth: item.creditMonth,
             creditPercent: item.creditPercent,
@@ -659,6 +661,8 @@ export class TransactionService {
             productId: item.productId,
             quantity: item.quantity,
             price: item.price,
+            sellingPrice: item.sellingPrice || item.price,
+            originalPrice: item.originalPrice || item.price,
             total: item.price * item.quantity
           }))
         }

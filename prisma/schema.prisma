@@ -254,6 +254,8 @@ model TransactionItem {
   productId      Int?
   quantity       Int
   price          Float
+  sellingPrice   Float?   // Actual selling price (can be different from product.price)
+  originalPrice  Float?   // Original product price at time of sale
   total          Float
   creditMonth    Int?
   creditPercent  Float?
