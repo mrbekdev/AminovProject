@@ -46,7 +46,7 @@ private async generateUniqueBarcode(tx: any): Promise<string> {
   }
 
   // 15 xonali qilib qaytarish
-  return newCounter.toString().padStart(15, '0');
+  return newCounter.toString();
 }
 
 
