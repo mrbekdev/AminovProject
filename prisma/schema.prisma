@@ -173,9 +173,9 @@ model DefectiveLog {
   actionType  String   @default("DEFECTIVE") // DEFECTIVE, FIXED, RETURN, EXCHANGE
   createdAt   DateTime @default(now())
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  branch  Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete:Cascade)
+  branch  Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@map("defective_logs")
 }
