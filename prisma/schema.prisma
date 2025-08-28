@@ -136,7 +136,7 @@ model Category {
 model Product {
   id                Int           @id @default(autoincrement())
   name              String
-  barcode           String?     @unique  
+  barcode           String?       
   model             String?
   price             Float
   quantity          Int
@@ -358,7 +358,7 @@ model CurrencyExchangeRate {
 
 model barcodeCounter {
   id        Int      @id @default(autoincrement())
-  counter   Int      @default(100000000000)
+  counter   BigInt   @default(1000000000)      
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
