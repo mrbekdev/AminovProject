@@ -646,20 +646,22 @@ private async generateUniqueBarcode(tx: any): Promise<string> {
     return productsWithSomPrices;
   }
 
-  async remove(id: number, userId: number) {
-    return this.prisma.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({ where: { id } });
-      if (!product) {
-        throw new NotFoundException('Mahsulot topilmadi');
-      }
+async remove(id: number, userId: number) {
+  return this.prisma.$transaction(async (tx) => {
+    const product = await tx.product.findUnique({ where: { id } });
+    if (!product) {
+      throw new NotFoundException('Mahsulot topilmadi');
+    }
 
-      const updatedProduct = await this.prisma.product.delete({
-        where: { id },
-      });
-
-      return updatedProduct;
+    // ✅ to‘g‘ri – tx dan foydalanamiz
+    const deletedProduct = await tx.product.delete({
+      where: { id },
     });
-  }
+
+    return deletedProduct;
+  });
+}
+
 
   async uploadExcel(file: Express.Multer.File, fromBranchId: number, categoryId: number, status: string, userId: number) {
     try {
