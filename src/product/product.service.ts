@@ -14,40 +14,31 @@ export class ProductService {
   ) {}
 
 private async generateUniqueBarcode(tx: any): Promise<string> {
+  // mavjud counterni olamiz
   let counterRecord = await tx.barcodeCounter.findFirst();
 
   let newCounter: bigint;
 
   if (!counterRecord) {
-    // Initialize counter from max existing barcode
-    const lastProduct = await tx.product.findFirst({
-      where: { barcode: { not: null } },
-      orderBy: { barcode: 'desc' },
-      select: { barcode: true },
-    });
-
-    let maxBarcode = 0n;
-    if (lastProduct && lastProduct.barcode) {
-      const parsed = BigInt(lastProduct.barcode);
-      maxBarcode = parsed;
-    }
-
-    newCounter = maxBarcode + 1n;
+    // agar hali yo'q bo'lsa, 1 dan boshlaymiz
+    newCounter = 1n;
 
     counterRecord = await tx.barcodeCounter.create({
       data: { counter: newCounter },
     });
   } else {
+    // har safar faqat 1 qo‘shib ketamiz
     newCounter = counterRecord.counter + 1n;
+
     await tx.barcodeCounter.update({
       where: { id: counterRecord.id },
       data: { counter: newCounter },
     });
   }
 
-  // 15 xonali qilib qaytarish
   return newCounter.toString();
 }
+
 
 
 async create(
