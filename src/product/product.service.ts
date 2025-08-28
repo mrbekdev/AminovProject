@@ -28,7 +28,7 @@ private async generateUniqueBarcode(tx: any): Promise<string> {
     });
   } else {
     // har safar faqat 1 qo‘shib ketamiz
-    newCounter = counterRecord.counter + 1;
+    newCounter = counterRecord.counter + 1n;
 
     await tx.barcodeCounter.update({
       where: { id: counterRecord.id },
