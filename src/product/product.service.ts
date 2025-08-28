@@ -12,34 +12,25 @@ export class ProductService {
     private prisma: PrismaService,
     private currencyExchangeRateService: CurrencyExchangeRateService,
   ) {}
-
 private async generateUniqueBarcode(tx: any): Promise<string> {
-  // mavjud counterni olamiz
+  // mavjud counterni olamiz yoki 0 yaratib qo'yamiz
   let counterRecord = await tx.barcodeCounter.findFirst();
 
-  let newCounter: bigint;
-
   if (!counterRecord) {
-    // agar hali yo'q bo'lsa, 1 dan boshlaymiz
-    newCounter = 1n;
-
     counterRecord = await tx.barcodeCounter.create({
-      data: { counter: newCounter },
+      data: { counter: 1n }, // 1 dan boshlaymiz
     });
   } else {
-    // har safar faqat 1 qo‘shib ketamiz
-    newCounter = counterRecord.counter + 1n;
-
-    await tx.barcodeCounter.update({
+    counterRecord = await tx.barcodeCounter.update({
       where: { id: counterRecord.id },
-      data: { counter: newCounter },
+      data: {
+        counter: { increment: 1 }, // ✅ Prisma o'zi +1 qiladi
+      },
     });
   }
 
-  return newCounter.toString();
+  return counterRecord.counter.toString();
 }
-
-
 
 async create(
   createProductDto: CreateProductDto,
