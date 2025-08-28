@@ -9,7 +9,7 @@ export class DefectiveLogService {
   constructor(private prisma: PrismaService) {}
 
   async create(createDefectiveLogDto: CreateDefectiveLogDto) {
-    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE', isFromSale, transactionId, customerId } = createDefectiveLogDto;
+    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE', isFromSale, transactionId, customerId, cashAdjustmentDirection, cashAmount: cashAmountInput, exchangeWithProductId, replacementQuantity } = createDefectiveLogDto;
 
     // Check if product exists
     const product = await this.prisma.product.findUnique({
@@ -71,17 +71,31 @@ export class DefectiveLogService {
         break;
 
       case 'RETURN':
-        // Kassadan pul chiqadi (mahsulot narhi)
-        cashAmount = -(product.price * quantity);
+        // Respect explicit cashier override for cash direction/amount when provided
+        if (typeof cashAmountInput === 'number' && cashAdjustmentDirection) {
+          cashAmount = (cashAdjustmentDirection === 'PLUS' ? 1 : -1) * Math.abs(Number(cashAmountInput) || 0);
+        } else {
+          // Default behavior: money leaves cashbox (negative)
+          cashAmount = -(product.price * quantity);
+        }
         newReturnedQuantity = product.returnedQuantity + quantity;
         newStatus = ProductStatus.RETURNED;
+        // Returned items increase store stock back
+        newQuantity = product.quantity + quantity;
         break;
 
       case 'EXCHANGE':
-        // Kassaga pul qaytadi (mahsulot narhi)
-        cashAmount = product.price * quantity;
+        // Respect explicit cashier override when provided
+        if (typeof cashAmountInput === 'number' && cashAdjustmentDirection) {
+          cashAmount = (cashAdjustmentDirection === 'PLUS' ? 1 : -1) * Math.abs(Number(cashAmountInput) || 0);
+        } else {
+          // Default behavior: money enters cashbox (positive) for replacement price delta can be handled client-side
+          cashAmount = product.price * quantity;
+        }
         newExchangedQuantity = product.exchangedQuantity + quantity;
         newStatus = ProductStatus.EXCHANGED;
+        // Exchanged returns increase original stock
+        newQuantity = product.quantity + quantity;
         break;
 
       default:
@@ -119,6 +133,22 @@ const defectiveLog = await prisma.defectiveLog.create({
           status: newStatus
         }
       });
+
+      // If EXCHANGE and replacement product provided, decrement replacement stock by replacementQuantity (or same as returned qty)
+      if (actionType === 'EXCHANGE' && exchangeWithProductId) {
+        const replacementQty = Math.max(1, Number(replacementQuantity || quantity) || quantity);
+        const repl = await prisma.product.findUnique({ where: { id: Number(exchangeWithProductId) } });
+        if (!repl) {
+          throw new NotFoundException('Almashtiriladigan mahsulot topilmadi');
+        }
+        if (replacementQty > repl.quantity) {
+          throw new BadRequestException(`Almashtirish miqdori mavjud miqdordan ko'p. Mavjud: ${repl.quantity}, so'ralgan: ${replacementQty}`);
+        }
+        await prisma.product.update({
+          where: { id: repl.id },
+          data: { quantity: Math.max(0, repl.quantity - replacementQty) }
+        });
+      }
 
       // Update branch cash balance
       if (branchId) {

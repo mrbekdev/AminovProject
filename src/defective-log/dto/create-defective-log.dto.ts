@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsString, IsOptional, IsEnum, IsIn } from 'class-validator';
 
 export class CreateDefectiveLogDto {
   @IsNotEmpty()
@@ -37,4 +37,22 @@ export class CreateDefectiveLogDto {
   @IsOptional()
   @IsNumber()
   customerId?: number;
+
+  // Optional cashier-entered cash adjustment direction and amount
+  @IsOptional()
+  @IsIn(['PLUS', 'MINUS'])
+  cashAdjustmentDirection?: 'PLUS' | 'MINUS';
+
+  @IsOptional()
+  @IsNumber()
+  cashAmount?: number;
+
+  // Optional exchange info
+  @IsOptional()
+  @IsNumber()
+  exchangeWithProductId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  replacementQuantity?: number;
 }
