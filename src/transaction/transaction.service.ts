@@ -686,36 +686,6 @@ export class TransactionService {
     return transfer;
   }
 
-  // Pending transferlarni olish
-  async getPendingTransfers(branchId?: number) {
-    const where: any = {
-      type: TransactionType.TRANSFER,
-      status: TransactionStatus.PENDING
-    };
-
-    if (branchId) {
-      where.OR = [
-        { fromBranchId: branchId },
-        { toBranchId: branchId }
-      ];
-    }
-
-    return this.prisma.transaction.findMany({
-      where,
-      include: {
-        fromBranch: true,
-        toBranch: true,
-        soldBy: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-  }
-
   // Filial bo'yicha barcha o'tkazmalarni olish (kiruvchi va chiqim)
   async getTransfersByBranch(branchId: number) {
     const where: any = {
@@ -743,6 +713,36 @@ export class TransactionService {
                 branch: true
               }
             }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  // Pending transferlarni olish
+  async getPendingTransfers(branchId?: number) {
+    const where: any = {
+      type: TransactionType.TRANSFER,
+      status: TransactionStatus.PENDING
+    };
+
+    if (branchId) {
+      where.OR = [
+        { fromBranchId: branchId },
+        { toBranchId: branchId }
+      ];
+    }
+
+    return this.prisma.transaction.findMany({
+      where,
+      include: {
+        fromBranch: true,
+        toBranch: true,
+        soldBy: true,
+        items: {
+          include: {
+            product: true
           }
         }
       },
