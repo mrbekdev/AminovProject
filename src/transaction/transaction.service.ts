@@ -259,7 +259,7 @@ export class TransactionService {
   
     const total = await this.prisma.transaction.count({ where });
   
-    const transactions = await this.prisma.transaction.findMany({
+    let transactions = await this.prisma.transaction.findMany({
       where,
       include: {
         customer: true,
@@ -274,7 +274,10 @@ export class TransactionService {
       },
       orderBy: { createdAt: 'desc' }
     });
-  
+
+    // Hydrate items where product is null but productId exists
+    transactions = await this.hydrateMissingProducts(transactions);
+
     console.log('Transactions found:', transactions);
   
     return {
@@ -294,7 +297,7 @@ export class TransactionService {
       throw new BadRequestException('Invalid transaction ID provided');
     }
 
-    const transaction = await this.prisma.transaction.findUnique({
+    let transaction = await this.prisma.transaction.findUnique({
       where: { id },
       include: {
         customer: true,
@@ -318,7 +321,44 @@ export class TransactionService {
       throw new NotFoundException('Transaction not found');
     }
 
-    return transaction;
+    // Hydrate missing products for a single transaction
+    const hydrated = await this.hydrateMissingProducts([transaction]);
+    return hydrated[0];
+  }
+
+  // Attach product details to items that have productId but product is null
+  private async hydrateMissingProducts(transactions: any[]) {
+    try {
+      const missingIdsSet = new Set<number>();
+      for (const tr of transactions) {
+        if (!Array.isArray(tr?.items)) continue;
+        for (const it of tr.items) {
+          const pid = it?.productId;
+          if (pid && !it?.product) missingIdsSet.add(Number(pid));
+        }
+      }
+      const missingIds = Array.from(missingIdsSet);
+      if (missingIds.length === 0) return transactions;
+
+      const products = await this.prisma.product.findMany({
+        where: { id: { in: missingIds } },
+      });
+      const idToProduct: Record<number, any> = {};
+      for (const p of products) idToProduct[p.id] = p;
+
+      for (const tr of transactions) {
+        if (!Array.isArray(tr?.items)) continue;
+        for (const it of tr.items) {
+          if (it && it.productId && !it.product) {
+            it.product = idToProduct[it.productId] || null;
+          }
+        }
+      }
+      return transactions;
+    } catch (e) {
+      // If anything goes wrong, return original to avoid breaking flow
+      return transactions;
+    }
   }
 
   async update(id: number, updateTransactionDto: UpdateTransactionDto) {
@@ -1059,7 +1099,3 @@ export class TransactionService {
     return transactionsWithCurrency;
   }
 }
-
-
-
-
