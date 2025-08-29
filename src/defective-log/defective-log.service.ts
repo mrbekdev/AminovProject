@@ -144,14 +144,29 @@ export class DefectiveLogService {
           // Find the original item for productId
           const orig = tx.items.find(i => i.productId === productId);
           if (orig) {
-            if (actionType === 'RETURN') {
-              // Always delete the item from the transaction when returning
-              await prisma.transactionItem.delete({ where: { id: orig.id } });
+            // Guard against over-deduction: cannot return/exchange more than sold in this line
+            if (Number(quantity) > Number(orig.quantity)) {
+              throw new BadRequestException(`Tanlangan sotuvda mavjud miqdordan ko'p (${orig.quantity}) qaytarib/almashtirib bo'lmaydi`);
             }
+
+            if (actionType === 'RETURN' || actionType === 'EXCHANGE') {
+              const remainingQty = Math.max(0, Number(orig.quantity) - Number(quantity));
+              if (remainingQty === 0) {
+                await prisma.transactionItem.delete({ where: { id: orig.id } });
+              } else {
+                const unitPrice = (orig.sellingPrice ?? orig.price) || 0;
+                await prisma.transactionItem.update({
+                  where: { id: orig.id },
+                  data: {
+                    quantity: remainingQty,
+                    total: remainingQty * unitPrice
+                  }
+                });
+              }
+            }
+
             if (actionType === 'EXCHANGE') {
-              // Always remove original
               const replacementQty = Math.max(1, Number(replacementQuantity || quantity) || quantity);
-              await prisma.transactionItem.delete({ where: { id: orig.id } });
 
               const replProdId = Number(exchangeWithProductId);
               const replPrice = Number(replacementUnitPrice ?? 0);
