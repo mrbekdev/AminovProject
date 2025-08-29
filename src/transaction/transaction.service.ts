@@ -333,8 +333,9 @@ export class TransactionService {
       for (const tr of transactions) {
         if (!Array.isArray(tr?.items)) continue;
         for (const it of tr.items) {
-          const pid = it?.productId;
-          if (pid && !it?.product) missingIdsSet.add(Number(pid));
+          const raw = it?.productId;
+          const pid = raw == null ? null : Number(raw);
+          if (pid && !it?.product) missingIdsSet.add(pid);
         }
       }
       const missingIds = Array.from(missingIdsSet);
@@ -349,8 +350,9 @@ export class TransactionService {
       for (const tr of transactions) {
         if (!Array.isArray(tr?.items)) continue;
         for (const it of tr.items) {
-          if (it && it.productId && !it.product) {
-            it.product = idToProduct[it.productId] || null;
+          if (it && it.productId != null && !it.product) {
+            const pid = Number(it.productId);
+            it.product = (pid && idToProduct[pid]) ? idToProduct[pid] : null;
           }
         }
       }
@@ -738,7 +740,7 @@ export class TransactionService {
       { toBranchId: branchId }
     ];
 
-    return this.prisma.transaction.findMany({
+    let tx = await this.prisma.transaction.findMany({
       where,
       include: {
         fromBranch: true,
@@ -758,6 +760,8 @@ export class TransactionService {
       },
       orderBy: { createdAt: 'desc' }
     });
+    tx = await this.hydrateMissingProducts(tx);
+    return tx;
   }
 
   // Pending transferlarni olish
@@ -774,7 +778,7 @@ export class TransactionService {
       ];
     }
 
-    return this.prisma.transaction.findMany({
+    let tx = await this.prisma.transaction.findMany({
       where,
       include: {
         fromBranch: true,
@@ -788,6 +792,8 @@ export class TransactionService {
       },
       orderBy: { createdAt: 'desc' }
     });
+    tx = await this.hydrateMissingProducts(tx);
+    return tx;
   }
 
   private async updateProductQuantitiesForTransfer(transfer: any) {
