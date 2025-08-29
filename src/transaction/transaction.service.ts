@@ -716,6 +716,40 @@ export class TransactionService {
     });
   }
 
+  // Filial bo'yicha barcha o'tkazmalarni olish (kiruvchi va chiqim)
+  async getTransfersByBranch(branchId: number) {
+    const where: any = {
+      type: TransactionType.TRANSFER
+    };
+
+    // Filialdan chiqgan va kirgan o'tkazmalarni olish
+    where.OR = [
+      { fromBranchId: branchId },
+      { toBranchId: branchId }
+    ];
+
+    return this.prisma.transaction.findMany({
+      where,
+      include: {
+        fromBranch: true,
+        toBranch: true,
+        soldBy: true,
+        user: true,
+        items: {
+          include: {
+            product: {
+              include: {
+                category: true,
+                branch: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
   private async updateProductQuantitiesForTransfer(transfer: any) {
     for (const item of transfer.items) {
       if (item.productId && item.product) {

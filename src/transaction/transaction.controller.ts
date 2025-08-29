@@ -68,6 +68,11 @@ export class TransactionController {
     );
   }
 
+  @Get('transfers/:branchId')
+  getTransfersByBranch(@Param('branchId') branchId: string) {
+    return this.transactionService.getTransfersByBranch(parseInt(branchId));
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.transactionService.findOne(+id);

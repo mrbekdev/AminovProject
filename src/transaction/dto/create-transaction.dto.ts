@@ -24,7 +24,7 @@ export class CustomerDto {
 
   @IsOptional()
   @IsString()
-  jshshir?: string; // JSHSHIR raqami
+  jshshir?: string; 
 }
 
 export class TransactionItemDto {

@@ -14,7 +14,7 @@ enum TransactionType {
   TRANSFER
   PURCHASE
   RETURN
-  WRITE_OFF
+  WRITE_OF 
 }
 
 enum TransactionStatus {
