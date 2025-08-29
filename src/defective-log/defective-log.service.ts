@@ -145,26 +145,13 @@ export class DefectiveLogService {
           const orig = tx.items.find(i => i.productId === productId);
           if (orig) {
             if (actionType === 'RETURN') {
-              if (quantity >= orig.quantity) {
-                await prisma.transactionItem.delete({ where: { id: orig.id } });
-              } else {
-                await prisma.transactionItem.update({
-                  where: { id: orig.id },
-                  data: { quantity: orig.quantity - quantity, total: (orig.quantity - quantity) * (orig.sellingPrice ?? orig.price) }
-                });
-              }
+              // Always delete the item from the transaction when returning
+              await prisma.transactionItem.delete({ where: { id: orig.id } });
             }
             if (actionType === 'EXCHANGE') {
-              // remove or reduce original
+              // Always remove original
               const replacementQty = Math.max(1, Number(replacementQuantity || quantity) || quantity);
-              if (quantity >= orig.quantity) {
-                await prisma.transactionItem.delete({ where: { id: orig.id } });
-              } else {
-                await prisma.transactionItem.update({
-                  where: { id: orig.id },
-                  data: { quantity: orig.quantity - quantity, total: (orig.quantity - quantity) * (orig.sellingPrice ?? orig.price) }
-                });
-              }
+              await prisma.transactionItem.delete({ where: { id: orig.id } });
               // add new replacement item
               await prisma.transactionItem.create({
                 data: {
