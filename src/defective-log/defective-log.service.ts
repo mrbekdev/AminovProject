@@ -152,17 +152,50 @@ export class DefectiveLogService {
               // Always remove original
               const replacementQty = Math.max(1, Number(replacementQuantity || quantity) || quantity);
               await prisma.transactionItem.delete({ where: { id: orig.id } });
-              // add new replacement item
-              await prisma.transactionItem.create({
-                data: {
-                  transactionId: tx.id,
-                  productId: Number(exchangeWithProductId),
-                  quantity: replacementQty,
-                  price: Number(replacementUnitPrice ?? 0),
-                  sellingPrice: Number(replacementUnitPrice ?? 0),
-                  originalPrice: Number(replacementUnitPrice ?? 0),
-                  total: replacementQty * Number(replacementUnitPrice ?? 0)
-                }
+
+              const replProdId = Number(exchangeWithProductId);
+              const replPrice = Number(replacementUnitPrice ?? 0);
+
+              // Idempotency/merge guard: if a replacement item with same product and price was just added, update it instead of creating duplicate
+              const existingRepl = await prisma.transactionItem.findFirst({
+                where: { transactionId: tx.id, productId: replProdId, price: replPrice },
+                orderBy: { createdAt: 'desc' }
+              });
+
+              if (existingRepl) {
+                await prisma.transactionItem.update({
+                  where: { id: existingRepl.id },
+                  data: {
+                    quantity: existingRepl.quantity + replacementQty,
+                    total: (existingRepl.quantity + replacementQty) * (existingRepl.sellingPrice ?? existingRepl.price)
+                  }
+                });
+              } else {
+                // add new replacement item
+                await prisma.transactionItem.create({
+                  data: {
+                    transactionId: tx.id,
+                    productId: replProdId,
+                    quantity: replacementQty,
+                    price: replPrice,
+                    sellingPrice: replPrice,
+                    originalPrice: replPrice,
+                    total: replacementQty * replPrice
+                  }
+                });
+              }
+
+              // decrement stock for replacement product by replacementQty
+              const repl = await prisma.product.findUnique({ where: { id: replProdId } });
+              if (!repl) {
+                throw new NotFoundException('Almashtiriladigan mahsulot topilmadi');
+              }
+              if (replacementQty > repl.quantity) {
+                throw new BadRequestException(`Almashtirish miqdori mavjud miqdordan ko'p. Mavjud: ${repl.quantity}, so'ralgan: ${replacementQty}`);
+              }
+              await prisma.product.update({
+                where: { id: repl.id },
+                data: { quantity: Math.max(0, repl.quantity - replacementQty) }
               });
             }
             // Recalculate totals
