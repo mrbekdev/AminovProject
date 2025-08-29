@@ -55,4 +55,8 @@ export class CreateDefectiveLogDto {
   @IsOptional()
   @IsNumber()
   replacementQuantity?: number;
+
+  @IsOptional()
+  @IsNumber()
+  replacementUnitPrice?: number;
 }

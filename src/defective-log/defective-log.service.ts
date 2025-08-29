@@ -9,7 +9,7 @@ export class DefectiveLogService {
   constructor(private prisma: PrismaService) {}
 
   async create(createDefectiveLogDto: CreateDefectiveLogDto) {
-    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE', isFromSale, transactionId, customerId, cashAdjustmentDirection, cashAmount: cashAmountInput, exchangeWithProductId, replacementQuantity } = createDefectiveLogDto;
+    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE', isFromSale, transactionId, customerId, cashAdjustmentDirection, cashAmount: cashAmountInput, exchangeWithProductId, replacementQuantity, replacementUnitPrice } = createDefectiveLogDto;
 
     // Check if product exists
     const product = await this.prisma.product.findUnique({
@@ -105,7 +105,7 @@ export class DefectiveLogService {
     // Use transaction to ensure data consistency
     const result = await this.prisma.$transaction(async (prisma) => {
       // Create defective log
-const defectiveLog = await prisma.defectiveLog.create({
+      const defectiveLog = await prisma.defectiveLog.create({
         data: {
           productId,
           quantity,
@@ -134,20 +134,59 @@ const defectiveLog = await prisma.defectiveLog.create({
         }
       });
 
-      // If EXCHANGE and replacement product provided, decrement replacement stock by replacementQuantity (or same as returned qty)
-      if (actionType === 'EXCHANGE' && exchangeWithProductId) {
-        const replacementQty = Math.max(1, Number(replacementQuantity || quantity) || quantity);
-        const repl = await prisma.product.findUnique({ where: { id: Number(exchangeWithProductId) } });
-        if (!repl) {
-          throw new NotFoundException('Almashtiriladigan mahsulot topilmadi');
-        }
-        if (replacementQty > repl.quantity) {
-          throw new BadRequestException(`Almashtirish miqdori mavjud miqdordan ko'p. Mavjud: ${repl.quantity}, so'ralgan: ${replacementQty}`);
-        }
-        await prisma.product.update({
-          where: { id: repl.id },
-          data: { quantity: Math.max(0, repl.quantity - replacementQty) }
+      // When linked to a sale, mutate the Transaction items accordingly
+      if (isFromSale && transactionId) {
+        const tx = await prisma.transaction.findUnique({
+          where: { id: Number(transactionId) },
+          include: { items: true }
         });
+        if (tx) {
+          // Find the original item for productId
+          const orig = tx.items.find(i => i.productId === productId);
+          if (orig) {
+            if (actionType === 'RETURN') {
+              if (quantity >= orig.quantity) {
+                await prisma.transactionItem.delete({ where: { id: orig.id } });
+              } else {
+                await prisma.transactionItem.update({
+                  where: { id: orig.id },
+                  data: { quantity: orig.quantity - quantity, total: (orig.quantity - quantity) * (orig.sellingPrice ?? orig.price) }
+                });
+              }
+            }
+            if (actionType === 'EXCHANGE') {
+              // remove or reduce original
+              const replacementQty = Math.max(1, Number(replacementQuantity || quantity) || quantity);
+              if (quantity >= orig.quantity) {
+                await prisma.transactionItem.delete({ where: { id: orig.id } });
+              } else {
+                await prisma.transactionItem.update({
+                  where: { id: orig.id },
+                  data: { quantity: orig.quantity - quantity, total: (orig.quantity - quantity) * (orig.sellingPrice ?? orig.price) }
+                });
+              }
+              // add new replacement item
+              await prisma.transactionItem.create({
+                data: {
+                  transactionId: tx.id,
+                  productId: Number(exchangeWithProductId),
+                  quantity: replacementQty,
+                  price: Number(replacementUnitPrice ?? 0),
+                  sellingPrice: Number(replacementUnitPrice ?? 0),
+                  originalPrice: Number(replacementUnitPrice ?? 0),
+                  total: replacementQty * Number(replacementUnitPrice ?? 0)
+                }
+              });
+            }
+            // Recalculate totals
+            const newItems = await prisma.transactionItem.findMany({ where: { transactionId: tx.id } });
+            const newTotal = newItems.reduce((s, it) => s + it.total, 0);
+            await prisma.transaction.update({
+              where: { id: tx.id },
+              data: { total: newTotal, finalTotal: newTotal }
+            });
+          }
+        }
       }
 
       // Update branch cash balance
