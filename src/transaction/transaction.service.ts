@@ -1059,3 +1059,7 @@ export class TransactionService {
     return transactionsWithCurrency;
   }
 }
+
+
+
+
