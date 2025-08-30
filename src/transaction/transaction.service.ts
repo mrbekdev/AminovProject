@@ -69,6 +69,12 @@ export class TransactionService {
       }
     }
 
+    // Validate upfrontPaymentType
+    const upfrontPaymentType = (transactionData as any).upfrontPaymentType;
+    if (upfrontPaymentType && !['CASH', 'CARD'].includes(upfrontPaymentType)) {
+      throw new BadRequestException('Invalid upfrontPaymentType. Must be CASH or CARD');
+    }
+
     // Resolve created-by and sold-by users
     const createdByUserId = userId ?? transactionData.userId ?? null;
     const soldByUserId = (transactionData as any).soldByUserId ?? userId ?? createdByUserId ?? null;
@@ -80,6 +86,7 @@ export class TransactionService {
         customerId,
         userId: createdByUserId || null, // yaratgan foydalanuvchi
         soldByUserId: soldByUserId || null, // sotgan kassir
+        upfrontPaymentType: (transactionData as any).upfrontPaymentType || 'CASH', // Default to CASH if not specified
         items: {
           create: items.map(item => ({
             productId: item.productId,
@@ -87,7 +94,7 @@ export class TransactionService {
             price: item.price,
             sellingPrice: item.sellingPrice || item.price, // Use selling price if provided, otherwise use price
             originalPrice: item.originalPrice || item.price, // Use original price if provided, otherwise use price
-            total: item.price * item.quantity,
+            total: item.total || (item.price * item.quantity), // Use provided total or calculate
             creditMonth: item.creditMonth,
             creditPercent: item.creditPercent,
             monthlyPayment: item.monthlyPayment || this.calculateMonthlyPayment(item)
@@ -222,6 +229,7 @@ export class TransactionService {
       startDate,
       endDate,
       paymentType,
+      upfrontPaymentType,
       productId
     } = query;
   
@@ -243,6 +251,7 @@ export class TransactionService {
     }
     if (customerId) where.customerId = parseInt(customerId);
     if (paymentType) where.paymentType = paymentType;
+    if (upfrontPaymentType) where.upfrontPaymentType = upfrontPaymentType;
     if (productId) {
       where.items = {
         some: {
@@ -993,7 +1002,7 @@ export class TransactionService {
       where.OR = whereOr;
     }
 
-    const [totalSales, creditSales, cashSales, cardSales, purchases, transfers] = await Promise.all([
+    const [totalSales, creditSales, cashSales, cardSales, purchases, transfers, upfrontCashSales, upfrontCardSales] = await Promise.all([
       this.prisma.transaction.aggregate({
         where: { ...where, type: TransactionType.SALE },
         _sum: { finalTotal: true },
@@ -1023,6 +1032,16 @@ export class TransactionService {
         where: { ...where, type: TransactionType.TRANSFER },
         _sum: { finalTotal: true },
         _count: true
+      }),
+      this.prisma.transaction.aggregate({
+        where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CASH' },
+        _sum: { downPayment: true, amountPaid: true },
+        _count: true
+      }),
+      this.prisma.transaction.aggregate({
+        where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CARD' },
+        _sum: { downPayment: true, amountPaid: true },
+        _count: true
       })
     ]);
 
@@ -1038,7 +1057,11 @@ export class TransactionService {
       totalPurchases: purchases._sum.finalTotal || 0,
       purchaseTransactions: purchases._count || 0,
       totalTransfers: transfers._sum.finalTotal || 0,
-      transferTransactions: transfers._count || 0
+      transferTransactions: transfers._count || 0,
+      upfrontCashTotal: (upfrontCashSales._sum.downPayment || 0) + (upfrontCashSales._sum.amountPaid || 0),
+      upfrontCashTransactions: upfrontCashSales._count || 0,
+      upfrontCardTotal: (upfrontCardSales._sum.downPayment || 0) + (upfrontCardSales._sum.amountPaid || 0),
+      upfrontCardTransactions: upfrontCardSales._count || 0
     };
   }
 

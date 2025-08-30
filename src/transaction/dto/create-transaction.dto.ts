@@ -32,6 +32,10 @@ export class TransactionItemDto {
   @IsPositive()
   productId: number;
 
+  @IsOptional()
+  @IsString()
+  productName?: string; // Product name for display
+
   @IsNumber()
   @IsPositive()
   quantity: number;
@@ -66,6 +70,11 @@ export class TransactionItemDto {
   @IsNumber()
   @Min(0)
   monthlyPayment?: number; // Hisoblash uchun, client tomonidan berilmasa ham bo'ladi
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  total?: number; // Total amount for this item
 }
 
 export class CreateTransactionDto {
@@ -113,8 +122,22 @@ export class CreateTransactionDto {
   downPayment?: number; // Boshlang'ich to'lov
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  amountPaid?: number; // Amount already paid
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  remainingBalance?: number; // Remaining balance
+
+  @IsOptional()
   @IsEnum(PaymentType)
   paymentType?: PaymentType;
+
+  @IsOptional()
+  @IsString()
+  upfrontPaymentType?: 'CASH' | 'CARD'; // CASH or CARD for upfront payments
 
   @IsOptional()
   @IsString()
