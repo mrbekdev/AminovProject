@@ -135,7 +135,7 @@ export class TransactionService {
   private calculateMonthlyPayment(item: any): number {
     if (!item.creditMonth || !item.creditPercent) return 0;
     
-    const totalWithInterest = item.price * item.quantity * (1 + item.creditPercent / 100);
+    const totalWithInterest = item.price * item.quantity * (1 + item.creditPercent);
     return totalWithInterest / item.creditMonth;
   }
 
@@ -165,10 +165,23 @@ export class TransactionService {
       const upfrontPayment = downPayment || 0;
       const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
       const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
-      const interestAmount = remainingPrincipal * (effectivePercent / 100);
+      
+      console.log('=== BACKEND DEBUG (DAILY) ===');
+      console.log('totalPrincipal:', totalPrincipal);
+      console.log('upfrontPayment:', upfrontPayment);
+      console.log('remainingPrincipal:', remainingPrincipal);
+      console.log('weightedPercentSum:', weightedPercentSum);
+      console.log('percentWeightBase:', percentWeightBase);
+      console.log('effectivePercent:', effectivePercent);
+      
+      const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
       const dailyPayment = remainingWithInterest / totalDays;
       let remainingBalance = remainingWithInterest;
+      
+      console.log('interestAmount:', interestAmount);
+      console.log('remainingWithInterest:', remainingWithInterest);
+      console.log('dailyPayment:', dailyPayment);
 
       for (let day = 1; day <= totalDays; day++) {
         remainingBalance -= dailyPayment;
@@ -216,10 +229,23 @@ export class TransactionService {
       const upfrontPayment = downPayment || 0;
       const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
       const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
-      const interestAmount = remainingPrincipal * (effectivePercent / 100);
+      
+      console.log('=== BACKEND DEBUG ===');
+      console.log('totalPrincipal:', totalPrincipal);
+      console.log('upfrontPayment:', upfrontPayment);
+      console.log('remainingPrincipal:', remainingPrincipal);
+      console.log('weightedPercentSum:', weightedPercentSum);
+      console.log('percentWeightBase:', percentWeightBase);
+      console.log('effectivePercent:', effectivePercent);
+      
+      const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
       const monthlyPayment = remainingWithInterest / totalMonths;
       let remainingBalance = remainingWithInterest;
+      
+      console.log('interestAmount:', interestAmount);
+      console.log('remainingWithInterest:', remainingWithInterest);
+      console.log('monthlyPayment:', monthlyPayment);
 
       for (let month = 1; month <= totalMonths; month++) {
         remainingBalance -= monthlyPayment;
