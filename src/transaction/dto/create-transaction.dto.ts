@@ -141,6 +141,10 @@ export class CreateTransactionDto {
 
   @IsOptional()
   @IsString()
+  termUnit?: 'MONTHS' | 'DAYS'; // MONTHS or DAYS for payment terms
+
+  @IsOptional()
+  @IsString()
   deliveryType?: string; // PICKUP or DELIVERY
 
   @IsOptional()

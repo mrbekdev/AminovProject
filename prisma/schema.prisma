@@ -213,6 +213,7 @@ model Transaction {
   finalTotal       Float
   paymentType      PaymentType?
   upfrontPaymentType String? // CASH or CARD - for upfront payments in credit/installment
+  termUnit         String? // MONTHS or DAYS - for payment terms
   deliveryMethod   String?
   deliveryType     String? // PICKUP or DELIVERY
   deliveryAddress  String? // Delivery address for customer

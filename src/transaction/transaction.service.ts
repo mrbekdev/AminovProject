@@ -87,6 +87,7 @@ export class TransactionService {
         userId: createdByUserId || null, // yaratgan foydalanuvchi
         soldByUserId: soldByUserId || null, // sotgan kassir
         upfrontPaymentType: (transactionData as any).upfrontPaymentType || 'CASH', // Default to CASH if not specified
+        termUnit: (transactionData as any).termUnit || 'MONTHS', // Default to MONTHS if not specified
         items: {
           create: items.map(item => ({
             productId: item.productId,
@@ -116,7 +117,13 @@ export class TransactionService {
 
     // Kredit bo'lsa, oylik to'lovlar jadvalini yaratish
     if (transaction.paymentType === PaymentType.CREDIT || transaction.paymentType === PaymentType.INSTALLMENT) {
-      await this.createPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0);
+      // Kunlik yoki oylik to'lovlarni tekshirish
+      const isDays = (transaction as any).termUnit === 'DAYS';
+      if (isDays) {
+        await this.createDailyPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0);
+      } else {
+        await this.createPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0);
+      }
     }
 
     // Mahsulot miqdorlarini yangilash
@@ -130,6 +137,57 @@ export class TransactionService {
     
     const totalWithInterest = item.price * item.quantity * (1 + item.creditPercent / 100);
     return totalWithInterest / item.creditMonth;
+  }
+
+  private async createDailyPaymentSchedule(transactionId: number, items: any[], downPayment: number = 0) {
+    const schedules: any[] = [];
+
+    // Aggregate principal and determine weighted interest and days
+    let totalPrincipal = 0;
+    let weightedPercentSum = 0;
+    let percentWeightBase = 0;
+    let totalDays = 0;
+
+    for (const item of items) {
+      const principal = (item.price || 0) * (item.quantity || 0);
+      totalPrincipal += principal;
+      if (item.creditPercent) {
+        weightedPercentSum += principal * (item.creditPercent || 0);
+        percentWeightBase += principal;
+      }
+      if (item.creditMonth) { // creditMonth field kunlar sonini saqlaydi
+        totalDays = Math.max(totalDays, item.creditMonth || 0);
+      }
+    }
+
+    if (totalPrincipal > 0 && totalDays > 0) {
+      // To'g'ri hisoblash: oldindan to'lovni ayirib, keyin foiz qo'shish
+      const upfrontPayment = downPayment || 0;
+      const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
+      const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
+      const interestAmount = remainingPrincipal * (effectivePercent / 100);
+      const remainingWithInterest = remainingPrincipal + interestAmount;
+      const dailyPayment = remainingWithInterest / totalDays;
+      let remainingBalance = remainingWithInterest;
+
+      for (let day = 1; day <= totalDays; day++) {
+        remainingBalance -= dailyPayment;
+        schedules.push({
+          transactionId,
+          month: day, // month field kunlar uchun ham ishlatiladi
+          payment: dailyPayment,
+          remainingBalance: Math.max(0, remainingBalance),
+          isPaid: false,
+          paidAmount: 0
+        });
+      }
+    }
+
+    if (schedules.length > 0) {
+      await this.prisma.paymentSchedule.createMany({
+        data: schedules
+      });
+    }
   }
 
   private async createPaymentSchedule(transactionId: number, items: any[], downPayment: number = 0) {
@@ -154,11 +212,14 @@ export class TransactionService {
     }
 
     if (totalPrincipal > 0 && totalMonths > 0) {
-      const remainingPrincipal = Math.max(0, totalPrincipal - (downPayment || 0));
+      // To'g'ri hisoblash: oldindan to'lovni ayirib, keyin foiz qo'shish
+      const upfrontPayment = downPayment || 0;
+      const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
       const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
-      const totalWithInterest = remainingPrincipal * (1 + (effectivePercent / 100));
-      const monthlyPayment = totalWithInterest / totalMonths;
-      let remainingBalance = totalWithInterest;
+      const interestAmount = remainingPrincipal * (effectivePercent / 100);
+      const remainingWithInterest = remainingPrincipal + interestAmount;
+      const monthlyPayment = remainingWithInterest / totalMonths;
+      let remainingBalance = remainingWithInterest;
 
       for (let month = 1; month <= totalMonths; month++) {
         remainingBalance -= monthlyPayment;
