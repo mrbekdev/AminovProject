@@ -59,4 +59,9 @@ export class CreateDefectiveLogDto {
   @IsOptional()
   @IsNumber()
   replacementUnitPrice?: number;
+
+  // Optional replacement transaction ID (for tracking the new sale transaction)
+  @IsOptional()
+  @IsNumber()
+  replacementTransactionId?: number;
 }

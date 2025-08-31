@@ -172,6 +172,12 @@ model DefectiveLog {
   cashAmount  Float    @default(0) // Kassadan chiqadigan yoki kiruvchi pul
   actionType  String   @default("DEFECTIVE") // DEFECTIVE, FIXED, RETURN, EXCHANGE
   createdAt   DateTime @default(now())
+  
+  // Exchange-specific fields
+  exchangeWithProductId Int? // ID of the product being exchanged with
+  replacementQuantity   Int? // Quantity of replacement product
+  replacementUnitPrice  Float? // Unit price of replacement product
+  replacementTransactionId Int? // ID of the new transaction created for replacement product
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   user    User?   @relation(fields: [userId], references: [id], onDelete:Cascade)
