@@ -92,18 +92,19 @@ export class PaymentScheduleService {
         }
       });
 
-      // Append a repayment history row and update branch cash if there is a positive delta
-      if (deltaPaid > 0 && effectivePaidAt) {
-        await tx.paymentRepayment.create({
-          data: {
-            transactionId: updatedSchedule.transactionId,
-            scheduleId: updatedSchedule.id,
-            amount: deltaPaid,
-            channel: (paidChannel || 'CASH') as any,
-            paidAt: effectivePaidAt,
-            paidByUserId: paidByUserId ? Number(paidByUserId) : null
-          }
-        });
+              // Append a repayment history row and update branch cash if there is a positive delta
+        if (deltaPaid > 0 && effectivePaidAt) {
+          console.log('Creating PaymentRepayment with channel:', { paidChannel, type: typeof paidChannel, isNull: paidChannel === null, isUndefined: paidChannel === undefined });
+          await tx.paymentRepayment.create({
+            data: {
+              transactionId: updatedSchedule.transactionId,
+              scheduleId: updatedSchedule.id,
+              amount: deltaPaid,
+              channel: (paidChannel !== undefined && paidChannel !== null ? paidChannel : 'CASH') as any,
+              paidAt: effectivePaidAt,
+              paidByUserId: paidByUserId ? Number(paidByUserId) : null
+            }
+          });
 
         // Decide which branch cashbox to increment: prefer cashier's branch, fallback to transaction's fromBranch
         let targetBranchId: number | null = null;
