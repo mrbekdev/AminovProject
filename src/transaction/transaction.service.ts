@@ -308,7 +308,7 @@ export class TransactionService {
   async findAll(query: any = {}) {
     const {
       page = 1,
-      limit = query.limit === 'all' ? undefined : (query.limit || 10),
+      limit = 10,
       type,
       status,
       branchId,
@@ -365,11 +365,10 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: { product: true }
-        }
+        },
+        paymentSchedules: { orderBy: { month: 'asc' }, include: { paidBy: true } }
       },
-      orderBy: { createdAt: 'desc' },
-      ...(limit && limit !== 'all' && { take: parseInt(limit) }),
-      ...(page && limit && limit !== 'all' && { skip: (parseInt(page) - 1) * parseInt(limit) })
+      orderBy: { createdAt: 'desc' }
     });
 
     // Hydrate items where product is null but productId exists
@@ -377,8 +376,14 @@ export class TransactionService {
 
     // Debug: Log payment schedule data
     for (const t of transactions) {
-      // paymentSchedules include qilinmagan, shuning uchun uni o'tkazib yuboramiz
-      // console.log(`Transaction ${t.id} processed`);
+      if (t.paymentSchedules && t.paymentSchedules.length > 0) {
+        console.log(`Transaction ${t.id} payment schedules:`, t.paymentSchedules.map(s => ({
+          id: s.id,
+          paidChannel: s.paidChannel,
+          paidAmount: s.paidAmount,
+          isPaid: s.isPaid
+        })));
+      }
     }
 
     console.log('Transactions found:', transactions);
@@ -387,9 +392,9 @@ export class TransactionService {
       transactions,
       pagination: {
         page: parseInt(page),
-        limit: limit ? parseInt(limit) : total,
+        limit: parseInt(limit),
         total,
-        pages: limit ? Math.ceil(total / parseInt(limit)) : 1
+        pages: Math.ceil(total / limit)
       }
     };
   }
