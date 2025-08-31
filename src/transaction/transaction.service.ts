@@ -365,12 +365,11 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: { product: true }
-        },
-        paymentSchedules: { orderBy: { month: 'asc' }, include: { paidBy: true } }
+        }
       },
       orderBy: { createdAt: 'desc' },
-      ...(limit && { take: parseInt(limit) }),
-      ...(page && limit && { skip: (parseInt(page) - 1) * parseInt(limit) })
+      ...(limit && limit !== 'all' && { take: parseInt(limit) }),
+      ...(page && limit && limit !== 'all' && { skip: (parseInt(page) - 1) * parseInt(limit) })
     });
 
     // Hydrate items where product is null but productId exists
