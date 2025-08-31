@@ -374,6 +374,18 @@ export class TransactionService {
     // Hydrate items where product is null but productId exists
     transactions = await this.hydrateMissingProducts(transactions);
 
+    // Debug: Log payment schedule data
+    for (const t of transactions) {
+      if (t.paymentSchedules && t.paymentSchedules.length > 0) {
+        console.log(`Transaction ${t.id} payment schedules:`, t.paymentSchedules.map(s => ({
+          id: s.id,
+          paidChannel: s.paidChannel,
+          paidAmount: s.paidAmount,
+          isPaid: s.isPaid
+        })));
+      }
+    }
+
     console.log('Transactions found:', transactions);
   
     return {
