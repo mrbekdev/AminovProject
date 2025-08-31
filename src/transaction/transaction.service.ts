@@ -176,24 +176,24 @@ export class TransactionService {
       
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
-      const dailyPayment = remainingWithInterest / totalDays;
-      let remainingBalance = remainingWithInterest;
       
       console.log('interestAmount:', interestAmount);
       console.log('remainingWithInterest:', remainingWithInterest);
-      console.log('dailyPayment:', dailyPayment);
+      console.log('totalDays:', totalDays);
 
-      for (let day = 1; day <= totalDays; day++) {
-        remainingBalance -= dailyPayment;
-        schedules.push({
-          transactionId,
-          month: day, // month field kunlar uchun ham ishlatiladi
-          payment: dailyPayment,
-          remainingBalance: Math.max(0, remainingBalance),
-          isPaid: false,
-          paidAmount: 0
-        });
-      }
+      // Kunlik bo'lib to'lash uchun faqat 1 ta payment schedule yaratish
+      // Mijoz bu kunlar ichida qolgan summani to'lab ketishi kerak
+      schedules.push({
+        transactionId,
+        month: 1, // Faqat 1 ta entry
+        payment: remainingWithInterest, // To'liq qolgan summa
+        remainingBalance: 0, // To'lovdan keyin qoldiq 0 bo'ladi
+        isPaid: false,
+        paidAmount: 0,
+        dueDate: new Date(Date.now() + totalDays * 24 * 60 * 60 * 1000), // Kunlar soni keyin to'lov muddati
+        isDailyInstallment: true, // Bu kunlik bo'lib to'lash ekanligini belgilash
+        daysCount: totalDays // Kunlar sonini saqlash
+      });
     }
 
     if (schedules.length > 0) {
