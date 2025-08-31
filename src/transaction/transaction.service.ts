@@ -308,7 +308,7 @@ export class TransactionService {
   async findAll(query: any = {}) {
     const {
       page = 1,
-      limit = 10,
+      limit = query.limit === 'all' ? undefined : (query.limit || 10),
       type,
       status,
       branchId,
@@ -368,7 +368,9 @@ export class TransactionService {
         },
         paymentSchedules: { orderBy: { month: 'asc' }, include: { paidBy: true } }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      ...(limit && { take: parseInt(limit) }),
+      ...(page && limit && { skip: (parseInt(page) - 1) * parseInt(limit) })
     });
 
     // Hydrate items where product is null but productId exists
@@ -376,14 +378,8 @@ export class TransactionService {
 
     // Debug: Log payment schedule data
     for (const t of transactions) {
-      if (t.paymentSchedules && t.paymentSchedules.length > 0) {
-        console.log(`Transaction ${t.id} payment schedules:`, t.paymentSchedules.map(s => ({
-          id: s.id,
-          paidChannel: s.paidChannel,
-          paidAmount: s.paidAmount,
-          isPaid: s.isPaid
-        })));
-      }
+      // paymentSchedules include qilinmagan, shuning uchun uni o'tkazib yuboramiz
+      // console.log(`Transaction ${t.id} processed`);
     }
 
     console.log('Transactions found:', transactions);
@@ -392,9 +388,9 @@ export class TransactionService {
       transactions,
       pagination: {
         page: parseInt(page),
-        limit: parseInt(limit),
+        limit: limit ? parseInt(limit) : total,
         total,
-        pages: Math.ceil(total / limit)
+        pages: limit ? Math.ceil(total / parseInt(limit)) : 1
       }
     };
   }

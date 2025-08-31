@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { Prisma, PrismaClient, ProductStatus } from '@prisma/client';
+import { Prisma, PrismaClient, ProductStatus, TransactionType } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
 
@@ -216,7 +216,7 @@ async update(
     const transaction = await prismaClient.transaction.create({
       data: {
         userId,
-        type,
+        type : type as TransactionType,
         status: 'COMPLETED',
         discount: 0,
         total: 0,
@@ -278,7 +278,7 @@ async update(
       const transaction = await tx.transaction.create({
         data: {
           userId,
-          type: 'WRITE_OFF',
+          type: 'WRITE_OF',
           status: 'COMPLETED',
           discount: 0,
           total: 0,
@@ -345,7 +345,7 @@ async update(
       const transaction = await tx.transaction.create({
         data: {
           userId,
-          type: 'WRITE_OFF',
+          type: 'WRITE_OF',
           status: 'COMPLETED',
           discount: 0,
           total: 0,
@@ -470,7 +470,7 @@ async update(
         const transaction = await tx.transaction.create({
           data: {
             userId,
-            type: 'WRITE_OFF',
+            type: 'WRITE_OF',
             status: 'COMPLETED',
             discount: 0,
             total: 0,
