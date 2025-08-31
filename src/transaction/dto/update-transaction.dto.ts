@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsString, IsDateString } from 'class-validator';
 import { TransactionStatus, PaymentType } from '@prisma/client';
 
 export class UpdateTransactionDto {
@@ -53,4 +53,13 @@ export class UpdateTransactionDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  // Credit repayment tracking fields
+  @IsNumber()
+  @IsOptional()
+  creditRepaymentAmount?: number;
+
+  @IsDateString()
+  @IsOptional()
+  lastRepaymentDate?: string;
 }
