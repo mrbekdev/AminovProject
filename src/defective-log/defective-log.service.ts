@@ -8,8 +8,96 @@ import { ProductStatus } from '@prisma/client';
 export class DefectiveLogService {
   constructor(private prisma: PrismaService) {}
 
+  // Helper method to recalculate payment schedules for a transaction
+  private async recalculatePaymentSchedules(transactionId: number) {
+    const transaction = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: { 
+        items: true,
+        paymentSchedules: true
+      }
+    });
+
+    if (!transaction || (transaction.paymentType !== 'CREDIT' && transaction.paymentType !== 'INSTALLMENT')) {
+      return; // Only recalculate for credit/installment transactions
+    }
+
+    // Delete existing payment schedules
+    if (transaction.paymentSchedules.length > 0) {
+      await this.prisma.paymentSchedule.deleteMany({
+        where: { transactionId }
+      });
+    }
+
+    // Recalculate based on remaining items
+    const remainingItems = transaction.items.filter(item => item.quantity > 0);
+    if (remainingItems.length === 0) {
+      return; // No items left, no need for schedules
+    }
+
+    // Aggregate principal and determine weighted interest and months
+    let totalPrincipal = 0;
+    let weightedPercentSum = 0;
+    let percentWeightBase = 0;
+    let totalMonths = 0;
+
+    for (const item of remainingItems) {
+      const principal = (item.price || 0) * (item.quantity || 0);
+      totalPrincipal += principal;
+      if (item.creditPercent) {
+        weightedPercentSum += principal * (item.creditPercent || 0);
+        percentWeightBase += principal;
+      }
+      if (item.creditMonth) {
+        totalMonths = Math.max(totalMonths, item.creditMonth || 0);
+      }
+    }
+
+    if (totalPrincipal > 0 && totalMonths > 0) {
+      // Calculate remaining principal after upfront payment
+      const upfrontPayment = transaction.amountPaid || 0;
+      const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
+      const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
+      
+      const interestAmount = remainingPrincipal * effectivePercent;
+      const remainingWithInterest = remainingPrincipal + interestAmount;
+      const monthlyPayment = remainingWithInterest / totalMonths;
+      let remainingBalance = remainingWithInterest;
+
+      const schedules: { transactionId: number; month: number; payment: number; remainingBalance: number; isPaid: boolean; paidAmount: number; }[] = [];
+      for (let month = 1; month <= totalMonths; month++) {
+        // For the last month, use the exact remaining balance to avoid floating point errors
+        const currentPayment = month === totalMonths ? remainingBalance : monthlyPayment;
+        remainingBalance -= currentPayment;
+        schedules.push({
+          transactionId,
+          month,
+          payment: currentPayment,
+          remainingBalance: Math.max(0, remainingBalance),
+          isPaid: false,
+          paidAmount: 0
+        });
+      }
+
+      if (schedules.length > 0) {
+        await this.prisma.paymentSchedule.createMany({
+          data: schedules
+        });
+      }
+
+      // Update transaction totals
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: { 
+          total: totalPrincipal,
+          finalTotal: remainingWithInterest
+        }
+      });
+    }
+  }
+
   async create(createDefectiveLogDto: CreateDefectiveLogDto) {
-    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE', isFromSale, transactionId, customerId, cashAdjustmentDirection, cashAmount: cashAmountInput, exchangeWithProductId, replacementQuantity, replacementUnitPrice, replacementTransactionId } = createDefectiveLogDto;
+    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE', isFromSale, transactionId, customerId, cashAdjustmentDirection, cashAmount: cashAmountInput, exchangeWithProductId, replacementQuantity, replacementUnitPrice } = createDefectiveLogDto;
 
     // Check if product exists
     const product = await this.prisma.product.findUnique({
@@ -113,11 +201,7 @@ export class DefectiveLogService {
           userId,
           branchId,
           cashAmount,
-          actionType,
-          exchangeWithProductId: actionType === 'EXCHANGE' ? Number(exchangeWithProductId) : null,
-          replacementQuantity: actionType === 'EXCHANGE' ? Number(replacementQuantity) : null,
-          replacementUnitPrice: actionType === 'EXCHANGE' ? Number(replacementUnitPrice) : null,
-          replacementTransactionId: actionType === 'EXCHANGE' ? Number(replacementTransactionId) : null
+          actionType
         },
         include: {
           product: true,
@@ -156,11 +240,16 @@ export class DefectiveLogService {
             if (actionType === 'RETURN' || actionType === 'EXCHANGE') {
               const remainingQty = Math.max(0, Number(orig.quantity) - Number(quantity));
               if (remainingQty === 0) {
-                // Remove the item completely if all quantity is returned/exchanged
-                await prisma.transactionItem.delete({ where: { id: orig.id } });
-                console.log(`Transaction item ${orig.id} deleted - all quantity returned/exchanged`);
+                // Instead of deleting, mark as returned with status
+                await prisma.transactionItem.update({
+                  where: { id: orig.id },
+                  data: {
+                    quantity: 0,
+                    total: 0,
+                    status: 'RETURNED' // Add status field to track returned items
+                  }
+                });
               } else {
-                // Update the item with remaining quantity
                 const unitPrice = (orig.sellingPrice ?? orig.price) || 0;
                 await prisma.transactionItem.update({
                   where: { id: orig.id },
@@ -169,61 +258,56 @@ export class DefectiveLogService {
                     total: remainingQty * unitPrice
                   }
                 });
-                console.log(`Transaction item ${orig.id} updated - remaining quantity: ${remainingQty}`);
               }
             }
 
             if (actionType === 'EXCHANGE') {
               const replacementQty = Math.max(1, Number(replacementQuantity || quantity) || quantity);
+
               const replProdId = Number(exchangeWithProductId);
               const replPrice = Number(replacementUnitPrice ?? 0);
 
-              if (replProdId && replPrice > 0) {
-                // Idempotency/merge guard: if a replacement item with same product and price was just added, update it instead of creating duplicate
-                const existingRepl = await prisma.transactionItem.findFirst({
-                  where: { transactionId: tx.id, productId: replProdId, price: replPrice },
-                  orderBy: { createdAt: 'desc' }
-                });
+              // Idempotency/merge guard: if a replacement item with same product and price was just added, update it instead of creating duplicate
+              const existingRepl = await prisma.transactionItem.findFirst({
+                where: { transactionId: tx.id, productId: replProdId, price: replPrice },
+                orderBy: { createdAt: 'desc' }
+              });
 
-                if (existingRepl) {
-                  await prisma.transactionItem.update({
-                    where: { id: existingRepl.id },
-                    data: {
-                      quantity: existingRepl.quantity + replacementQty,
-                      total: (existingRepl.quantity + replacementQty) * (existingRepl.sellingPrice ?? existingRepl.price)
-                    }
-                  });
-                  console.log(`Existing replacement item ${existingRepl.id} updated - new quantity: ${existingRepl.quantity + replacementQty}`);
-                } else {
-                  // add new replacement item
-                  const newReplItem = await prisma.transactionItem.create({
-                    data: {
-                      transactionId: tx.id,
-                      productId: replProdId,
-                      quantity: replacementQty,
-                      price: replPrice,
-                      sellingPrice: replPrice,
-                      originalPrice: replPrice,
-                      total: replacementQty * replPrice
-                    }
-                  });
-                  console.log(`New replacement item ${newReplItem.id} created for product ${replProdId}`);
-                }
-
-                // decrement stock for replacement product by replacementQty
-                const repl = await prisma.product.findUnique({ where: { id: replProdId } });
-                if (!repl) {
-                  throw new NotFoundException('Almashtiriladigan mahsulot topilmadi');
-                }
-                if (replacementQty > repl.quantity) {
-                  throw new BadRequestException(`Almashtirish miqdori mavjud miqdordan ko'p. Mavjud: ${repl.quantity}, so'ralgan: ${replacementQty}`);
-                }
-                await prisma.product.update({
-                  where: { id: repl.id },
-                  data: { quantity: Math.max(0, repl.quantity - replacementQty) }
+              if (existingRepl) {
+                await prisma.transactionItem.update({
+                  where: { id: existingRepl.id },
+                  data: {
+                    quantity: existingRepl.quantity + replacementQty,
+                    total: (existingRepl.quantity + replacementQty) * (existingRepl.sellingPrice ?? existingRepl.price)
+                  }
                 });
-                console.log(`Replacement product ${replProdId} stock updated - new quantity: ${Math.max(0, repl.quantity - replacementQty)}`);
+              } else {
+                // add new replacement item
+                await prisma.transactionItem.create({
+                  data: {
+                    transactionId: tx.id,
+                    productId: replProdId,
+                    quantity: replacementQty,
+                    price: replPrice,
+                    sellingPrice: replPrice,
+                    originalPrice: replPrice,
+                    total: replacementQty * replPrice
+                  }
+                });
               }
+
+              // decrement stock for replacement product by replacementQty
+              const repl = await prisma.product.findUnique({ where: { id: replProdId } });
+              if (!repl) {
+                throw new NotFoundException('Almashtiriladigan mahsulot topilmadi');
+              }
+              if (replacementQty > repl.quantity) {
+                throw new BadRequestException(`Almashtirish miqdori mavjud miqdordan ko'p. Mavjud: ${repl.quantity}, so'ralgan: ${replacementQty}`);
+              }
+              await prisma.product.update({
+                where: { id: repl.id },
+                data: { quantity: Math.max(0, repl.quantity - replacementQty) }
+              });
             }
             
             // Recalculate totals
@@ -233,7 +317,11 @@ export class DefectiveLogService {
               where: { id: tx.id },
               data: { total: newTotal, finalTotal: newTotal }
             });
-            console.log(`Transaction ${tx.id} totals recalculated - new total: ${newTotal}`);
+
+            // Recalculate payment schedules for credit/installment transactions
+            if (tx.paymentType === 'CREDIT' || tx.paymentType === 'INSTALLMENT') {
+              await this.recalculatePaymentSchedules(tx.id);
+            }
           }
         }
       }

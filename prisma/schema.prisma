@@ -14,7 +14,7 @@ enum TransactionType {
   TRANSFER
   PURCHASE
   RETURN
-  WRITE_OF 
+  WRITE_OFF
 }
 
 enum TransactionStatus {
@@ -233,6 +233,10 @@ model Transaction {
   creditRepaymentAmount Float?    @default(0)
   lastRepaymentDate     DateTime?
 
+  // Term fields for credit/installment
+  days    Int? // Kunlar soni (kunlik bo'lib to'lash uchun)
+  months  Int? // Oylar soni (oylik bo'lib to'lash uchun)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -268,6 +272,7 @@ model TransactionItem {
   creditMonth    Int?
   creditPercent  Float?
   monthlyPayment Float?
+  status         String?  // Status to track returned items (e.g., "RETURNED", "ACTIVE")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
