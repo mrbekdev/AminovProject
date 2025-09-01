@@ -32,6 +32,21 @@ export class CreditRepaymentController {
     );
   }
 
+  @Get('user/:userId')
+  findByUser(
+    @Param('userId') userId: string,
+    @Query('branchId') branchId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.creditRepaymentService.findByUser(
+      parseInt(userId),
+      branchId ? parseInt(branchId) : undefined,
+      startDate,
+      endDate,
+    );
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.creditRepaymentService.findOne(+id);
