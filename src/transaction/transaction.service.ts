@@ -148,13 +148,15 @@ export class TransactionService {
       }
     });
 
-    // Kredit bo'lsa, oylik to'lovlar jadvalini yaratish
+    // Kredit yoki Bo'lib to'lash bo'lsa, to'lovlar jadvalini yaratish
     if (transaction.paymentType === PaymentType.CREDIT || transaction.paymentType === PaymentType.INSTALLMENT) {
       // Kunlik yoki oylik to'lovlarni tekshirish
       const isDays = (transaction as any).termUnit === 'DAYS';
       if (isDays) {
+        // Kunlik bo'lib to'lash uchun 1 ta payment schedule
         await this.createDailyPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0);
       } else {
+        // Oylik bo'lib to'lash uchun har oy uchun alohida schedule
         await this.createPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0);
       }
     }
@@ -227,7 +229,11 @@ export class TransactionService {
         isDailyInstallment: true, // Bu kunlik bo'lib to'lash ekanligini belgilash
         daysCount: totalDays, // Kunlar sonini saqlash
         // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
-        dailyRemainingBalance: remainingWithInterest // Kunlik bo'lib to'lashda qolgan summa
+        dailyRemainingBalance: remainingWithInterest, // Kunlik bo'lib to'lashda qolgan summa
+        // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
+        installmentType: 'DAILY', // Kunlik bo'lib to'lash turi
+        totalDays: totalDays, // Jami kunlar soni
+        remainingDays: totalDays // Qolgan kunlar soni
       });
     }
 
@@ -292,7 +298,11 @@ export class TransactionService {
           payment: currentPayment,
           remainingBalance: Math.max(0, remainingBalance),
           isPaid: false,
-          paidAmount: 0
+          paidAmount: 0,
+          // Oylik bo'lib to'lash uchun qo'shimcha ma'lumotlar
+          installmentType: 'MONTHLY', // Oylik bo'lib to'lash turi
+          totalMonths: totalMonths, // Jami oylar soni
+          remainingMonths: totalMonths - month + 1 // Qolgan oylar soni
         });
       }
     }
