@@ -5,7 +5,6 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  
 }
 
 enum TransactionType {
@@ -14,7 +13,7 @@ enum TransactionType {
   TRANSFER
   PURCHASE
   RETURN
-  WRITE_OFF
+  WRITE_OF
 }
 
 enum TransactionStatus {
@@ -65,16 +64,18 @@ model Branch {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  products       Product[]
-  transactions   Transaction[]     @relation("FromBranch")
-  toTransactions Transaction[]     @relation("ToBranch")
-  users          User[]
-  categories     Category[]
-  fromTransfers  ProductTransfer[] @relation("FromBranch")
-  toTransfers    ProductTransfer[] @relation("ToBranch")
-  defectiveLogs  DefectiveLog[]
-  exchangeRates  CurrencyExchangeRate[]
-  cashierReports CashierReport[]
+  products         Product[]
+  transactions     Transaction[]          @relation("FromBranch")
+  toTransactions   Transaction[]          @relation("ToBranch")
+  users            User[]
+  categories       Category[]
+  fromTransfers    ProductTransfer[]      @relation("FromBranch")
+  toTransfers      ProductTransfer[]      @relation("ToBranch")
+  defectiveLogs    DefectiveLog[]
+  exchangeRates    CurrencyExchangeRate[]
+  cashierReports   CashierReport[]
+  creditRepayments CreditRepayment[]
+  dailyRepayments  DailyRepayment[]
 
   @@index([name])
 }
@@ -91,18 +92,18 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branch              Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  createdTransactions Transaction[]      @relation("TransactionsCreatedBy")
-  soldTransactions    Transaction[]      @relation("TransactionsSoldBy")
-  initiatedTransfers  ProductTransfer[]  @relation("InitiatedTransfers")
-  approvedTransfers   ProductTransfer[]  @relation("ApprovedTransfers")
+  branch              Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdTransactions Transaction[]          @relation("TransactionsCreatedBy")
+  soldTransactions    Transaction[]          @relation("TransactionsSoldBy")
+  initiatedTransfers  ProductTransfer[]      @relation("InitiatedTransfers")
+  approvedTransfers   ProductTransfer[]      @relation("ApprovedTransfers")
   userLocations       UserLocation[]
   defectiveLogs       DefectiveLog[]
   PaymentSchedule     PaymentSchedule[]
   PaymentRepayment    PaymentRepayment[]
   dailyRepayments     DailyRepayment[]
   creditRepayments    CreditRepayment[]
-  cashierReports      CashierReport[]   @relation("CashierReports")
+  cashierReports      CashierReport[]        @relation("CashierReports")
   exchangeRates       CurrencyExchangeRate[]
 
   @@index([phone])
@@ -140,7 +141,7 @@ model Category {
 model Product {
   id                Int           @id @default(autoincrement())
   name              String
-  barcode           String?       
+  barcode           String?
   model             String?
   price             Float
   quantity          Int
@@ -176,15 +177,15 @@ model DefectiveLog {
   cashAmount  Float    @default(0) // Kassadan chiqadigan yoki kiruvchi pul
   actionType  String   @default("DEFECTIVE") // DEFECTIVE, FIXED, RETURN, EXCHANGE
   createdAt   DateTime @default(now())
-  
+
   // Exchange-specific fields
-  exchangeWithProductId Int? // ID of the product being exchanged with
-  replacementQuantity   Int? // Quantity of replacement product
-  replacementUnitPrice  Float? // Unit price of replacement product
+  exchangeWithProductId    Int? // ID of the product being exchanged with
+  replacementQuantity      Int? // Quantity of replacement product
+  replacementUnitPrice     Float? // Unit price of replacement product
   replacementTransactionId Int? // ID of the new transaction created for replacement product
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user    User?   @relation(fields: [userId], references: [id], onDelete:Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
   branch  Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@map("defective_logs")
@@ -209,37 +210,37 @@ model Customer {
 }
 
 model Transaction {
-  id               Int               @id @default(autoincrement())
-  customerId       Int?
-  userId           Int?
-  soldByUserId     Int? // Kim sotganini saqlash uchun
-  fromBranchId     Int? // Qaysi filialdan chiqayotgani (SALE, PURCHASE, TRANSFER uchun)
-  toBranchId       Int? // Qaysi filialga ketayotgani (TRANSFER uchun)
-  type             TransactionType
-  transactionType  String? // Qo'shimcha transaction turi (SALE, PURCHASE, TRANSFER, RETURN, etc.)
-  status           TransactionStatus @default(PENDING)
-  discount         Float             @default(0)
-  total            Float
-  finalTotal       Float
-  paymentType      PaymentType?
+  id                 Int               @id @default(autoincrement())
+  customerId         Int?
+  userId             Int?
+  soldByUserId       Int? // Kim sotganini saqlash uchun
+  fromBranchId       Int? // Qaysi filialdan chiqayotgani (SALE, PURCHASE, TRANSFER uchun)
+  toBranchId         Int? // Qaysi filialga ketayotgani (TRANSFER uchun)
+  type               TransactionType
+  transactionType    String? // Qo'shimcha transaction turi (SALE, PURCHASE, TRANSFER, RETURN, etc.)
+  status             TransactionStatus @default(PENDING)
+  discount           Float             @default(0)
+  total              Float
+  finalTotal         Float
+  paymentType        PaymentType?
   upfrontPaymentType String? // CASH or CARD - for upfront payments in credit/installment
-  termUnit         String? // MONTHS or DAYS - for payment terms
-  deliveryMethod   String?
-  deliveryType     String? // PICKUP or DELIVERY
-  deliveryAddress  String? // Delivery address for customer
-  amountPaid       Float?
-  downPayment      Float?
-  remainingBalance Float?
-  receiptId        String?
-  description      String?
+  termUnit           String? // MONTHS or DAYS - for payment terms
+  deliveryMethod     String?
+  deliveryType       String? // PICKUP or DELIVERY
+  deliveryAddress    String? // Delivery address for customer
+  amountPaid         Float?
+  downPayment        Float?
+  remainingBalance   Float?
+  receiptId          String?
+  description        String?
 
   // Credit repayment tracking fields
   creditRepaymentAmount Float?    @default(0)
   lastRepaymentDate     DateTime?
 
   // Term fields for credit/installment
-  days    Int? // Kunlar soni (kunlik bo'lib to'lash uchun)
-  months  Int? // Oylar soni (oylik bo'lib to'lash uchun)
+  days   Int? // Kunlar soni (kunlik bo'lib to'lash uchun)
+  months Int? // Oylar soni (oylik bo'lib to'lash uchun)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -272,13 +273,13 @@ model TransactionItem {
   productId      Int?
   quantity       Int
   price          Float
-  sellingPrice   Float?   // Actual selling price (can be different from product.price)
-  originalPrice  Float?   // Original product price at time of sale
+  sellingPrice   Float? // Actual selling price (can be different from product.price)
+  originalPrice  Float? // Original product price at time of sale
   total          Float
   creditMonth    Int?
   creditPercent  Float?
   monthlyPayment Float?
-  status         String?  // Status to track returned items (e.g., "RETURNED", "ACTIVE")
+  status         String? // Status to track returned items (e.g., "RETURNED", "ACTIVE")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -330,23 +331,23 @@ model PaymentSchedule {
   repaymentDate         DateTime?
 
   // Credit rating field
-  rating              String?    // "YAXSHI" or "YOMON"
+  rating String? // "YAXSHI" or "YOMON"
 
   // Daily installment fields
-  dueDate            DateTime?   // To'lov muddati (kunlik bo'lib to'lash uchun)
-  isDailyInstallment Boolean     @default(false) // Kunlik bo'lib to'lash ekanligini belgilash
-  daysCount          Int?        // Kunlar soni (kunlik bo'lib to'lash uchun)
-  
-  // Bo'lib to'lash uchun qo'shimcha maydonlar
-  installmentType    String?     // "DAILY" yoki "MONTHLY"
-  totalDays          Int?        // Jami kunlar soni (kunlik bo'lib to'lash uchun)
-  remainingDays      Int?        // Qolgan kunlar soni (kunlik bo'lib to'lash uchun)
-  totalMonths        Int?        // Jami oylar soni (oylik bo'lib to'lash uchun)
-  remainingMonths    Int?        // Qolgan oylar soni (oylik bo'lib to'lash uchun)
+  dueDate            DateTime? // To'lov muddati (kunlik bo'lib to'lash uchun)
+  isDailyInstallment Boolean   @default(false) // Kunlik bo'lib to'lash ekanligini belgilash
+  daysCount          Int? // Kunlar soni (kunlik bo'lib to'lash uchun)
 
-  transaction Transaction        @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  paidBy      User?              @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  repayments  PaymentRepayment[]
+  // Bo'lib to'lash uchun qo'shimcha maydonlar
+  installmentType String? // "DAILY" yoki "MONTHLY"
+  totalDays       Int? // Jami kunlar soni (kunlik bo'lib to'lash uchun)
+  remainingDays   Int? // Qolgan kunlar soni (kunlik bo'lib to'lash uchun)
+  totalMonths     Int? // Jami oylar soni (oylik bo'lib to'lash uchun)
+  remainingMonths Int? // Qolgan oylar soni (oylik bo'lib to'lash uchun)
+
+  transaction      Transaction        @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  paidBy           User?              @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  repayments       PaymentRepayment[]
   creditRepayments CreditRepayment[]
 }
 
@@ -381,6 +382,8 @@ model DailyRepayment {
 
   transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   paidBy      User?       @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch      Branch?     @relation(fields: [branchId], references: [id])
+  branchId    Int?
 
   @@index([transactionId])
   @@index([paidAt])
@@ -391,17 +394,20 @@ model DailyRepayment {
 model CreditRepayment {
   id            Int      @id @default(autoincrement())
   transactionId Int
-  scheduleId    Int?     // Optional, for transactions with payment schedules
+  scheduleId    Int? // Optional, for transactions with payment schedules
   amount        Float
   channel       String   @default("CASH") // CASH or CARD
-  month         String?  // Month name or number
+  month         String? // Month name or number (e.g., "1", "2", "Январь", "Кунлик")
+  monthNumber   Int? // Numeric month value for calculations
   paidAt        DateTime @default(now())
   paidByUserId  Int?
   createdAt     DateTime @default(now())
 
-  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  transaction Transaction      @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   schedule    PaymentSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  paidBy      User?       @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  paidBy      User?            @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch      Branch?          @relation(fields: [branchId], references: [id])
+  branchId    Int?
 
   @@index([transactionId])
   @@index([scheduleId])
@@ -409,44 +415,43 @@ model CreditRepayment {
   @@index([paidByUserId])
 }
 
-// New model for cashier reports
 model CashierReport {
-  id            Int      @id @default(autoincrement())
-  cashierId     Int      // User ID of the cashier
-  branchId      Int      // Branch ID
-  reportDate    DateTime // Date of the report
-  cashTotal     Float    @default(0) // Total cash sales
-  cardTotal     Float    @default(0) // Total card sales
-  creditTotal   Float    @default(0) // Total credit sales
-  installmentTotal Float @default(0) // Total installment sales
-  upfrontTotal Float    @default(0) // Total upfront payments
-  upfrontCash  Float    @default(0) // Upfront payments in cash
-  upfrontCard  Float    @default(0) // Upfront payments in card
-  soldQuantity Int      @default(0) // Total quantity sold
-  soldAmount   Float    @default(0) // Total amount sold
-  repaymentTotal Float  @default(0) // Total credit repayments
-  defectivePlus Float   @default(0) // Defective returns (positive)
-  defectiveMinus Float  @default(0) // Defective returns (negative)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               Int      @id @default(autoincrement())
+  cashierId        Int // User ID of the cashier
+  branchId         Int // Branch ID
+  reportDate       DateTime // Date of the report
+  cashTotal        Float    @default(0) // Total cash sales
+  cardTotal        Float    @default(0) // Total card sales
+  creditTotal      Float    @default(0) // Total credit sales
+  installmentTotal Float    @default(0) // Total installment sales
+  upfrontTotal     Float    @default(0) // Total upfront payments
+  upfrontCash      Float    @default(0) // Upfront payments in cash
+  upfrontCard      Float    @default(0) // Upfront payments in card
+  soldQuantity     Int      @default(0) // Total quantity sold
+  soldAmount       Float    @default(0) // Total amount sold
+  repaymentTotal   Float    @default(0) // Total credit repayments
+  defectivePlus    Float    @default(0) // Defective returns (positive)
+  defectiveMinus   Float    @default(0) // Defective returns (negative)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  cashier User  @relation("CashierReports", fields: [cashierId], references: [id], onDelete: Cascade)
+  cashier User   @relation("CashierReports", fields: [cashierId], references: [id], onDelete: Cascade)
   branch  Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
+  @@unique([cashierId, branchId, reportDate])
   @@index([cashierId])
   @@index([branchId])
   @@index([reportDate])
-  @@unique([cashierId, branchId, reportDate])
 }
 
 model CurrencyExchangeRate {
-  id          Int      @id @default(autoincrement())
-  fromCurrency String  @default("USD") // From currency (e.g., USD)
-  toCurrency   String  @default("UZS") // To currency (e.g., UZS)
-  rate         Float   // Exchange rate (e.g., 1 USD = 12500 UZS)
-  isActive     Boolean @default(true)
-  branchId     Int?    // If null, applies to all branches
-  createdBy    Int?    // User who created this rate
+  id           Int      @id @default(autoincrement())
+  fromCurrency String   @default("USD") // From currency (e.g., USD)
+  toCurrency   String   @default("UZS") // To currency (e.g., UZS)
+  rate         Float // Exchange rate (e.g., 1 USD = 12500 UZS)
+  isActive     Boolean  @default(true)
+  branchId     Int? // If null, applies to all branches
+  createdBy    Int? // User who created this rate
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -462,7 +467,7 @@ model CurrencyExchangeRate {
 
 model barcodeCounter {
   id        Int      @id @default(autoincrement())
-  counter   BigInt   @default(1000000000)      
+  counter   BigInt   @default(1000000000)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

@@ -4,8 +4,8 @@ export class CreateCreditRepaymentDto {
   @IsNumber()
   transactionId: number;
 
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
   scheduleId?: number;
 
   @IsNumber()
@@ -14,14 +14,22 @@ export class CreateCreditRepaymentDto {
   @IsString()
   channel: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   month?: string;
+
+  @IsOptional()
+  @IsNumber()
+  monthNumber?: number;
 
   @IsDateString()
   paidAt: string;
 
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
   paidByUserId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  branchId?: number;
 }

@@ -13,7 +13,11 @@ export class CreateDailyRepaymentDto {
   @IsDateString()
   paidAt: string;
 
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
   paidByUserId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  branchId?: number;
 }

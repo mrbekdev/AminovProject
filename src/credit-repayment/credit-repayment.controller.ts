@@ -18,17 +18,17 @@ export class CreditRepaymentController {
   }
 
   @Get('cashier/:cashierId')
-  getCashierCreditRepayments(
+  findByCashier(
     @Param('cashierId') cashierId: string,
     @Query('branchId') branchId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
-    return this.creditRepaymentService.getCashierCreditRepayments(
-      +cashierId,
-      +branchId,
-      new Date(startDate),
-      new Date(endDate),
+    return this.creditRepaymentService.findByCashier(
+      parseInt(cashierId),
+      branchId ? parseInt(branchId) : undefined,
+      startDate,
+      endDate,
     );
   }
 

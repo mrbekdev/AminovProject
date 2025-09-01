@@ -18,17 +18,17 @@ export class DailyRepaymentController {
   }
 
   @Get('cashier/:cashierId')
-  getCashierDailyRepayments(
+  findByCashier(
     @Param('cashierId') cashierId: string,
     @Query('branchId') branchId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
-    return this.dailyRepaymentService.getCashierDailyRepayments(
-      +cashierId,
-      +branchId,
-      new Date(startDate),
-      new Date(endDate),
+    return this.dailyRepaymentService.findByCashier(
+      parseInt(cashierId),
+      branchId ? parseInt(branchId) : undefined,
+      startDate,
+      endDate,
     );
   }
 

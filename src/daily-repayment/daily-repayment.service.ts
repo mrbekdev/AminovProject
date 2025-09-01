@@ -8,42 +8,69 @@ export class DailyRepaymentService {
   constructor(private prisma: PrismaService) {}
 
   async create(createDailyRepaymentDto: CreateDailyRepaymentDto) {
+    const { transactionId, amount, channel, paidAt, paidByUserId, branchId } = createDailyRepaymentDto;
+    
     return this.prisma.dailyRepayment.create({
-      data: createDailyRepaymentDto,
+      data: {
+        transactionId,
+        amount,
+        channel,
+        paidAt: new Date(paidAt),
+        paidByUserId,
+        branchId,
+      },
       include: {
         transaction: true,
         paidBy: true,
+        branch: true,
       },
     });
   }
 
-  async findAll(query: any = {}) {
-    const { transactionId, paidByUserId, branchId, startDate, endDate, limit = 100 } = query;
+  async findAll(query: any) {
+    const { transactionId, branchId, paidByUserId, startDate, endDate } = query;
     
     const where: any = {};
     
-    if (transactionId) {
-      where.transactionId = parseInt(transactionId);
-    }
-    
-    if (paidByUserId) {
-      where.paidByUserId = parseInt(paidByUserId);
-    }
-    
-    if (branchId) {
-      where.transaction = {
-        fromBranchId: parseInt(branchId)
-      };
-    }
+    if (transactionId) where.transactionId = parseInt(transactionId);
+    if (branchId) where.branchId = parseInt(branchId);
+    if (paidByUserId) where.paidByUserId = parseInt(paidByUserId);
     
     if (startDate || endDate) {
       where.paidAt = {};
-      if (startDate) {
-        where.paidAt.gte = new Date(startDate);
-      }
-      if (endDate) {
-        where.paidAt.lte = new Date(endDate);
-      }
+      if (startDate) where.paidAt.gte = new Date(startDate);
+      if (endDate) where.paidAt.lte = new Date(endDate);
+    }
+
+    return this.prisma.dailyRepayment.findMany({
+      where,
+      include: {
+        transaction: true,
+        paidBy: true,
+        branch: true,
+      },
+      orderBy: {
+        paidAt: 'desc',
+      },
+    });
+  }
+
+  async findByCashier(
+    cashierId: number,
+    branchId?: number,
+    startDate?: string,
+    endDate?: string,
+  ) {
+    const where: any = {
+      paidByUserId: cashierId,
+    };
+    
+    if (branchId) where.branchId = branchId;
+    
+    if (startDate || endDate) {
+      where.paidAt = {};
+      if (startDate) where.paidAt.gte = new Date(startDate);
+      if (endDate) where.paidAt.lte = new Date(endDate);
     }
 
     return this.prisma.dailyRepayment.findMany({
@@ -52,15 +79,14 @@ export class DailyRepaymentService {
         transaction: {
           include: {
             customer: true,
-            soldBy: true,
-          }
+          },
         },
         paidBy: true,
+        branch: true,
       },
       orderBy: {
         paidAt: 'desc',
       },
-      take: limit === 'all' ? undefined : parseInt(limit),
     });
   }
 
@@ -70,17 +96,27 @@ export class DailyRepaymentService {
       include: {
         transaction: true,
         paidBy: true,
+        branch: true,
       },
     });
   }
 
   async update(id: number, updateDailyRepaymentDto: UpdateDailyRepaymentDto) {
+    const { amount, channel, paidAt, paidByUserId, branchId } = updateDailyRepaymentDto;
+    
     return this.prisma.dailyRepayment.update({
       where: { id },
-      data: updateDailyRepaymentDto,
+      data: {
+        amount,
+        channel,
+        paidAt: paidAt ? new Date(paidAt) : undefined,
+        paidByUserId,
+        branchId,
+      },
       include: {
         transaction: true,
         paidBy: true,
+        branch: true,
       },
     });
   }
@@ -88,32 +124,6 @@ export class DailyRepaymentService {
   async remove(id: number) {
     return this.prisma.dailyRepayment.delete({
       where: { id },
-    });
-  }
-
-  async getCashierDailyRepayments(cashierId: number, branchId: number, startDate: Date, endDate: Date) {
-    return this.prisma.dailyRepayment.findMany({
-      where: {
-        paidByUserId: cashierId,
-        transaction: {
-          fromBranchId: branchId,
-        },
-        paidAt: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-      include: {
-        transaction: {
-          include: {
-            customer: true,
-          }
-        },
-        paidBy: true,
-      },
-      orderBy: {
-        paidAt: 'desc',
-      },
     });
   }
 }
