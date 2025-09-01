@@ -79,15 +79,40 @@ export class TransactionService {
     const createdByUserId = userId ?? transactionData.userId ?? null;
     const soldByUserId = (transactionData as any).soldByUserId ?? userId ?? createdByUserId ?? null;
 
+    // Compute totals and interest ONCE at sale time to avoid monthly reapplication
+    let computedTotal = 0;
+    let weightedPercentSum = 0;
+    let percentWeightBase = 0;
+    for (const item of items) {
+      const principal = (item.price || 0) * (item.quantity || 0);
+      computedTotal += principal;
+      if (item.creditPercent) {
+        weightedPercentSum += principal * (item.creditPercent || 0);
+        percentWeightBase += principal;
+      }
+    }
+    const upfrontPayment = Number((transactionData as any).downPayment || (transactionData as any).amountPaid || 0) || 0;
+    const remainingPrincipal = Math.max(0, computedTotal - upfrontPayment);
+    const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
+    const interestAmount = (transactionData as any).paymentType === PaymentType.CREDIT || (transactionData as any).paymentType === PaymentType.INSTALLMENT
+      ? remainingPrincipal * effectivePercent
+      : 0;
+    const remainingWithInterest = remainingPrincipal + interestAmount;
+    const finalTotalOnce = upfrontPayment + remainingWithInterest;
+
     // Transaction yaratish
     const transaction = await this.prisma.transaction.create({
       data: {
         ...transactionData,
         customerId,
-        // userId field yo'q, shuning uchun uni olib tashlaymiz
+        userId: createdByUserId || null, // yaratgan foydalanuvchi
         soldByUserId: soldByUserId || null, // sotgan kassir
         upfrontPaymentType: (transactionData as any).upfrontPaymentType || 'CASH', // Default to CASH if not specified
         termUnit: (transactionData as any).termUnit || 'MONTHS', // Default to MONTHS if not specified
+        // Ensure totals are consistent and interest is applied once at sale time
+        total: computedTotal,
+        finalTotal: finalTotalOnce,
+        remainingBalance: remainingWithInterest,
         // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
         ...((transactionData as any).termUnit === 'DAYS' ? {
           days: (transactionData as any).days || 0,
@@ -251,21 +276,21 @@ export class TransactionService {
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
       const monthlyPayment = remainingWithInterest / totalMonths;
+      let remainingBalance = remainingWithInterest;
       
       console.log('interestAmount:', interestAmount);
       console.log('remainingWithInterest:', remainingWithInterest);
       console.log('monthlyPayment:', monthlyPayment);
 
-      // Har oy uchun to'lov jadvalini yaratish
       for (let month = 1; month <= totalMonths; month++) {
-        const isLastMonth = month === totalMonths;
-        const paymentAmount = isLastMonth ? remainingWithInterest : monthlyPayment;
-        
+        // For the last month, use the exact remaining balance to avoid floating point errors
+        const currentPayment = month === totalMonths ? remainingBalance : monthlyPayment;
+        remainingBalance -= currentPayment;
         schedules.push({
           transactionId,
           month,
-          payment: paymentAmount,
-          remainingBalance: isLastMonth ? 0 : Math.max(0, remainingWithInterest - (monthlyPayment * month)),
+          payment: currentPayment,
+          remainingBalance: Math.max(0, remainingBalance),
           isPaid: false,
           paidAmount: 0
         });
@@ -377,8 +402,7 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: { product: true }
-        },
-        paymentSchedules: true // Added payment schedules
+        }
       },
       orderBy: { createdAt: 'desc' },
       ...(limit && limit !== 'all' && { take: parseInt(limit) }),
