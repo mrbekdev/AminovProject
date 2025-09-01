@@ -74,6 +74,26 @@ export class PaymentScheduleService {
     if (paidChannel !== undefined && paidChannel !== null) data.paidChannel = paidChannel;
     if (paidByUserId) data.paidByUserId = Number(paidByUserId);
     if (rating) data.rating = rating;
+    
+            // Kunlik bo'lib to'lash uchun remaining balance ni yangilash
+        if (existing.isDailyInstallment && deltaPaid > 0) {
+          const currentRemaining = existing.remainingBalance || 0;
+          const newRemaining = Math.max(0, currentRemaining - deltaPaid);
+          data.remainingBalance = newRemaining;
+          
+          console.log('Daily installment schedule - updating remaining balance:', {
+            scheduleId: id,
+            currentRemaining,
+            deltaPaid,
+            newRemaining
+          });
+          
+          // Kunlik bo'lib to'lash uchun payment schedule ning isPaid ni ham yangilash
+          if (newRemaining <= 0) {
+            data.isPaid = true;
+            console.log('Daily installment fully paid, marking as paid');
+          }
+        }
 
     console.log('Final update data being saved:', data);
 
@@ -124,12 +144,45 @@ export class PaymentScheduleService {
           });
         }
 
-        // Update parent transaction last repayment date
+        // Update parent transaction last repayment date and remaining balance
         try {
+                  // Kunlik bo'lib to'lash uchun remaining balance ni yangilash
+        if (existing.isDailyInstallment) {
+          const currentRemaining = existing.remainingBalance || 0;
+          const newRemaining = Math.max(0, currentRemaining - deltaPaid);
+          
+          console.log('Daily installment payment - updating remaining balance:', {
+            scheduleId: id,
+            currentRemaining,
+            deltaPaid,
+            newRemaining
+          });
+          
+          await tx.transaction.update({
+            where: { id: existing.transactionId },
+            data: { 
+              lastRepaymentDate: effectivePaidAt as any,
+              remainingBalance: newRemaining,
+              creditRepaymentAmount: { increment: deltaPaid }
+            }
+          });
+          
+          // Kunlik bo'lib to'lash uchun transaction ning isPaid ni ham yangilash
+          if (newRemaining <= 0) {
+            await tx.transaction.update({
+              where: { id: existing.transactionId },
+              data: { 
+                status: 'COMPLETED' as any // To'lov to'liq amalga oshirilganda status ni yangilash
+              }
+            });
+            console.log('Daily installment transaction completed');
+          }
+        } else {
           await tx.transaction.update({
             where: { id: existing.transactionId },
             data: { lastRepaymentDate: effectivePaidAt as any }
           });
+        }
         } catch (_) {}
       }
 

@@ -88,6 +88,14 @@ export class TransactionService {
         soldByUserId: soldByUserId || null, // sotgan kassir
         upfrontPaymentType: (transactionData as any).upfrontPaymentType || 'CASH', // Default to CASH if not specified
         termUnit: (transactionData as any).termUnit || 'MONTHS', // Default to MONTHS if not specified
+        // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
+        ...((transactionData as any).termUnit === 'DAYS' ? {
+          days: (transactionData as any).days || 0,
+          months: 0 // Kunlik bo'lib to'lashda oylar 0
+        } : {
+          months: (transactionData as any).months || 0,
+          days: 0 // Oylik bo'lib to'lashda kunlar 0
+        }),
         items: {
           create: items.map(item => ({
             productId: item.productId,
@@ -187,12 +195,14 @@ export class TransactionService {
         transactionId,
         month: 1, // Faqat 1 ta entry
         payment: remainingWithInterest, // To'liq qolgan summa
-        remainingBalance: 0, // To'lovdan keyin qoldiq 0 bo'ladi
+        remainingBalance: remainingWithInterest, // Kunlik bo'lib to'lashda qolgan summa to'liq bo'lishi kerak
         isPaid: false,
         paidAmount: 0,
         dueDate: new Date(Date.now() + totalDays * 24 * 60 * 60 * 1000), // Kunlar soni keyin to'lov muddati
         isDailyInstallment: true, // Bu kunlik bo'lib to'lash ekanligini belgilash
-        daysCount: totalDays // Kunlar sonini saqlash
+        daysCount: totalDays, // Kunlar sonini saqlash
+        // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
+        dailyRemainingBalance: remainingWithInterest // Kunlik bo'lib to'lashda qolgan summa
       });
     }
 
@@ -308,7 +318,7 @@ export class TransactionService {
   async findAll(query: any = {}) {
     const {
       page = 1,
-      limit = 10,
+      limit = query.limit === 'all' ? undefined : (query.limit || 'all'),
       type,
       status,
       branchId,
@@ -365,10 +375,11 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: { product: true }
-        },
-        paymentSchedules: { orderBy: { month: 'asc' }, include: { paidBy: true } }
+        }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      ...(limit && limit !== 'all' && { take: parseInt(limit) }),
+      ...(page && limit && limit !== 'all' && { skip: (parseInt(page) - 1) * parseInt(limit) })
     });
 
     // Hydrate items where product is null but productId exists
@@ -376,14 +387,8 @@ export class TransactionService {
 
     // Debug: Log payment schedule data
     for (const t of transactions) {
-      if (t.paymentSchedules && t.paymentSchedules.length > 0) {
-        console.log(`Transaction ${t.id} payment schedules:`, t.paymentSchedules.map(s => ({
-          id: s.id,
-          paidChannel: s.paidChannel,
-          paidAmount: s.paidAmount,
-          isPaid: s.isPaid
-        })));
-      }
+      // paymentSchedules include qilinmagan, shuning uchun uni o'tkazib yuboramiz
+      // console.log(`Transaction ${t.id} processed`);
     }
 
     console.log('Transactions found:', transactions);
@@ -392,9 +397,9 @@ export class TransactionService {
       transactions,
       pagination: {
         page: parseInt(page),
-        limit: parseInt(limit),
+        limit: limit ? parseInt(limit) : total,
         total,
-        pages: Math.ceil(total / limit)
+        pages: limit ? Math.ceil(total / parseInt(limit)) : 1
       }
     };
   }
