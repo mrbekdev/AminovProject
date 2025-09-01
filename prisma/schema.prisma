@@ -14,7 +14,7 @@ enum TransactionType {
   TRANSFER
   PURCHASE
   RETURN
-  WRITE_OF 
+  WRITE_OFF
 }
 
 enum TransactionStatus {
@@ -74,6 +74,7 @@ model Branch {
   toTransfers    ProductTransfer[] @relation("ToBranch")
   defectiveLogs  DefectiveLog[]
   exchangeRates  CurrencyExchangeRate[]
+  cashierReports CashierReport[]
 
   @@index([name])
 }
@@ -99,6 +100,9 @@ model User {
   defectiveLogs       DefectiveLog[]
   PaymentSchedule     PaymentSchedule[]
   PaymentRepayment    PaymentRepayment[]
+  dailyRepayments     DailyRepayment[]
+  creditRepayments    CreditRepayment[]
+  cashierReports      CashierReport[]   @relation("CashierReports")
   exchangeRates       CurrencyExchangeRate[]
 
   @@index([phone])
@@ -248,6 +252,8 @@ model Transaction {
   items            TransactionItem[]
   paymentSchedules PaymentSchedule[]
   PaymentRepayment PaymentRepayment[]
+  dailyRepayments  DailyRepayment[]
+  creditRepayments CreditRepayment[]
 
   @@index([customerId])
   @@index([userId])
@@ -341,6 +347,7 @@ model PaymentSchedule {
   transaction Transaction        @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   paidBy      User?              @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   repayments  PaymentRepayment[]
+  creditRepayments CreditRepayment[]
 }
 
 model PaymentRepayment {
@@ -360,6 +367,76 @@ model PaymentRepayment {
   @@index([transactionId])
   @@index([scheduleId])
   @@index([paidAt])
+}
+
+// New model for daily repayments (kunlik bo'lib to'lash)
+model DailyRepayment {
+  id            Int      @id @default(autoincrement())
+  transactionId Int
+  amount        Float
+  channel       String   @default("CASH") // CASH or CARD
+  paidAt        DateTime @default(now())
+  paidByUserId  Int?
+  createdAt     DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  paidBy      User?       @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([transactionId])
+  @@index([paidAt])
+  @@index([paidByUserId])
+}
+
+// New model for credit repayments (oylik bo'lib to'lash)
+model CreditRepayment {
+  id            Int      @id @default(autoincrement())
+  transactionId Int
+  scheduleId    Int?     // Optional, for transactions with payment schedules
+  amount        Float
+  channel       String   @default("CASH") // CASH or CARD
+  month         String?  // Month name or number
+  paidAt        DateTime @default(now())
+  paidByUserId  Int?
+  createdAt     DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  schedule    PaymentSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  paidBy      User?       @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([transactionId])
+  @@index([scheduleId])
+  @@index([paidAt])
+  @@index([paidByUserId])
+}
+
+// New model for cashier reports
+model CashierReport {
+  id            Int      @id @default(autoincrement())
+  cashierId     Int      // User ID of the cashier
+  branchId      Int      // Branch ID
+  reportDate    DateTime // Date of the report
+  cashTotal     Float    @default(0) // Total cash sales
+  cardTotal     Float    @default(0) // Total card sales
+  creditTotal   Float    @default(0) // Total credit sales
+  installmentTotal Float @default(0) // Total installment sales
+  upfrontTotal Float    @default(0) // Total upfront payments
+  upfrontCash  Float    @default(0) // Upfront payments in cash
+  upfrontCard  Float    @default(0) // Upfront payments in card
+  soldQuantity Int      @default(0) // Total quantity sold
+  soldAmount   Float    @default(0) // Total amount sold
+  repaymentTotal Float  @default(0) // Total credit repayments
+  defectivePlus Float   @default(0) // Defective returns (positive)
+  defectiveMinus Float  @default(0) // Defective returns (negative)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  cashier User  @relation("CashierReports", fields: [cashierId], references: [id], onDelete: Cascade)
+  branch  Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([cashierId])
+  @@index([branchId])
+  @@index([reportDate])
+  @@unique([cashierId, branchId, reportDate])
 }
 
 model CurrencyExchangeRate {

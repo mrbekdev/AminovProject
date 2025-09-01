@@ -13,13 +13,16 @@ import { CustomerModule } from './customer/customer.module';
 import { PaymentScheduleModule } from './payment-schedule/payment-schedule.module';
 import { DefectiveLogModule } from './defective-log/defective-log.module';
 import { CurrencyExchangeRateModule } from './currency-exchange-rate/currency-exchange-rate.module';
+import { DailyRepaymentModule } from './daily-repayment/daily-repayment.module';
+import { CreditRepaymentModule } from './credit-repayment/credit-repayment.module';
+import { CashierReportModule } from './cashier-report/cashier-report.module';
 
 
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule,CurrencyExchangeRateModule
+    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule, CurrencyExchangeRateModule, DailyRepaymentModule, CreditRepaymentModule, CashierReportModule
   ],
   controllers: [AppController],
   providers: [AppService],
