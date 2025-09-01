@@ -17,21 +17,6 @@ export class DailyRepaymentController {
     return this.dailyRepaymentService.findAll(query);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.dailyRepaymentService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateDailyRepaymentDto: UpdateDailyRepaymentDto) {
-    return this.dailyRepaymentService.update(+id, updateDailyRepaymentDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.dailyRepaymentService.remove(+id);
-  }
-
   @Get('cashier/:cashierId')
   getCashierDailyRepayments(
     @Param('cashierId') cashierId: string,
@@ -45,5 +30,20 @@ export class DailyRepaymentController {
       new Date(startDate),
       new Date(endDate),
     );
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.dailyRepaymentService.findOne(+id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() updateDailyRepaymentDto: UpdateDailyRepaymentDto) {
+    return this.dailyRepaymentService.update(+id, updateDailyRepaymentDto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.dailyRepaymentService.remove(+id);
   }
 }

@@ -17,21 +17,6 @@ export class CreditRepaymentController {
     return this.creditRepaymentService.findAll(query);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.creditRepaymentService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateCreditRepaymentDto: UpdateCreditRepaymentDto) {
-    return this.creditRepaymentService.update(+id, updateCreditRepaymentDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.creditRepaymentService.remove(+id);
-  }
-
   @Get('cashier/:cashierId')
   getCashierCreditRepayments(
     @Param('cashierId') cashierId: string,
@@ -45,5 +30,20 @@ export class CreditRepaymentController {
       new Date(startDate),
       new Date(endDate),
     );
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.creditRepaymentService.findOne(+id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() updateCreditRepaymentDto: UpdateCreditRepaymentDto) {
+    return this.creditRepaymentService.update(+id, updateCreditRepaymentDto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.creditRepaymentService.remove(+id);
   }
 }
