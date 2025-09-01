@@ -29,40 +29,73 @@ export class DefectiveLogService {
       });
     }
 
-    // Recalculate based on remaining items
-    const remainingItems = transaction.items.filter(item => item.quantity > 0);
+    // Get all items (both remaining and returned) to calculate original proportions
+    const allItems = transaction.items;
+    const remainingItems = allItems.filter(item => item.quantity > 0);
+    
     if (remainingItems.length === 0) {
       return; // No items left, no need for schedules
     }
 
-    // Aggregate principal and determine weighted interest and months
-    let totalPrincipal = 0;
-    let weightedPercentSum = 0;
-    let percentWeightBase = 0;
+    // Calculate original transaction totals
+    let originalTotalPrincipal = 0;
+    let originalWeightedPercentSum = 0;
+    let originalPercentWeightBase = 0;
     let totalMonths = 0;
 
-    for (const item of remainingItems) {
-      const principal = (item.price || 0) * (item.quantity || 0);
-      totalPrincipal += principal;
+    // First pass: calculate original totals (including returned items)
+    for (const item of allItems) {
+      const originalQuantity = item.quantity + (item.status === 'RETURNED' ? 0 : 0); // Get original quantity before returns
+      const principal = (item.price || 0) * originalQuantity;
+      originalTotalPrincipal += principal;
       if (item.creditPercent) {
-        weightedPercentSum += principal * (item.creditPercent || 0);
-        percentWeightBase += principal;
+        originalWeightedPercentSum += principal * (item.creditPercent || 0);
+        originalPercentWeightBase += principal;
       }
       if (item.creditMonth) {
         totalMonths = Math.max(totalMonths, item.creditMonth || 0);
       }
     }
 
-    if (totalPrincipal > 0 && totalMonths > 0) {
-      // Calculate remaining principal after upfront payment
-      const upfrontPayment = transaction.amountPaid || 0;
-      const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
-      const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
+    // Calculate remaining totals
+    let remainingTotalPrincipal = 0;
+    let remainingWeightedPercentSum = 0;
+    let remainingPercentWeightBase = 0;
+
+    for (const item of remainingItems) {
+      const principal = (item.price || 0) * (item.quantity || 0);
+      remainingTotalPrincipal += principal;
+      if (item.creditPercent) {
+        remainingWeightedPercentSum += principal * (item.creditPercent || 0);
+        remainingPercentWeightBase += principal;
+      }
+    }
+
+    if (remainingTotalPrincipal > 0 && totalMonths > 0) {
+      // Calculate proportional upfront payment for remaining items
+      const originalUpfrontPayment = transaction.amountPaid || 0;
+      const upfrontRatio = originalTotalPrincipal > 0 ? remainingTotalPrincipal / originalTotalPrincipal : 0;
+      const proportionalUpfront = originalUpfrontPayment * upfrontRatio;
+      
+      const remainingPrincipal = Math.max(0, remainingTotalPrincipal - proportionalUpfront);
+      const effectivePercent = remainingPercentWeightBase > 0 ? (remainingWeightedPercentSum / remainingPercentWeightBase) : 0;
+      
+      console.log('=== RECALCULATING PAYMENT SCHEDULE ===');
+      console.log('originalTotalPrincipal:', originalTotalPrincipal);
+      console.log('remainingTotalPrincipal:', remainingTotalPrincipal);
+      console.log('originalUpfrontPayment:', originalUpfrontPayment);
+      console.log('proportionalUpfront:', proportionalUpfront);
+      console.log('remainingPrincipal:', remainingPrincipal);
+      console.log('effectivePercent:', effectivePercent);
       
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
       const monthlyPayment = remainingWithInterest / totalMonths;
       let remainingBalance = remainingWithInterest;
+      
+      console.log('interestAmount:', interestAmount);
+      console.log('remainingWithInterest:', remainingWithInterest);
+      console.log('monthlyPayment:', monthlyPayment);
 
       const schedules: { transactionId: number; month: number; payment: number; remainingBalance: number; isPaid: boolean; paidAmount: number; }[] = [];
       for (let month = 1; month <= totalMonths; month++) {
@@ -89,7 +122,7 @@ export class DefectiveLogService {
       await this.prisma.transaction.update({
         where: { id: transactionId },
         data: { 
-          total: totalPrincipal,
+          total: remainingTotalPrincipal,
           finalTotal: remainingWithInterest
         }
       });
