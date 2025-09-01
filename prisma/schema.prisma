@@ -14,7 +14,7 @@ enum TransactionType {
   TRANSFER
   PURCHASE
   RETURN
-  WRITE_OFF
+  WRITE_OF 
 }
 
 enum TransactionStatus {
@@ -330,6 +330,14 @@ model PaymentSchedule {
   dueDate            DateTime?   // To'lov muddati (kunlik bo'lib to'lash uchun)
   isDailyInstallment Boolean     @default(false) // Kunlik bo'lib to'lash ekanligini belgilash
   daysCount          Int?        // Kunlar soni (kunlik bo'lib to'lash uchun)
+  
+  // Bo'lib to'lash uchun qo'shimcha maydonlar
+  installmentType    String?     // "DAILY" yoki "MONTHLY"
+  totalDays          Int?        // Jami kunlar soni (kunlik bo'lib to'lash uchun)
+  remainingDays      Int?        // Qolgan kunlar soni (kunlik bo'lib to'lash uchun)
+  totalMonths        Int?        // Jami oylar soni (oylik bo'lib to'lash uchun)
+  remainingMonths    Int?        // Qolgan oylar soni (oylik bo'lib to'lash uchun)
+  dailyRemainingBalance Float?   // Kunlik bo'lib to'lashda qolgan summa
 
   transaction Transaction        @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   paidBy      User?              @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
