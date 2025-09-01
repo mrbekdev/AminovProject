@@ -229,8 +229,6 @@ export class TransactionService {
         isDailyInstallment: true, // Bu kunlik bo'lib to'lash ekanligini belgilash
         daysCount: totalDays, // Kunlar sonini saqlash
         // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
-        dailyRemainingBalance: remainingWithInterest, // Kunlik bo'lib to'lashda qolgan summa
-        // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
         installmentType: 'DAILY', // Kunlik bo'lib to'lash turi
         totalDays: totalDays, // Jami kunlar soni
         remainingDays: totalDays // Qolgan kunlar soni

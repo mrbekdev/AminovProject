@@ -337,7 +337,6 @@ model PaymentSchedule {
   remainingDays      Int?        // Qolgan kunlar soni (kunlik bo'lib to'lash uchun)
   totalMonths        Int?        // Jami oylar soni (oylik bo'lib to'lash uchun)
   remainingMonths    Int?        // Qolgan oylar soni (oylik bo'lib to'lash uchun)
-  dailyRemainingBalance Float?   // Kunlik bo'lib to'lashda qolgan summa
 
   transaction Transaction        @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   paidBy      User?              @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
