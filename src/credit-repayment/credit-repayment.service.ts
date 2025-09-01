@@ -16,7 +16,7 @@ export class CreditRepaymentService {
         scheduleId,
         amount,
         channel,
-        month,
+        month:month?.toString(),
         monthNumber,
         paidAt: new Date(paidAt),
         paidByUserId,
