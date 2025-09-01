@@ -233,10 +233,6 @@ model Transaction {
   creditRepaymentAmount Float?    @default(0)
   lastRepaymentDate     DateTime?
 
-  // Term fields for credit/installment
-  days    Int? // Kunlar soni (kunlik bo'lib to'lash uchun)
-  months  Int? // Oylar soni (oylik bo'lib to'lash uchun)
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
