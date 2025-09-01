@@ -84,7 +84,7 @@ export class TransactionService {
       data: {
         ...transactionData,
         customerId,
-        userId: createdByUserId || null, // yaratgan foydalanuvchi
+        // userId field yo'q, shuning uchun uni olib tashlaymiz
         soldByUserId: soldByUserId || null, // sotgan kassir
         upfrontPaymentType: (transactionData as any).upfrontPaymentType || 'CASH', // Default to CASH if not specified
         termUnit: (transactionData as any).termUnit || 'MONTHS', // Default to MONTHS if not specified
@@ -251,19 +251,21 @@ export class TransactionService {
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
       const monthlyPayment = remainingWithInterest / totalMonths;
-      let remainingBalance = remainingWithInterest;
       
       console.log('interestAmount:', interestAmount);
       console.log('remainingWithInterest:', remainingWithInterest);
       console.log('monthlyPayment:', monthlyPayment);
 
+      // Har oy uchun to'lov jadvalini yaratish
       for (let month = 1; month <= totalMonths; month++) {
-        remainingBalance -= monthlyPayment;
+        const isLastMonth = month === totalMonths;
+        const paymentAmount = isLastMonth ? remainingWithInterest : monthlyPayment;
+        
         schedules.push({
           transactionId,
           month,
-          payment: monthlyPayment,
-          remainingBalance: Math.max(0, remainingBalance),
+          payment: paymentAmount,
+          remainingBalance: isLastMonth ? 0 : Math.max(0, remainingWithInterest - (monthlyPayment * month)),
           isPaid: false,
           paidAmount: 0
         });
