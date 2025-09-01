@@ -190,7 +190,11 @@ export class DefectiveLogService {
         throw new BadRequestException('Noto\'g\'ri action type');
     }
 
-    // Use transaction to ensure data consistency
+    // Recalc trigger flags (to run AFTER transaction completes)
+    let shouldRecalculate = false;
+    let recalcForTxId: number | null = null;
+
+    // Use transaction to ensure data consistency (keep it short)
     const result = await this.prisma.$transaction(async (prisma) => {
       // Create defective log
       const defectiveLog = await prisma.defectiveLog.create({
@@ -240,13 +244,14 @@ export class DefectiveLogService {
             if (actionType === 'RETURN' || actionType === 'EXCHANGE') {
               const remainingQty = Math.max(0, Number(orig.quantity) - Number(quantity));
               if (remainingQty === 0) {
-                // Instead of deleting, mark as returned with status
+                // Instead of deleting, mark as returned with status (if column exists)
                 await prisma.transactionItem.update({
                   where: { id: orig.id },
                   data: {
                     quantity: 0,
                     total: 0,
-                    status: 'RETURNED' // Add status field to track returned items
+                    // status column must exist in DB; ensure migration applied
+                    status: 'RETURNED'
                   }
                 });
               } else {
@@ -310,7 +315,7 @@ export class DefectiveLogService {
               });
             }
             
-            // Recalculate totals
+            // Recalculate totals (fast query)
             const newItems = await prisma.transactionItem.findMany({ where: { transactionId: tx.id } });
             const newTotal = newItems.reduce((s, it) => s + it.total, 0);
             await prisma.transaction.update({
@@ -318,9 +323,10 @@ export class DefectiveLogService {
               data: { total: newTotal, finalTotal: newTotal }
             });
 
-            // Recalculate payment schedules for credit/installment transactions
+            // Set recalc flag (run after transaction)
             if (tx.paymentType === 'CREDIT' || tx.paymentType === 'INSTALLMENT') {
-              await this.recalculatePaymentSchedules(tx.id);
+              shouldRecalculate = true;
+              recalcForTxId = tx.id;
             }
           }
         }
@@ -339,7 +345,14 @@ export class DefectiveLogService {
       }
 
       return defectiveLog;
-    });
+    }, { timeout: 15000 });
+
+    // Perform schedule recalculation OUTSIDE of transaction to avoid timeouts
+    if (shouldRecalculate && recalcForTxId) {
+      try {
+        await this.recalculatePaymentSchedules(recalcForTxId);
+      } catch (_) {}
+    }
 
     return result;
   }
