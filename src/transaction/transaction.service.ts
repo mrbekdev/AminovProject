@@ -84,18 +84,10 @@ export class TransactionService {
       data: {
         ...transactionData,
         customerId,
-        // userId field yo'q, shuning uchun uni olib tashlaymiz
+        userId: createdByUserId || null, // yaratgan foydalanuvchi
         soldByUserId: soldByUserId || null, // sotgan kassir
         upfrontPaymentType: (transactionData as any).upfrontPaymentType || 'CASH', // Default to CASH if not specified
         termUnit: (transactionData as any).termUnit || 'MONTHS', // Default to MONTHS if not specified
-        // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
-        ...((transactionData as any).termUnit === 'DAYS' ? {
-          days: (transactionData as any).days || 0,
-          months: 0 // Kunlik bo'lib to'lashda oylar 0
-        } : {
-          months: (transactionData as any).months || 0,
-          days: 0 // Oylik bo'lib to'lashda kunlar 0
-        }),
         items: {
           create: items.map(item => ({
             productId: item.productId,
@@ -195,14 +187,12 @@ export class TransactionService {
         transactionId,
         month: 1, // Faqat 1 ta entry
         payment: remainingWithInterest, // To'liq qolgan summa
-        remainingBalance: remainingWithInterest, // Kunlik bo'lib to'lashda qolgan summa to'liq bo'lishi kerak
+        remainingBalance: 0, // To'lovdan keyin qoldiq 0 bo'ladi
         isPaid: false,
         paidAmount: 0,
         dueDate: new Date(Date.now() + totalDays * 24 * 60 * 60 * 1000), // Kunlar soni keyin to'lov muddati
         isDailyInstallment: true, // Bu kunlik bo'lib to'lash ekanligini belgilash
-        daysCount: totalDays, // Kunlar sonini saqlash
-        // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
-        dailyRemainingBalance: remainingWithInterest // Kunlik bo'lib to'lashda qolgan summa
+        daysCount: totalDays // Kunlar sonini saqlash
       });
     }
 
@@ -251,21 +241,19 @@ export class TransactionService {
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
       const monthlyPayment = remainingWithInterest / totalMonths;
+      let remainingBalance = remainingWithInterest;
       
       console.log('interestAmount:', interestAmount);
       console.log('remainingWithInterest:', remainingWithInterest);
       console.log('monthlyPayment:', monthlyPayment);
 
-      // Har oy uchun to'lov jadvalini yaratish
       for (let month = 1; month <= totalMonths; month++) {
-        const isLastMonth = month === totalMonths;
-        const paymentAmount = isLastMonth ? remainingWithInterest : monthlyPayment;
-        
+        remainingBalance -= monthlyPayment;
         schedules.push({
           transactionId,
           month,
-          payment: paymentAmount,
-          remainingBalance: isLastMonth ? 0 : Math.max(0, remainingWithInterest - (monthlyPayment * month)),
+          payment: monthlyPayment,
+          remainingBalance: Math.max(0, remainingBalance),
           isPaid: false,
           paidAmount: 0
         });
@@ -320,7 +308,7 @@ export class TransactionService {
   async findAll(query: any = {}) {
     const {
       page = 1,
-      limit = query.limit === 'all' ? undefined : (query.limit || 'all'),
+      limit = 10,
       type,
       status,
       branchId,
@@ -377,11 +365,10 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: { product: true }
-        }
+        },
+        paymentSchedules: { orderBy: { month: 'asc' }, include: { paidBy: true } }
       },
-      orderBy: { createdAt: 'desc' },
-      ...(limit && limit !== 'all' && { take: parseInt(limit) }),
-      ...(page && limit && limit !== 'all' && { skip: (parseInt(page) - 1) * parseInt(limit) })
+      orderBy: { createdAt: 'desc' }
     });
 
     // Hydrate items where product is null but productId exists
@@ -389,8 +376,14 @@ export class TransactionService {
 
     // Debug: Log payment schedule data
     for (const t of transactions) {
-      // paymentSchedules include qilinmagan, shuning uchun uni o'tkazib yuboramiz
-      // console.log(`Transaction ${t.id} processed`);
+      if (t.paymentSchedules && t.paymentSchedules.length > 0) {
+        console.log(`Transaction ${t.id} payment schedules:`, t.paymentSchedules.map(s => ({
+          id: s.id,
+          paidChannel: s.paidChannel,
+          paidAmount: s.paidAmount,
+          isPaid: s.isPaid
+        })));
+      }
     }
 
     console.log('Transactions found:', transactions);
@@ -399,9 +392,9 @@ export class TransactionService {
       transactions,
       pagination: {
         page: parseInt(page),
-        limit: limit ? parseInt(limit) : total,
+        limit: parseInt(limit),
         total,
-        pages: limit ? Math.ceil(total / parseInt(limit)) : 1
+        pages: Math.ceil(total / limit)
       }
     };
   }
