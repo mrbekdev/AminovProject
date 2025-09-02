@@ -45,6 +45,6 @@ export class BranchService {
   }
 
   async remove(id: number) {
-    return this.prisma.branch.delete({ where: { id } });
+    return this.prisma.branch.delete({ where: { id:+id } });
   }
 }
