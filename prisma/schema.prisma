@@ -92,7 +92,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branch              Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch              Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
   createdTransactions Transaction[]          @relation("TransactionsCreatedBy")
   soldTransactions    Transaction[]          @relation("TransactionsSoldBy")
   initiatedTransfers  ProductTransfer[]      @relation("InitiatedTransfers")
@@ -131,7 +131,7 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
   products Product[]
 
   @@index([name])
@@ -156,7 +156,7 @@ model Product {
   isDeleted         Boolean       @default(false) // Soft delete uchun
   deletedAt         DateTime?
 
-  branch          Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  branch          Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
   category        Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   transactions    TransactionItem[]
   DefectiveLog    DefectiveLog[]
@@ -248,8 +248,8 @@ model Transaction {
   customer         Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   user             User?              @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   soldBy           User?              @relation("TransactionsSoldBy", fields: [soldByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  fromBranch       Branch?            @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  toBranch         Branch?            @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  fromBranch       Branch?            @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete:Cascade)
+  toBranch         Branch?            @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Cascade)
   items            TransactionItem[]
   paymentSchedules PaymentSchedule[]
   PaymentRepayment PaymentRepayment[]
@@ -301,10 +301,10 @@ model ProductTransfer {
   updatedAt     DateTime       @updatedAt
 
   product     Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  fromBranch  Branch  @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict)
-  toBranch    Branch  @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Restrict)
-  initiatedBy User    @relation("InitiatedTransfers", fields: [initiatedById], references: [id], onDelete: Restrict)
-  approvedBy  User?   @relation("ApprovedTransfers", fields: [approvedById], references: [id], onDelete: SetNull)
+  fromBranch  Branch  @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Cascade)
+  toBranch    Branch  @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Cascade)
+  initiatedBy User    @relation("InitiatedTransfers", fields: [initiatedById], references: [id], onDelete: Cascade)
+  approvedBy  User?   @relation("ApprovedTransfers", fields: [approvedById], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@index([fromBranchId])
@@ -383,7 +383,7 @@ model DailyRepayment {
 
   transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   paidBy      User?       @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  branch      Branch?     @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch      Branch?     @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@index([transactionId])
   @@index([paidAt])
@@ -408,7 +408,7 @@ model CreditRepayment {
   transaction Transaction      @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   schedule    PaymentSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   paidBy      User?            @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  branch      Branch?          @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch      Branch?          @relation(fields: [branchId], references: [id], onDelete:Cascade)
 
   @@index([transactionId])
   @@index([scheduleId])
@@ -458,8 +458,8 @@ model CurrencyExchangeRate {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  user   User?   @relation(fields: [createdBy], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user   User?   @relation(fields: [createdBy], references: [id], onDelete: Cascade)
 
   @@unique([fromCurrency, toCurrency, branchId])
   @@index([fromCurrency])
