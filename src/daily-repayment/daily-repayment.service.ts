@@ -45,6 +45,42 @@ export class DailyRepaymentService {
     return this.prisma.dailyRepayment.findMany({
       where,
       include: {
+        transaction: true,
+        paidBy: true,
+        branch: true,
+      },
+      orderBy: {
+        paidAt: 'desc',
+      },
+    });
+  }
+
+  async findByCashier(
+    cashierId: number,
+    branchId?: string | number,
+    startDate?: string,
+    endDate?: string,
+  ) {
+    const where: any = {
+      paidByUserId: cashierId,
+    };
+    
+    if (branchId) {
+      const branchIdNum = typeof branchId === 'string' ? parseInt(branchId) : branchId;
+      if (!isNaN(branchIdNum)) {
+        where.branchId = branchIdNum;
+      }
+    }
+    
+    if (startDate || endDate) {
+      where.paidAt = {};
+      if (startDate) where.paidAt.gte = new Date(startDate);
+      if (endDate) where.paidAt.lte = new Date(endDate);
+    }
+
+    return this.prisma.dailyRepayment.findMany({
+      where,
+      include: {
         transaction: {
           include: {
             customer: true,
@@ -61,7 +97,7 @@ export class DailyRepaymentService {
 
   async findByUser(
     userId: number,
-    branchId?: number,
+    branchId?: string | number,
     startDate?: string,
     endDate?: string,
   ) {
@@ -69,7 +105,12 @@ export class DailyRepaymentService {
       paidByUserId: userId,
     };
     
-    if (branchId) where.branchId = branchId;
+    if (branchId) {
+      const branchIdNum = typeof branchId === 'string' ? parseInt(branchId) : branchId;
+      if (!isNaN(branchIdNum)) {
+        where.branchId = branchIdNum;
+      }
+    }
     
     if (startDate || endDate) {
       where.paidAt = {};

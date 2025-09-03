@@ -26,7 +26,22 @@ export class CreditRepaymentController {
   ) {
     return this.creditRepaymentService.findByUser(
       parseInt(userId),
-      branchId ? parseInt(branchId) : undefined,
+      branchId,
+      startDate,
+      endDate,
+    );
+  }
+
+  @Get('cashier/:cashierId')
+  findByCashier(
+    @Param('cashierId') cashierId: string,
+    @Query('branchId') branchId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.creditRepaymentService.findByCashier(
+      parseInt(cashierId),
+      branchId,
       startDate,
       endDate,
     );
