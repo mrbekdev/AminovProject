@@ -26,7 +26,7 @@ export class DailyRepaymentController {
   ) {
     return this.dailyRepaymentService.findByUser(
       parseInt(userId),
-      branchId,
+      +branchId,
       startDate,
       endDate,
     );

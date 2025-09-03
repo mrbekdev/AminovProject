@@ -26,7 +26,7 @@ export class CreditRepaymentController {
   ) {
     return this.creditRepaymentService.findByUser(
       parseInt(userId),
-      branchId,
+      +branchId,
       startDate,
       endDate,
     );

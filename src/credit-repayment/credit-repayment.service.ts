@@ -63,7 +63,7 @@ export class CreditRepaymentService {
 
   async findByUser(
     userId: number,
-    branchId?: string | number,
+    branchId?: number,
     startDate?: string,
     endDate?: string,
   ) {
@@ -71,12 +71,7 @@ export class CreditRepaymentService {
       paidByUserId: userId,
     };
     
-    if (branchId) {
-      const branchIdNum = typeof branchId === 'string' ? parseInt(branchId) : branchId;
-      if (!isNaN(branchIdNum)) {
-        where.branchId = branchIdNum;
-      }
-    }
+    if (branchId) where.branchId = branchId;
     
     if (startDate || endDate) {
       where.paidAt = {};
@@ -109,6 +104,13 @@ export class CreditRepaymentService {
     startDate?: string,
     endDate?: string,
   ) {
+    console.log('CreditRepaymentService.findByCashier called with:', {
+      cashierId,
+      branchId,
+      startDate,
+      endDate
+    });
+    
     const where: any = {
       paidByUserId: cashierId,
     };
@@ -117,16 +119,27 @@ export class CreditRepaymentService {
       const branchIdNum = typeof branchId === 'string' ? parseInt(branchId) : branchId;
       if (!isNaN(branchIdNum)) {
         where.branchId = branchIdNum;
+        console.log('Filtering by branchId:', branchIdNum);
+      } else {
+        console.log('Invalid branchId:', branchId);
       }
     }
     
     if (startDate || endDate) {
       where.paidAt = {};
-      if (startDate) where.paidAt.gte = new Date(startDate);
-      if (endDate) where.paidAt.lte = new Date(endDate);
+      if (startDate) {
+        where.paidAt.gte = new Date(startDate);
+        console.log('Filtering by startDate:', startDate);
+      }
+      if (endDate) {
+        where.paidAt.lte = new Date(endDate);
+        console.log('Filtering by endDate:', endDate);
+      }
     }
 
-    return this.prisma.creditRepayment.findMany({
+    console.log('Final where clause:', where);
+
+    const result = await this.prisma.creditRepayment.findMany({
       where,
       include: {
         transaction: {
@@ -143,6 +156,9 @@ export class CreditRepaymentService {
         paidAt: 'desc',
       },
     });
+
+    console.log(`Found ${result.length} credit repayments for cashier ${cashierId}`);
+    return result;
   }
 
   async findOne(id: number) {

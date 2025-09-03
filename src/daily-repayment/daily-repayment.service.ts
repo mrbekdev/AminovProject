@@ -55,22 +55,17 @@ export class DailyRepaymentService {
     });
   }
 
-  async findByCashier(
-    cashierId: number,
-    branchId?: string | number,
+  async findByUser(
+    userId: number,
+    branchId?: number,
     startDate?: string,
     endDate?: string,
   ) {
     const where: any = {
-      paidByUserId: cashierId,
+      paidByUserId: userId,
     };
     
-    if (branchId) {
-      const branchIdNum = typeof branchId === 'string' ? parseInt(branchId) : branchId;
-      if (!isNaN(branchIdNum)) {
-        where.branchId = branchIdNum;
-      }
-    }
+    if (branchId) where.branchId = branchId;
     
     if (startDate || endDate) {
       where.paidAt = {};
@@ -95,30 +90,48 @@ export class DailyRepaymentService {
     });
   }
 
-  async findByUser(
-    userId: number,
+  async findByCashier(
+    cashierId: number,
     branchId?: string | number,
     startDate?: string,
     endDate?: string,
   ) {
+    console.log('DailyRepaymentService.findByCashier called with:', {
+      cashierId,
+      branchId,
+      startDate,
+      endDate
+    });
+    
     const where: any = {
-      paidByUserId: userId,
+      paidByUserId: cashierId,
     };
     
     if (branchId) {
       const branchIdNum = typeof branchId === 'string' ? parseInt(branchId) : branchId;
       if (!isNaN(branchIdNum)) {
         where.branchId = branchIdNum;
+        console.log('Filtering by branchId:', branchIdNum);
+      } else {
+        console.log('Invalid branchId:', branchId);
       }
     }
     
     if (startDate || endDate) {
       where.paidAt = {};
-      if (startDate) where.paidAt.gte = new Date(startDate);
-      if (endDate) where.paidAt.lte = new Date(endDate);
+      if (startDate) {
+        where.paidAt.gte = new Date(startDate);
+        console.log('Filtering by startDate:', startDate);
+      }
+      if (endDate) {
+        where.paidAt.lte = new Date(endDate);
+        console.log('Filtering by endDate:', endDate);
+      }
     }
 
-    return this.prisma.dailyRepayment.findMany({
+    console.log('Final where clause:', where);
+
+    const result = await this.prisma.dailyRepayment.findMany({
       where,
       include: {
         transaction: {
@@ -133,6 +146,9 @@ export class DailyRepaymentService {
         paidAt: 'desc',
       },
     });
+
+    console.log(`Found ${result.length} daily repayments for cashier ${cashierId}`);
+    return result;
   }
 
   async findOne(id: number) {
