@@ -45,37 +45,6 @@ export class DailyRepaymentService {
     return this.prisma.dailyRepayment.findMany({
       where,
       include: {
-        transaction: true,
-        paidBy: true,
-        branch: true,
-      },
-      orderBy: {
-        paidAt: 'desc',
-      },
-    });
-  }
-
-  async findByCashier(
-    cashierId: number,
-    branchId?: number,
-    startDate?: string,
-    endDate?: string,
-  ) {
-    const where: any = {
-      paidByUserId: cashierId,
-    };
-    
-    if (branchId) where.branchId = branchId;
-    
-    if (startDate || endDate) {
-      where.paidAt = {};
-      if (startDate) where.paidAt.gte = new Date(startDate);
-      if (endDate) where.paidAt.lte = new Date(endDate);
-    }
-
-    return this.prisma.dailyRepayment.findMany({
-      where,
-      include: {
         transaction: {
           include: {
             customer: true,
@@ -101,38 +70,6 @@ export class DailyRepaymentService {
     };
     
     if (branchId) where.branchId = branchId;
-    
-    if (startDate || endDate) {
-      where.paidAt = {};
-      if (startDate) where.paidAt.gte = new Date(startDate);
-      if (endDate) where.paidAt.lte = new Date(endDate);
-    }
-
-    return this.prisma.dailyRepayment.findMany({
-      where,
-      include: {
-        transaction: {
-          include: {
-            customer: true,
-          },
-        },
-        paidBy: true,
-        branch: true,
-      },
-      orderBy: {
-        paidAt: 'desc',
-      },
-    });
-  }
-
-  async findByWarehouse(
-    branchId: number,
-    startDate?: string,
-    endDate?: string,
-  ) {
-    const where: any = {
-      branchId: branchId,
-    };
     
     if (startDate || endDate) {
       where.paidAt = {};

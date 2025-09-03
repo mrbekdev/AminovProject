@@ -17,21 +17,6 @@ export class DailyRepaymentController {
     return this.dailyRepaymentService.findAll(query);
   }
 
-  @Get('cashier/:cashierId')
-  findByCashier(
-    @Param('cashierId') cashierId: string,
-    @Query('branchId') branchId: string,
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-  ) {
-    return this.dailyRepaymentService.findByCashier(
-      parseInt(cashierId),
-      branchId ? parseInt(branchId) : undefined,
-      startDate,
-      endDate,
-    );
-  }
-
   @Get('user/:userId')
   findByUser(
     @Param('userId') userId: string,
@@ -42,19 +27,6 @@ export class DailyRepaymentController {
     return this.dailyRepaymentService.findByUser(
       parseInt(userId),
       branchId ? parseInt(branchId) : undefined,
-      startDate,
-      endDate,
-    );
-  }
-
-  @Get('warehouse/:branchId')
-  findByWarehouse(
-    @Param('branchId') branchId: string,
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-  ) {
-    return this.dailyRepaymentService.findByWarehouse(
-      parseInt(branchId),
       startDate,
       endDate,
     );
