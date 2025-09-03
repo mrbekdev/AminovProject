@@ -241,7 +241,7 @@ async update(
   return updatedProduct;
 }
 
-  // Mahsulotni DEFECTIVE qilib belgilash (to'liq mahsulot)
+  // Mahsulotni DEFECTIVE qilib belgilash (to'liq mahsulot
   async markAsDefective(id: number, description: string, userId: number) {
     return this.prisma.$transaction(async (tx) => {
       const product = await tx.product.findUnique({ where: { id } });

@@ -47,6 +47,19 @@ export class DailyRepaymentController {
     );
   }
 
+  @Get('warehouse/:branchId')
+  findByWarehouse(
+    @Param('branchId') branchId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.dailyRepaymentService.findByWarehouse(
+      parseInt(branchId),
+      startDate,
+      endDate,
+    );
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.dailyRepaymentService.findOne(+id);
