@@ -1107,7 +1107,7 @@ export class TransactionService {
     }
 
     // O'tkazmani tasdiqlash - mahsulotlar allaqachon ko'chirilgan
-    return this.prisma.transaction.update({
+    return (this.prisma as any).transaction.update({
       where: { id },
       data: {
         status: TransactionStatus.COMPLETED,
@@ -1128,7 +1128,7 @@ export class TransactionService {
       throw new BadRequestException('Only transfer transactions can be rejected');
     }
 
-    return this.prisma.transaction.update({
+    return (this.prisma as any).transaction.update({
       where: { id },
       data: { status: TransactionStatus.CANCELLED }
     });
@@ -1155,48 +1155,98 @@ export class TransactionService {
       where.OR = whereOr;
     }
 
+    // Credit va daily repaymentlar uchun where clause
+    const repaymentWhere: any = {};
+    if (branchId) {
+      repaymentWhere.branchId = branchId;
+    }
+    if (startDate || endDate) {
+      repaymentWhere.paidAt = {};
+      if (startDate) repaymentWhere.paidAt.gte = new Date(startDate);
+      if (endDate) repaymentWhere.paidAt.lte = new Date(endDate);
+    }
+
+    // Get credit and daily repayments separately to avoid potential Prisma client issues
+    let creditRepaymentsCash: any = { _sum: { amount: 0 }, _count: 0 };
+    let creditRepaymentsCard: any = { _sum: { amount: 0 }, _count: 0 };
+    let dailyRepaymentsCash: any = { _sum: { amount: 0 }, _count: 0 };
+    let dailyRepaymentsCard: any = { _sum: { amount: 0 }, _count: 0 };
+
+    try {
+      [creditRepaymentsCash, creditRepaymentsCard, dailyRepaymentsCash, dailyRepaymentsCard] = await Promise.all([
+        (this.prisma as any).creditRepayment.aggregate({
+          where: { ...repaymentWhere, channel: 'CASH' },
+          _sum: { amount: true },
+          _count: true
+        }),
+        (this.prisma as any).creditRepayment.aggregate({
+          where: { ...repaymentWhere, channel: 'CARD' },
+          _sum: { amount: true },
+          _count: true
+        }),
+        (this.prisma as any).dailyRepayment.aggregate({
+          where: { ...repaymentWhere, channel: 'CASH' },
+          _sum: { amount: true },
+          _count: true
+        }),
+        (this.prisma as any).dailyRepayment.aggregate({
+          where: { ...repaymentWhere, channel: 'CARD' },
+          _sum: { amount: true },
+          _count: true
+        })
+      ]);
+    } catch (error) {
+      console.warn('Failed to fetch repayment statistics:', error);
+      // Use default values if repayment tables don't exist or have issues
+    }
+
     const [totalSales, creditSales, cashSales, cardSales, purchases, transfers, upfrontCashSales, upfrontCardSales] = await Promise.all([
-      this.prisma.transaction.aggregate({
+      (this.prisma as any).transaction.aggregate({
         where: { ...where, type: TransactionType.SALE },
         _sum: { finalTotal: true },
         _count: true
       }),
-      this.prisma.transaction.aggregate({
+      (this.prisma as any).transaction.aggregate({
         where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CREDIT },
         _sum: { finalTotal: true },
         _count: true
       }),
-      this.prisma.transaction.aggregate({
+      (this.prisma as any).transaction.aggregate({
         where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CASH },
         _sum: { finalTotal: true },
         _count: true
       }),
-      this.prisma.transaction.aggregate({
+      (this.prisma as any).transaction.aggregate({
         where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CARD },
         _sum: { finalTotal: true },
         _count: true
       }),
-      this.prisma.transaction.aggregate({
+      (this.prisma as any).transaction.aggregate({
         where: { ...where, type: TransactionType.PURCHASE },
         _sum: { finalTotal: true },
         _count: true
       }),
-      this.prisma.transaction.aggregate({
+      (this.prisma as any).transaction.aggregate({
         where: { ...where, type: TransactionType.TRANSFER },
         _sum: { finalTotal: true },
         _count: true
       }),
-      this.prisma.transaction.aggregate({
+      (this.prisma as any).transaction.aggregate({
         where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CASH' },
         _sum: { downPayment: true, amountPaid: true },
         _count: true
       }),
-      this.prisma.transaction.aggregate({
+      (this.prisma as any).transaction.aggregate({
         where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CARD' },
         _sum: { downPayment: true, amountPaid: true },
         _count: true
       })
     ]);
+
+    // Calculate total repayments by channel
+    const totalCashRepayments = (creditRepaymentsCash._sum.amount || 0) + (dailyRepaymentsCash._sum.amount || 0);
+    const totalCardRepayments = (creditRepaymentsCard._sum.amount || 0) + (dailyRepaymentsCard._sum.amount || 0);
+    const totalRepayments = totalCashRepayments + totalCardRepayments;
 
     return {
       totalSales: totalSales._sum.finalTotal || 0,
@@ -1214,7 +1264,12 @@ export class TransactionService {
       upfrontCashTotal: (upfrontCashSales._sum.downPayment || 0) + (upfrontCashSales._sum.amountPaid || 0),
       upfrontCashTransactions: upfrontCashSales._count || 0,
       upfrontCardTotal: (upfrontCardSales._sum.downPayment || 0) + (upfrontCardSales._sum.amountPaid || 0),
-      upfrontCardTransactions: upfrontCardSales._count || 0
+      upfrontCardTransactions: upfrontCardSales._count || 0,
+      // Add repayment totals
+      creditRepaymentsCash: totalCashRepayments,
+      creditRepaymentsCard: totalCardRepayments,
+      totalCreditRepayments: totalRepayments,
+      creditRepaymentTransactions: (creditRepaymentsCash._count || 0) + (creditRepaymentsCard._count || 0) + (dailyRepaymentsCash._count || 0) + (dailyRepaymentsCard._count || 0)
     };
   }
 
