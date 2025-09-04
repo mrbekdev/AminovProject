@@ -544,7 +544,7 @@ export class TransactionService {
     });
   }
 
-  async remove(id: number) {
+  async remove(id: number, currentUser?: any) {
     // Validate that id is provided and is a valid number
     if (id === undefined || id === null || isNaN(id) || id <= 0) {
       throw new BadRequestException('Invalid transaction ID provided');
@@ -553,25 +553,39 @@ export class TransactionService {
     const transaction = await this.findOne(id);
     
     if (transaction.status === TransactionStatus.COMPLETED) {
-      throw new BadRequestException('Completed transactions cannot be deleted');
-    }
-
-    // Mahsulot miqdorlarini qaytarish
-        for (const item of transaction.items) {
-      if (item.productId) {
-        await this.prisma.product.update({
-              where: { id: item.productId },
-          data: {
-            quantity: {
-              increment: item.quantity
-            }
-          }
-        });
+      // Warehouse foydalanuvchiga ruxsat beramiz, boshqalarga yo'q
+      const role = currentUser?.role || currentUser?.userRole;
+      if (role !== 'WAREHOUSE' && role !== 'ADMIN') {
+        throw new BadRequestException('Completed transactions cannot be deleted');
       }
     }
 
-    return this.prisma.transaction.delete({
-      where: { id }
+    // Hammasini bitta tranzaksiyada bajarish: miqdorlarni qaytarish, bog'liq yozuvlarni o'chirish, so'ng tranzaksiyani o'chirish
+    return await this.prisma.$transaction(async (tx) => {
+      // Mahsulot miqdorlarini qaytarish
+      for (const item of transaction.items) {
+        if (item.productId) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              quantity: { increment: item.quantity },
+              status: 'IN_STORE'
+            }
+          });
+        }
+      }
+
+      // Bog'liq to'lov yozuvlarini o'chirish (agar mavjud bo'lsa)
+      // Baʼzi installlarda jadvallar nomi boshqacha bo‘lishi mumkin; mavjud bo‘lsa o‘chadi
+      try { await tx.creditRepayment.deleteMany({ where: { transactionId: id } }); } catch {}
+      try { await tx.dailyRepayment.deleteMany({ where: { transactionId: id } }); } catch {}
+
+      // Bog'liq payment schedule va itemlarni o'chirish
+      await tx.paymentSchedule.deleteMany({ where: { transactionId: id } });
+      await tx.transactionItem.deleteMany({ where: { transactionId: id } });
+
+      // Oxirida tranzaksiyani o'chirish
+      return tx.transaction.delete({ where: { id } });
     });
   }
 
