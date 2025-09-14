@@ -1,4 +1,9 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsEnum } from 'class-validator';
+
+export enum BranchType {
+  SKLAD = 'SKLAD',
+  SAVDO_MARKAZ = 'SAVDO_MARKAZ'
+}
 
 export class UpdateBranchDto {
   @IsOptional()
@@ -10,6 +15,10 @@ export class UpdateBranchDto {
   @IsString()
   @MaxLength(255)
   location?: string;
+
+  @IsOptional()
+  @IsEnum(BranchType)
+  type?: BranchType;
 
   @IsOptional()
   @IsString()

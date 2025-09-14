@@ -2,17 +2,19 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
+import { BranchType } from '@prisma/client';
 
 @Injectable()
 export class BranchService {
   constructor(private prisma: PrismaService) {}
 
   async create(createBranchDto: CreateBranchDto) {
-    const { name, location } = createBranchDto as { name: string; location?: string };
+    const { name, location, type } = createBranchDto as { name: string; location?: string; type?: string };
     return this.prisma.branch.create({
       data: {
         name,
         address: location || null,
+        type: type as BranchType|| 'SAVDO_MARKAZ',
         createdAt: new Date(),
         updatedAt: new Date(),
       },
@@ -32,17 +34,19 @@ export class BranchService {
     });
   }
 
-  async update(id: number, updateBranchDto: UpdateBranchDto) {
-    const { name, location } = updateBranchDto as { name?: string; location?: string };
-    return this.prisma.branch.update({
-      where: { id },
-      data: {
-        ...(name !== undefined ? { name } : {}),
-        ...(location !== undefined ? { address: location } : {}),
-        updatedAt: new Date(),
-      },
-    });
-  }
+async update(id: number, updateBranchDto: UpdateBranchDto) {
+  const { name, location, type } = updateBranchDto as { name?: string; location?: string; type?: string };
+
+  return this.prisma.branch.update({
+    where: { id },
+    data: {
+      ...(name !== undefined ? { name } : {}),
+      ...(location !== undefined ? { address: location } : {}),
+      ...(type !== undefined ? { type: type as BranchType } : {}),
+      updatedAt: new Date(),
+    },
+  });
+}
 
   async remove(id: number) {
     return this.prisma.branch.delete({ where: { id:+id } });
