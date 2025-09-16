@@ -44,6 +44,7 @@ async update(id: number, updateBranchDto: UpdateBranchDto) {
       ...(location !== undefined ? { address: location } : {}),
       ...(type !== undefined ? { type: type as BranchType } : {}),
       updatedAt: new Date(),
+      phoneNumber: updateBranchDto.phoneNumber,
     },
   });
 }

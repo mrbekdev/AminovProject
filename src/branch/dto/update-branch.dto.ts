@@ -23,5 +23,5 @@ export class UpdateBranchDto {
   @IsOptional()
   @IsString()
   @MaxLength(20)
-  phone?: string;
+  phoneNumber?: string;
 }
