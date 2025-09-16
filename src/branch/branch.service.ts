@@ -24,13 +24,35 @@ export class BranchService {
   async findOne(id: number) {
     return this.prisma.branch.findUnique({
       where: { id },
-      include: { products: true, users: true },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        type: true,
+        phoneNumber: true,
+        cashBalance: true,
+        createdAt: true,
+        updatedAt: true,
+        products: true,
+        users: true,
+      },
     });
   }
 
   async findAll() {
     return this.prisma.branch.findMany({
-      include: { products: true, users: true },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        type: true,
+        phoneNumber: true,
+        cashBalance: true,
+        createdAt: true,
+        updatedAt: true,
+        products: true,
+        users: true,
+      },
     });
   }
 
