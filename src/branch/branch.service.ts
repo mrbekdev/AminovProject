@@ -52,3 +52,5 @@ async update(id: number, updateBranchDto: UpdateBranchDto) {
     return this.prisma.branch.delete({ where: { id:+id } });
   }
 }
+
+

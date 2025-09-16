@@ -25,6 +25,7 @@ enum TransactionStatus {
 enum PaymentType {
   CASH
   CARD
+  TERMINAL
   CREDIT
   INSTALLMENT
 }
