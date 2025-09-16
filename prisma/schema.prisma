@@ -70,7 +70,7 @@ model Branch {
   cashBalance Float      @default(0) // Kassadagi pul miqdori
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
-
+phoneNumber String?
   products        Product[]
   transactions    Transaction[]          @relation("FromBranch")
   toTransactions  Transaction[]          @relation("ToBranch")
