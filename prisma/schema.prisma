@@ -71,6 +71,7 @@ model Branch {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 phoneNumber String?
+status     BranchStatus @default(ACTIVE)
   products        Product[]
   transactions    Transaction[]          @relation("FromBranch")
   toTransactions  Transaction[]          @relation("ToBranch")
@@ -98,7 +99,7 @@ model User {
   branchId  Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
+  status  UserStatus @default(ACTIVE)
   branch              Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
   createdTransactions Transaction[]          @relation("TransactionsCreatedBy")
   soldTransactions    Transaction[]          @relation("TransactionsSoldBy")
@@ -115,6 +116,16 @@ model User {
 
   @@index([phone])
   @@index([branchId])
+}
+
+enum UserStatus{
+  ACTIVE
+  DELETED
+}
+
+enum BranchStatus{
+  ACTIVE
+  DELETED
 }
 
 model UserLocation {

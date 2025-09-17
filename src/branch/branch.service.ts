@@ -23,7 +23,7 @@ export class BranchService {
 
   async findOne(id: number) {
     return this.prisma.branch.findUnique({
-      where: { id },
+      where: { id ,AND: { status: { not: 'DELETED' } } as any},
       select: {
         id: true,
         name: true,
@@ -41,6 +41,7 @@ export class BranchService {
 
   async findAll() {
     return this.prisma.branch.findMany({
+      where: { status: { not: 'DELETED' } },
       select: {
         id: true,
         name: true,
@@ -72,7 +73,12 @@ async update(id: number, updateBranchDto: UpdateBranchDto) {
 }
 
   async remove(id: number) {
-    return this.prisma.branch.delete({ where: { id:+id } });
+    const findBranch = await this.prisma.branch.findUnique({ where: { id } });
+    if (!findBranch) throw new Error('Branch not found');
+    return this.prisma.branch.update({
+      where: { id },
+      data: { status: 'DELETED', updatedAt: new Date() },
+    });
   }
 }
 

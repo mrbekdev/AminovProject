@@ -20,20 +20,31 @@ export class UserService {
     });
   }
 
-  async findOne(id: number) {
-    return this.prisma.user.findUnique({
-      where: { id },
-      include: { branch: true, },
-    });
-  }
+async findAll(skip: number, take: number) {
+  return this.prisma.user.findMany({
+    skip,
+    take,
+    where: {
+      status: {
+        not: 'DELETED', // DELETED bo'lmaganlarni qaytaradi
+      },
+    },
+    include: { branch: true },
+  });
+}
 
-  async findAll(skip: number, take: number) {
-    return this.prisma.user.findMany({
-      skip,
-      take,
-      include: { branch: true,  },
-    });
-  }
+async findOne(id: number) {
+  return this.prisma.user.findUnique({
+    where: {
+      id,
+      status: {
+        not: 'DELETED', // id bo'yicha va DELETED bo'lmagan foydalanuvchini qaytaradi
+      } as any, // findUnique faqat unique maydonlarga ruxsat beradi, shuning uchun boshqa usul ham bor
+    },
+    include: { branch: true },
+  });
+}
+
 
   async update(id: number, updateUserDto: UpdateUserDto) {
     let data = { ...updateUserDto, updatedAt: new Date() };
@@ -47,7 +58,12 @@ export class UserService {
   }
 
   async remove(id: number) {
-    return this.prisma.user.delete({ where: { id } });
+    const findUser = await this.prisma.user.findUnique({ where: { id } });
+    if (!findUser) throw new Error('User not found');
+    return this.prisma.user.update({
+      where: { id },
+      data: { status: 'DELETED', updatedAt: new Date() },
+    });
   }
 
   async findByUsername(username: string) {
