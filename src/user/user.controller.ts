@@ -41,7 +41,7 @@ export class UserController {
   @ApiOperation({ summary: 'Barcha foydalanuvchilarni olish' })
   @ApiQuery({ name: 'skip', required: false })
   @ApiQuery({ name: 'take', required: false })
-  async findAll(@Query('skip') skip = '0', @Query('take') take = '10') {
+  async findAll(@Query('skip') skip = '0', @Query('take') take = '100') {
     return this.userService.findAll(+skip, +take);
   }
 
