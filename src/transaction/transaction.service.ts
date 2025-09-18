@@ -1002,30 +1002,53 @@ export class TransactionService {
           }
         }
         
-        // Agar barcode bilan topilmagan bo'lsa, name bilan qidirish (case-insensitive)
+        // Agar barcode bilan topilmagan bo'lsa, name VA model bilan qidirish (case-insensitive)
         if (!targetProduct) {
-          console.log(`🔍 Searching by name: "${item.product.name}"`);
+          console.log(`🔍 Searching by name: "${item.product.name}" and model: "${item.product.model || 'N/A'}"`);
           
           // Prisma da case-insensitive qidirish uchun contains va mode: 'insensitive' ishlatamiz
-          targetProduct = await this.prisma.product.findFirst({
-            where: {
-              AND: [
-                {
-                  OR: [
-                    { name: { equals: item.product.name, mode: 'insensitive' } },
-                    { name: { contains: item.product.name, mode: 'insensitive' } },
-                    { name: { contains: item.product.name.trim(), mode: 'insensitive' } }
-                  ]
-                },
-                { branchId: transfer.toBranchId }
+          // Name VA model ikkalasi ham mos kelishi kerak
+          const searchConditions: any = {
+            AND: [
+              {
+                OR: [
+                  { name: { equals: item.product.name, mode: 'insensitive' } },
+                  { name: { contains: item.product.name, mode: 'insensitive' } },
+                  { name: { contains: item.product.name.trim(), mode: 'insensitive' } }
+                ]
+              },
+              { branchId: transfer.toBranchId }
+            ]
+          };
+
+          // Model ham tekshirish - agar model mavjud bo'lsa
+          if (item.product.model && item.product.model.trim()) {
+            searchConditions.AND.push({
+              OR: [
+                { model: { equals: item.product.model, mode: 'insensitive' } },
+                { model: { contains: item.product.model, mode: 'insensitive' } },
+                { model: { contains: item.product.model.trim(), mode: 'insensitive' } }
               ]
-            }
+            });
+          } else {
+            // Agar yuborilayotgan mahsulotda model yo'q bo'lsa, maqsad filialda ham model yo'q bo'lgan mahsulotni qidirish
+            searchConditions.AND.push({
+              OR: [
+                { model: null },
+                { model: '' },
+                { model: { equals: '', mode: 'insensitive' } }
+              ]
+            });
+          }
+
+          targetProduct = await this.prisma.product.findFirst({
+            where: searchConditions
           });
           
           if (targetProduct) {
-            console.log(`✅ Found existing product by name: ${targetProduct.name} (current quantity: ${targetProduct.quantity})`);
+            console.log(`✅ Found existing product by name and model: ${targetProduct.name} (model: ${targetProduct.model || 'N/A'}) (current quantity: ${targetProduct.quantity})`);
           } else {
-            console.log(`❌ No existing product found by name: "${item.product.name}"`);
+            console.log(`❌ No existing product found by name "${item.product.name}" and model "${item.product.model || 'N/A'}"`);
           }
         }
 

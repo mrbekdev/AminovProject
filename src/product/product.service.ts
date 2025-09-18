@@ -205,40 +205,19 @@ async update(
     },
   });
 
-  if (
-    updateProductDto.quantity !== undefined &&
-    updateProductDto.quantity !== product.quantity
-  ) {
-    const quantityDifference = updateProductDto.quantity - product.quantity;
-    const absDiff = Math.abs(quantityDifference);
-    const type = quantityDifference > 0 ? 'PURCHASE' : 'WRITE_OFF';
+  // Convert price to som for display
+  const priceInSom = await this.currencyExchangeRateService.convertCurrency(
+    updatedProduct.price,
+    'USD',
+    'UZS',
+    updatedProduct.branchId,
+  );
 
-    const transaction = await prismaClient.transaction.create({
-      data: {
-        userId,
-        type,
-        status: 'COMPLETED',
-        discount: 0,
-        total: 0,
-        finalTotal: 0,
-        amountPaid: 0,
-        remainingBalance: 0,
-        description: `Stock adjustment from ${product.quantity} to ${updateProductDto.quantity}`,
-      },
-    });
-
-    await prismaClient.transactionItem.create({
-      data: {
-        transactionId: transaction.id,
-        productId: id,
-        quantity: absDiff,
-        price: 0,
-        total: 0,
-      },
-    });
-  }
-
-  return updatedProduct;
+  return {
+    ...updatedProduct,
+    priceInSom,
+    priceInDollar: updatedProduct.price,
+  };
 }
 
   // Mahsulotni DEFECTIVE qilib belgilash (to'liq mahsulot
