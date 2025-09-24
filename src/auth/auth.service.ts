@@ -22,32 +22,40 @@ export class AuthService {
 
         // Time-based login restriction for MARKETING users
         if (user.role === 'MARKETING') {
+            // Compute Asia/Tashkent time using UTC+5 to avoid Intl timezone dependency
             const now = new Date();
-            const currentTime = now.getHours() * 60 + now.getMinutes();
+            const minutesUtc = now.getUTCHours() * 60 + now.getUTCMinutes();
+            const minutesTashkent = (minutesUtc + 5 * 60) % (24 * 60);
 
             // 1) Prefer default WorkSchedule window if present
-            const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
+            const defaultSchedule = await this.prisma.workSchedule.findFirst({ where: { isDefault: true } });
 
             let startTime: number | null = null;
             let endTime: number | null = null;
 
             if (defaultSchedule?.workStartTime && defaultSchedule?.workEndTime) {
-                const [sH, sM] = String(defaultSchedule.workStartTime).split(':').map(Number);
-                const [eH, eM] = String(defaultSchedule.workEndTime).split(':').map(Number);
+                const [sH, sM] = String(defaultSchedule.workStartTime).split(':').map((n) => parseInt(n, 10) || 0);
+                const [eH, eM] = String(defaultSchedule.workEndTime).split(':').map((n) => parseInt(n, 10) || 0);
                 startTime = sH * 60 + sM;
                 endTime = eH * 60 + eM;
             } else if (user.workStartTime && user.workEndTime) {
                 // 2) Fallback to user-specific schedule if default not set
-                const [sH, sM] = String(user.workStartTime).split(':').map(Number);
-                const [eH, eM] = String(user.workEndTime).split(':').map(Number);
+                const [sH, sM] = String(user.workStartTime).split(':').map((n) => parseInt(n, 10) || 0);
+                const [eH, eM] = String(user.workEndTime).split(':').map((n) => parseInt(n, 10) || 0);
                 startTime = sH * 60 + sM;
                 endTime = eH * 60 + eM;
             }
 
             if (startTime !== null && endTime !== null) {
-                // Simple same-day window check (e.g., 08:00-20:00)
-                // If you later need overnight windows (e.g., 20:00-08:00), add logic accordingly
-                const isWithin = currentTime >= startTime && currentTime <= endTime;
+                // Handle same-day (start < end) and overnight (start > end) windows
+                let isWithin = false;
+                if (startTime <= endTime) {
+                    // Same-day window, e.g., 08:00-20:00
+                    isWithin = minutesTashkent >= startTime && minutesTashkent <= endTime;
+                } else {
+                    // Overnight window, e.g., 20:00-08:00
+                    isWithin = minutesTashkent >= startTime || minutesTashkent <= endTime;
+                }
                 if (!isWithin) {
                     throw new UnauthorizedException('Login ish vaqtida mumkin. (Marketing)');
                 }
