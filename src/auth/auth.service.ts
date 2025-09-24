@@ -20,19 +20,36 @@ export class AuthService {
             throw new UnauthorizedException('Invalid credentials');
         }
 
+        // Time-based login restriction for MARKETING users
         if (user.role === 'MARKETING') {
             const now = new Date();
             const currentTime = now.getHours() * 60 + now.getMinutes();
 
-            if (user.workStartTime && user.workEndTime) {
-                const [startHours, startMinutes] = user.workStartTime.split(':').map(Number);
-                const startTime = startHours * 60 + startMinutes;
+            // 1) Prefer default WorkSchedule window if present
+            const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
 
-                const [endHours, endMinutes] = user.workEndTime.split(':').map(Number);
-                const endTime = endHours * 60 + endMinutes;
+            let startTime: number | null = null;
+            let endTime: number | null = null;
 
-                if (currentTime < startTime || currentTime > endTime) {
-                    throw new UnauthorizedException('You can only log in during your work hours.');
+            if (defaultSchedule?.workStartTime && defaultSchedule?.workEndTime) {
+                const [sH, sM] = String(defaultSchedule.workStartTime).split(':').map(Number);
+                const [eH, eM] = String(defaultSchedule.workEndTime).split(':').map(Number);
+                startTime = sH * 60 + sM;
+                endTime = eH * 60 + eM;
+            } else if (user.workStartTime && user.workEndTime) {
+                // 2) Fallback to user-specific schedule if default not set
+                const [sH, sM] = String(user.workStartTime).split(':').map(Number);
+                const [eH, eM] = String(user.workEndTime).split(':').map(Number);
+                startTime = sH * 60 + sM;
+                endTime = eH * 60 + eM;
+            }
+
+            if (startTime !== null && endTime !== null) {
+                // Simple same-day window check (e.g., 08:00-20:00)
+                // If you later need overnight windows (e.g., 20:00-08:00), add logic accordingly
+                const isWithin = currentTime >= startTime && currentTime <= endTime;
+                if (!isWithin) {
+                    throw new UnauthorizedException('Login ish vaqtida mumkin. (Marketing)');
                 }
             }
         }
@@ -61,4 +78,4 @@ export class AuthService {
             },
         };
     }
-} 
+}

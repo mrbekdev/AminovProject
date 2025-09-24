@@ -555,6 +555,18 @@ model TransactionBonusProduct {
   @@index([productId])
 }
 
+model WorkSchedule {
+  id            Int      @id @default(autoincrement())
+  workStartTime String   @db.VarChar(5) // Format: "HH:MM"
+  workEndTime   String   @db.VarChar(5) // Format: "HH:MM"
+  isDefault     Boolean  @default(false) // Indicates if this is the default schedule
+  description   String?  @db.VarChar(255) // Optional description
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isDefault])
+}
+
 model barcodeCounter {
   id        Int      @id @default(autoincrement())
   counter   BigInt   @default(1000000000)
