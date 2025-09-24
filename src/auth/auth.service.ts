@@ -28,7 +28,7 @@ export class AuthService {
             const minutesTashkent = (minutesUtc + 5 * 60) % (24 * 60);
 
             // 1) Prefer default WorkSchedule window if present
-            const defaultSchedule = await this.prisma.workSchedule.findFirst({ where: { isDefault: true } });
+            const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
 
             let startTime: number | null = null;
             let endTime: number | null = null;
@@ -57,7 +57,7 @@ export class AuthService {
                     isWithin = minutesTashkent >= startTime || minutesTashkent <= endTime;
                 }
                 if (!isWithin) {
-                    throw new UnauthorizedException('Login ish vaqtida mumkin. (Marketing)');
+                    throw new UnauthorizedException('Ish vaqti tugagan');
                 }
             }
         }
