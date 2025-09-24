@@ -138,19 +138,28 @@ export class UserService {
     // Convert string role to enum value
     const roleEnum = userData.role as UserRole;
 
+    // Build update data object, only including defined values
+    const updateData: any = {
+      updatedAt: new Date(),
+    };
+
+    if (userData.firstName !== undefined) updateData.firstName = userData.firstName;
+    if (userData.lastName !== undefined) updateData.lastName = userData.lastName;
+    if (userData.username !== undefined) updateData.username = userData.username;
+    if (userData.phone !== undefined) updateData.phone = userData.phone;
+    if (userData.role !== undefined) updateData.role = roleEnum;
+    if (userData.isActive !== undefined) updateData.status = userData.isActive ? 'ACTIVE' : 'DELETED';
+    if (workStartTime !== undefined) updateData.workStartTime = workStartTime;
+    if (workEndTime !== undefined) updateData.workEndTime = workEndTime;
+    if (workShift !== undefined) updateData.workShift = workShift;
+    if (userData.branchId !== undefined && userData.role !== 'MARKETING') updateData.branchId = userData.branchId;
+    if (data.password) updateData.password = data.password;
+
     return this.prisma.user.update({
       where: {
         id: id
       },
-      data: {
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        username: userData.username,
-        phone: userData.phone,
-        role: roleEnum, // Use converted enum value
-        status: userData.isActive ? 'ACTIVE' : 'INACTIVE' as any,
-        updatedAt: new Date(),
-      }
+      data: updateData
     });
   }
 
