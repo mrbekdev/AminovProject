@@ -37,6 +37,28 @@ export class TransactionController {
     return this.transactionService.findAll(query);
   }
 
+  @Get('product/:productId')
+  async findByProductId(
+    @Param('productId') productId: string,
+    @Query('month') month?: string
+  ) {
+    console.log(`Controller: Finding transactions for productId: ${productId}, month: ${month}`);
+    const parsedProductId = parseInt(productId);
+    
+    if (isNaN(parsedProductId) || parsedProductId <= 0) {
+      console.log(`Invalid productId: ${productId}`);
+      return {
+        transactions: [],
+        statusCounts: { PENDING: 0, COMPLETED: 0, CANCELLED: 0, total: 0 },
+        typeCounts: { SALE: 0, PURCHASE: 0, TRANSFER: 0, RETURN: 0, WRITE_OFF: 0, STOCK_ADJUSTMENT: 0 }
+      };
+    }
+    
+    const result = await this.transactionService.findByProductId(parsedProductId, month);
+    console.log(`Controller: Returning ${result.transactions.length} transactions`);
+    return result;
+  }
+
   @Get('statistics')
   getStatistics(
     @Query('branchId') branchId?: string,

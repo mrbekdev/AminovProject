@@ -32,8 +32,13 @@ export class UserController {
   @ApiResponse({ status: 200, description: 'Foydalanuvchi topildi' })
   @ApiResponse({ status: 404, description: 'Topilmadi' })
   async findOne(@Param('id') id: string) {
+    console.log('Finding user with ID:', id);
     const user = await this.userService.findOne(+id);
-    if (!user) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    console.log('User found:', user);
+    if (!user) {
+      console.log('User not found or deleted for ID:', id);
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
     return user;
   }
 

@@ -39,4 +39,9 @@ export class CreateProductDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  bonusPercentage?: number;
 }

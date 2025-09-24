@@ -1,11 +1,16 @@
-import { IsString, IsEnum, IsOptional, MaxLength, IsInt, IsPositive } from 'class-validator';
+import { IsString, IsEnum, IsOptional, MaxLength, IsInt, IsPositive, IsArray, IsBoolean } from 'class-validator';
 import { UserRole } from '@prisma/client';
 
 export class UpdateUserDto {
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  name?: string;
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  lastName?: string;
 
   @IsOptional()
   @IsString()
@@ -30,4 +35,25 @@ export class UpdateUserDto {
   @IsInt()
   @IsPositive()
   branchId?: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  allowedBranches?: number[];
+
+  @IsOptional()
+  @IsString()
+  workStartTime?: string;
+
+  @IsOptional()
+  @IsString()
+  workEndTime?: string;
+
+  @IsOptional()
+  @IsString()
+  workShift?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

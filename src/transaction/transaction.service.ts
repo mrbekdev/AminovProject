@@ -4,12 +4,14 @@ import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { TransactionType, TransactionStatus, PaymentType } from '@prisma/client';
 import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
+import { BonusService } from '../bonus/bonus.service';
 
 @Injectable()
 export class TransactionService {
   constructor(
     private prisma: PrismaService,
     private currencyExchangeRateService: CurrencyExchangeRateService,
+    private bonusService: BonusService,
   ) {}
 
   async create(createTransactionDto: CreateTransactionDto, userId?: number) {
@@ -101,9 +103,10 @@ export class TransactionService {
     const finalTotalOnce = upfrontPayment + remainingWithInterest;
 
     // Transaction yaratish
+    const { cashierId, ...cleanTransactionData } = transactionData as any;
     const transaction = await this.prisma.transaction.create({
       data: {
-        ...transactionData,
+        ...cleanTransactionData,
         customerId,
         userId: createdByUserId || null, // yaratgan foydalanuvchi
         soldByUserId: soldByUserId || null, // sotgan kassir
@@ -163,6 +166,21 @@ export class TransactionService {
 
     // Mahsulot miqdorlarini yangilash
     await this.updateProductQuantities(transaction);
+
+    // Avtomatik bonus hisoblash va yaratish (faqat mijozga sotish uchun)
+    // MUHIM: Bonus products avval qo'shilishi kerak, keyin bonus hisoblash
+    if (soldByUserId && transactionData.type === TransactionType.SALE) {
+      const cashierId = (transactionData as any).cashierId || userId;
+      
+      // Bonus hisoblashni 2 soniya kechiktirish - bonus products qo'shilishini kutish uchun
+      setTimeout(async () => {
+        try {
+          await this.calculateAndCreateSalesBonuses(transaction, soldByUserId, cashierId);
+        } catch (error) {
+          console.error('Delayed bonus calculation error:', error);
+        }
+      }, 2000);
+    }
 
     return transaction;
   }
@@ -352,22 +370,28 @@ export class TransactionService {
 
   async findAll(query: any = {}) {
     const {
-      page = 1,
+      page = '1',
       limit = query.limit === 'all' ? undefined : (query.limit || 'all'),
       type,
       status,
       branchId,
       customerId,
+      userId,
       startDate,
       endDate,
       paymentType,
       upfrontPaymentType,
       productId
     } = query;
+
+    // Parse and validate page and limit
+    const parsedPage = parseInt(page) || 1;
+    const parsedLimit = limit && limit !== 'all' ? parseInt(limit) : undefined;
   
     console.log('=== BACKEND DEBUG ===');
     console.log('Query params:', query);
     console.log('BranchId:', branchId);
+    console.log('UserId:', userId);
   
     const where: any = {};
     
@@ -382,6 +406,17 @@ export class TransactionService {
       console.log('Where clause:', where);
     }
     if (customerId) where.customerId = parseInt(customerId);
+    if (userId) {
+      // Filter by soldByUserId or userId (who created or sold the transaction)
+      where.OR = where.OR ? [
+        ...where.OR,
+        { soldByUserId: parseInt(userId) },
+        { userId: parseInt(userId) }
+      ] : [
+        { soldByUserId: parseInt(userId) },
+        { userId: parseInt(userId) }
+      ];
+    }
     if (paymentType) where.paymentType = paymentType;
     if (upfrontPaymentType) where.upfrontPaymentType = upfrontPaymentType;
     if (productId) {
@@ -395,12 +430,11 @@ export class TransactionService {
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
+
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
-  
-    const total = await this.prisma.transaction.count({ where });
-  
-    let transactions = await this.prisma.transaction.findMany({
+
+    const transactions = await this.prisma.transaction.findMany({
       where,
       include: {
         customer: true,
@@ -409,33 +443,140 @@ export class TransactionService {
         fromBranch: true,
         toBranch: true,
         items: {
-          include: { product: true }
-        }
+          include: {
+            product: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
-      ...(limit && limit !== 'all' && { take: parseInt(limit) }),
-      ...(page && limit && limit !== 'all' && { skip: (parseInt(page) - 1) * parseInt(limit) })
+      skip: parsedLimit ? (parsedPage - 1) * parsedLimit : 0,
+      take: parsedLimit,
     });
 
-    // Hydrate items where product is null but productId exists
-    transactions = await this.hydrateMissingProducts(transactions);
+    const total = await this.prisma.transaction.count({ where });
 
-    // Debug: Log payment schedule data
-    for (const t of transactions) {
-      // paymentSchedules include qilinmagan, shuning uchun uni o'tkazib yuboramiz
-      // console.log(`Transaction ${t.id} processed`);
-    }
-
-    console.log('Transactions found:', transactions);
-  
     return {
       transactions,
       pagination: {
-        page: parseInt(page),
-        limit: limit ? parseInt(limit) : total,
+        page: parsedPage,
+        limit: parsedLimit || total,
         total,
-        pages: limit ? Math.ceil(total / parseInt(limit)) : 1
+        pages: parsedLimit ? Math.ceil(total / parsedLimit) : 1
       }
+    };
+  }
+
+  async findByProductId(productId: number, month?: string) {
+    console.log(`Finding transactions for productId: ${productId}`);
+    
+    // First, let's check if the product exists
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId }
+    });
+    
+    if (!product) {
+      console.log(`Product with ID ${productId} not found`);
+      return {
+        transactions: [],
+        statusCounts: { PENDING: 0, COMPLETED: 0, CANCELLED: 0, total: 0 },
+        typeCounts: { SALE: 0, PURCHASE: 0, TRANSFER: 0, RETURN: 0, WRITE_OFF: 0, STOCK_ADJUSTMENT: 0 }
+      };
+    }
+
+    console.log(`Product found: ${product.name}`);
+
+    // Build where clause with optional month filter
+    const whereClause: any = {
+      items: {
+        some: {
+          productId: productId
+        }
+      }
+    };
+
+    // Add month filter if provided
+    if (month) {
+      const [year, monthNum] = month.split('-');
+      const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+      const endDate = new Date(parseInt(year), parseInt(monthNum), 0, 23, 59, 59);
+      
+      whereClause.createdAt = {
+        gte: startDate,
+        lte: endDate
+      };
+      
+      console.log(`Filtering by month: ${month}, from ${startDate} to ${endDate}`);
+    }
+
+    const transactions = await this.prisma.transaction.findMany({
+      where: whereClause,
+      include: {
+        customer: true,
+        user: true,
+        soldBy: true,
+        fromBranch: true,
+        toBranch: true,
+        items: {
+          where: {
+            productId: productId
+          },
+          include: {
+            product: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Calculate totalAmount for each transaction if it's missing
+    const transactionsWithAmounts = transactions.map(transaction => {
+      let calculatedTotal = (transaction as any).totalAmount;
+      
+      // If totalAmount is 0 or null, calculate from items
+      if (!calculatedTotal || calculatedTotal === 0) {
+        calculatedTotal = transaction.items.reduce((sum, item) => {
+          return sum + (item.total || (item.quantity * item.price));
+        }, 0);
+      }
+      
+      return {
+        ...transaction,
+        totalAmount: calculatedTotal
+      } as any;
+    });
+
+    console.log(`Found ${transactions.length} transactions for product ${productId}`);
+
+    // Calculate status counts
+    const statusCounts = {
+      PENDING: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+      total: transactions.length
+    };
+
+    const typeCounts = {
+      SALE: 0,
+      PURCHASE: 0,
+      TRANSFER: 0,
+      RETURN: 0,
+      WRITE_OFF: 0,
+      STOCK_ADJUSTMENT: 0
+    };
+
+    transactionsWithAmounts.forEach(transaction => {
+      statusCounts[transaction.status]++;
+      typeCounts[transaction.type]++;
+    });
+
+    console.log('Status counts:', statusCounts);
+    console.log('Type counts:', typeCounts);
+    console.log('Transactions with amounts:', transactionsWithAmounts.map(t => ({ id: t.id, totalAmount: t.totalAmount, status: t.status, type: t.type })));
+
+    return {
+      transactions: transactionsWithAmounts,
+      statusCounts,
+      typeCounts
     };
   }
 
@@ -553,9 +694,9 @@ export class TransactionService {
     const transaction = await this.findOne(id);
     
     if (transaction.status === TransactionStatus.COMPLETED) {
-      // Warehouse foydalanuvchiga ruxsat beramiz, boshqalarga yo'q
+      // Faqat ADMIN foydalanuvchiga ruxsat beramiz
       const role = currentUser?.role || currentUser?.userRole;
-      if (role !== 'WAREHOUSE' && role !== 'ADMIN') {
+      if (role !== 'ADMIN') {
         throw new BadRequestException('Completed transactions cannot be deleted');
       }
     }
@@ -1353,9 +1494,179 @@ export class TransactionService {
           totalInDollar: transaction.total,
           finalTotalInDollar: transaction.finalTotal,
         };
-      }),
+      })
     );
 
-    return transactionsWithCurrency;
+    return {
+      ...result,
+      transactions: transactionsWithCurrency,
+    };
+  }
+
+  /**
+   * Avtomatik bonus hisoblash va yaratish
+   * CASHIER bozor narxini o'zgartirib, bozor narxidan qimmatroq sotsa, 
+   * sotish narxidan bozor narxini ayirib, ayirmaning product ichidagi bonus foizini hisoblab
+   * belgilangan sotuvchiga bonus tariqasida qo'shilishi kerak
+   */
+  private async calculateAndCreateSalesBonuses(transaction: any, soldByUserId: number, createdById?: number) {
+    try {
+      console.log(' BONUS CALCULATION STARTED');
+      console.log('Transaction ID:', transaction.id);
+      console.log('Sold by user ID:', soldByUserId);
+      console.log('Created by ID (cashier):', createdById);
+
+      // Sotuvchining branch ma'lumotini olish
+      const seller = await this.prisma.user.findUnique({
+        where: { id: soldByUserId },
+        include: { branch: true }
+      });
+
+      if (!seller || !seller.branchId) {
+        console.log(' Sotuvchi yoki branch topilmadi, bonus hisoblanmaydi');
+        return;
+      }
+
+      console.log(' Sotuvchi topildi:', seller.username, 'Role:', seller.role, 'Branch:', seller.branch?.name);
+
+      // USD to UZS exchange rate olish
+      const exchangeRate = await this.currencyExchangeRateService.getActiveRate('USD', 'UZS');
+      const usdToUzsRate = exchangeRate ? Number(exchangeRate.rate) : 12500; // Default rate
+      console.log(' USD/UZS kursi:', usdToUzsRate);
+
+      // Bonus products qiymatini hisoblash - Frontend dan UZS da kelgan narhlarni ishlatish
+      console.log('\n Bonus products qidirilmoqda, transaction ID:', transaction.id);
+      
+      const bonusProducts = await this.prisma.transactionBonusProduct.findMany({
+        where: { transactionId: transaction.id },
+        include: { product: true }
+      });
+
+      console.log(' Database dan topilgan bonus products:', bonusProducts.length, 'ta');
+      console.log(' Bonus products ma\'lumotlari:', JSON.stringify(bonusProducts, null, 2));
+
+      let totalBonusProductsValue = 0;
+      if (bonusProducts.length > 0) {
+        console.log('\n Bonus products topildi:', bonusProducts.length, 'ta');
+        for (const bonusProduct of bonusProducts) {
+          console.log(`\n Bonus product tekshirilmoqda:`);
+          console.log(`  - Product ID: ${bonusProduct.productId}`);
+          console.log(`  - Product name: ${bonusProduct.product?.name}`);
+          console.log(`  - Product price (USD): ${bonusProduct.product?.price}`);
+          console.log(`  - Quantity: ${bonusProduct.quantity}`);
+          
+          // Frontend dan UZS da konvert qilingan narh keladi, shuning uchun USD * rate qilmaslik kerak
+          // Lekin agar frontend dan to'g'ri konvert qilinmagan bo'lsa, USD * rate qilamiz
+          const productPriceInUzs = (bonusProduct.product?.price || 0) * usdToUzsRate;
+          const productTotalValue = productPriceInUzs * bonusProduct.quantity;
+          totalBonusProductsValue += productTotalValue;
+          
+          console.log(`  - Price in UZS (calculated): ${productPriceInUzs.toLocaleString()} som`);
+          console.log(`  - Total value: ${productTotalValue.toLocaleString()} som`);
+        }
+        console.log('\n Jami bonus products qiymati:', totalBonusProductsValue.toLocaleString(), 'som');
+      } else {
+        console.log(' Bonus products topilmadi yoki bo\'sh');
+      }
+
+      // Har bir mahsulot uchun bonus hisoblash
+      for (const item of transaction.items) {
+        console.log('\n Mahsulot tekshirilmoqda:', item.productName);
+        
+        const sellingPrice = Number(item.sellingPrice || item.price);
+        const originalPrice = Number(item.originalPrice || item.price);
+        const quantity = Number(item.quantity || 1);
+
+        console.log(' Narxlar:');
+        console.log('  - Sotish narxi:', sellingPrice, 'som');
+        console.log('  - Bozor narxi:', originalPrice, 'som');
+        console.log('  - Miqdor:', quantity);
+
+        // Product ma'lumotlarini olish (agar item.product yo'q bo'lsa)
+        let productInfo = item.product;
+        let bonusPercentage = Number(productInfo?.bonusPercentage || 0);
+        
+        // Agar product ma'lumoti yo'q bo'lsa yoki bonusPercentage yo'q bo'lsa, database dan olish
+        if (!productInfo || bonusPercentage === 0) {
+          if (item.productId) {
+            const dbProduct = await this.prisma.product.findUnique({
+              where: { id: item.productId }
+            });
+            console.log(' Database dan product ma\'lumoti olindi:', dbProduct?.name);
+            
+            if (dbProduct) {
+              productInfo = dbProduct;
+              bonusPercentage = Number(dbProduct.bonusPercentage || 0);
+            }
+          }
+        }
+        
+        console.log(' Bonus foizi:', bonusPercentage, '%');
+
+        // CASHIER bozor narxidan qimmatroq sotsa bonus hisoblanadi
+        if (sellingPrice > originalPrice && bonusPercentage > 0) {
+          // Farq narxini hisoblash (som hisobida)
+          const priceDifference = (sellingPrice - originalPrice) * quantity;
+          
+          // To'g'ri formula: ortiqcha pul - bonus products qiymati = sof ortiqcha summa
+          const netExtraAmount = priceDifference - totalBonusProductsValue;
+          
+          // Faqat sof ortiqcha summaga bonus foizini qo'llash
+          const bonusAmount = netExtraAmount > 0 ? netExtraAmount * (bonusPercentage / 100) : 0;
+
+          console.log(' Bonus hisoblash:');
+          console.log('  - Narx farqi:', priceDifference, 'som');
+          console.log('  - Bonus products qiymati:', totalBonusProductsValue, 'som');
+          console.log('  - Sof ortiqcha summa:', netExtraAmount, 'som');
+          console.log('  - Bonus miqdori:', bonusAmount, 'som');
+
+          if (bonusAmount > 0) {
+            // Bonus products ma'lumotini tayyorlash
+            const bonusProductsData = bonusProducts.map(bp => ({
+              productId: bp.productId,
+              productName: bp.product?.name || 'Номаълум махсулот',
+              productCode: bp.product?.barcode || 'N/A',
+              quantity: bp.quantity,
+              price: (bp.product?.price || 0) * usdToUzsRate, // USD dan UZS ga o'tkazish
+              totalValue: (bp.product?.price || 0) * bp.quantity * usdToUzsRate
+            }));
+
+            // Bonus yaratish - belgilangan sotuvchiga
+            const bonusData = {
+              userId: soldByUserId, // Belgilangan sotuvchi
+              branchId: seller.branchId,
+              amount: bonusAmount,
+              reason: 'SALES_BONUS',
+              description: `${productInfo?.name || item.productName} mahsulotini yuqori narxda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice} som, Bozor narxi: ${originalPrice} som, Miqdor: ${quantity}, Bonus mahsulotlar qiymati: ${totalBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
+              bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
+              transactionId: transaction.id,
+              bonusDate: new Date().toISOString()
+            };
+
+            console.log(' Bonus yaratilmoqda:', bonusData);
+
+            await this.bonusService.create(bonusData, createdById || soldByUserId);
+
+            console.log(` BONUS YARATILDI: ${bonusAmount} som`);
+            console.log(`   Mahsulot: ${productInfo?.name || item.productName}`);
+            console.log(`   Sotuvchi: ${seller.username} (ID: ${soldByUserId})`);
+            console.log(`   Yaratuvchi: Kassir (ID: ${createdById})`);
+          }
+        } else {
+          console.log(' Bonus yaratilmadi:');
+          if (sellingPrice <= originalPrice) {
+            console.log('   - Sotish narxi bozor narxidan yuqori emas');
+          }
+          if (bonusPercentage <= 0) {
+            console.log('   - Mahsulotda bonus foizi yo\'q');
+          }
+        }
+      }
+
+      console.log(' BONUS CALCULATION COMPLETED\n');
+    } catch (error) {
+      console.error(' Bonus hisoblashda xatolik:', error);
+      // Bonus yaratishda xatolik bo'lsa ham, asosiy tranzaksiya davom etsin
+    }
   }
 }

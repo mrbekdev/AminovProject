@@ -42,6 +42,7 @@ enum UserRole {
 enum BranchType {
   SKLAD
   SAVDO_MARKAZ
+  TELEFON_MARKAZI
 }
 
 enum TransferStatus {
@@ -63,19 +64,20 @@ enum ProductStatus {
 }
 
 model Branch {
-  id          Int        @id @default(autoincrement())
-  name        String
-  address     String?
-  type        BranchType @default(SAVDO_MARKAZ) 
-  cashBalance Float      @default(0)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-phoneNumber String?
-status     BranchStatus @default(ACTIVE)
+  id              Int                    @id @default(autoincrement())
+  name            String
+  address         String?
+  type            BranchType             @default(SAVDO_MARKAZ)
+  cashBalance     Float                  @default(0)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  phoneNumber     String?
+  status          BranchStatus           @default(ACTIVE)
   products        Product[]
   transactions    Transaction[]          @relation("FromBranch")
   toTransactions  Transaction[]          @relation("ToBranch")
   users           User[]
+  allowedUsers    UserBranchAccess[]
   categories      Category[]
   fromTransfers   ProductTransfer[]      @relation("FromBranch")
   toTransfers     ProductTransfer[]      @relation("ToBranch")
@@ -84,22 +86,27 @@ status     BranchStatus @default(ACTIVE)
   cashierReports  CashierReport[]
   DailyRepayment  DailyRepayment[]
   CreditRepayment CreditRepayment[]
+  bonuses         Bonus[]
 
   @@index([name])
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  firstName String?
-  lastName  String?
-  phone     String?  @unique
-  username  String   @unique
-  password  String?
-  role      UserRole
-  branchId  Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  status  UserStatus @default(ACTIVE)
+  id                  Int                    @id @default(autoincrement())
+  firstName           String?
+  lastName            String?
+  phone               String?                @unique
+  username            String                 @unique
+  password            String?
+  role                UserRole
+  branchId            Int?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  status              UserStatus             @default(ACTIVE)
+  allowedBranches     UserBranchAccess[]
+  workStartTime       String?                @db.VarChar(5) // Format: "HH:MM"
+  workEndTime         String?                @db.VarChar(5) // Format: "HH:MM"
+  workShift           String?                @default("DAY") // DAY or NIGHT
   branch              Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
   createdTransactions Transaction[]          @relation("TransactionsCreatedBy")
   soldTransactions    Transaction[]          @relation("TransactionsSoldBy")
@@ -113,17 +120,33 @@ model User {
   creditRepayments    CreditRepayment[]
   cashierReports      CashierReport[]        @relation("CashierReports")
   exchangeRates       CurrencyExchangeRate[]
+  bonuses             Bonus[]                @relation("UserBonuses")
+  createdBonuses      Bonus[]                @relation("BonusCreatedBy")
 
   @@index([phone])
   @@index([branchId])
 }
 
-enum UserStatus{
+model UserBranchAccess {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  branchId  Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, branchId])
+  @@index([userId])
+  @@index([branchId])
+}
+
+enum UserStatus {
   ACTIVE
   DELETED
 }
 
-enum BranchStatus{
+enum BranchStatus {
   ACTIVE
   DELETED
 }
@@ -157,28 +180,31 @@ model Category {
 }
 
 model Product {
-  id                Int           @id @default(autoincrement())
+  id                Int                       @id @default(autoincrement())
   name              String
   barcode           String?
   model             String?
   price             Float
   quantity          Int
-  defectiveQuantity Int           @default(0)
-  returnedQuantity  Int           @default(0) // Qaytib olingan miqdori
-  exchangedQuantity Int           @default(0)
-  initialQuantity   Int           @default(0)
-  status            ProductStatus @default(IN_STORE)
+  defectiveQuantity Int                       @default(0)
+  returnedQuantity  Int                       @default(0)
+  exchangedQuantity Int                       @default(0)
+  initialQuantity   Int                       @default(0)
+  status            ProductStatus             @default(IN_STORE)
   branchId          Int
   categoryId        Int
   marketPrice       Float?
-  isDeleted         Boolean       @default(false) // Soft delete uchun
+  bonusPercentage   Float?                    @default(0) // Bonus foizi
+  isDeleted         Boolean                   @default(false) // Soft delete uchun
   deletedAt         DateTime?
-
-  branch          Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  category        Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  transactions    TransactionItem[]
-  DefectiveLog    DefectiveLog[]
-  ProductTransfer ProductTransfer[]
+  createdAt         DateTime?                 @default(now())
+  updatedAt         DateTime?                 @updatedAt
+  branch            Branch                    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  category          Category                  @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  transactions      TransactionItem[]
+  DefectiveLog      DefectiveLog[]
+  ProductTransfer   ProductTransfer[]
+  bonusProducts     TransactionBonusProduct[]
 
   @@unique([barcode, branchId], name: "barcode_branchId")
   @@index([isDeleted])
@@ -192,7 +218,7 @@ model DefectiveLog {
   description String
   userId      Int?
   branchId    Int?
-  cashAmount  Float    @default(0) // Kassadan chiqadigan yoki kiruvchi pul
+  cashAmount  Float    @default(0)
   actionType  String   @default("DEFECTIVE") // DEFECTIVE, FIXED, RETURN, EXCHANGE
   createdAt   DateTime @default(now())
 
@@ -263,16 +289,18 @@ model Transaction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  customer         Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  user             User?              @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  soldBy           User?              @relation("TransactionsSoldBy", fields: [soldByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  fromBranch       Branch?            @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete:Cascade)
-  toBranch         Branch?            @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Cascade)
+  customer         Customer?                 @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  user             User?                     @relation("TransactionsCreatedBy", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  soldBy           User?                     @relation("TransactionsSoldBy", fields: [soldByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  fromBranch       Branch?                   @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Cascade)
+  toBranch         Branch?                   @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Cascade)
   items            TransactionItem[]
   paymentSchedules PaymentSchedule[]
   PaymentRepayment PaymentRepayment[]
   dailyRepayments  DailyRepayment[]
   creditRepayments CreditRepayment[]
+  bonusProducts    TransactionBonusProduct[]
+  bonuses          Bonus[]
 
   @@index([customerId])
   @@index([userId])
@@ -426,7 +454,7 @@ model CreditRepayment {
   transaction Transaction      @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   schedule    PaymentSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   paidBy      User?            @relation(fields: [paidByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  branch      Branch?          @relation(fields: [branchId], references: [id], onDelete:Cascade)
+  branch      Branch?          @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@index([transactionId])
   @@index([scheduleId])
@@ -484,6 +512,47 @@ model CurrencyExchangeRate {
   @@index([toCurrency])
   @@index([branchId])
   @@index([isActive])
+}
+
+model Bonus {
+  id            Int      @id @default(autoincrement())
+  userId        Int // Employee receiving the bonus
+  amount        Float // Bonus amount
+  reason        String // Reason for the bonus
+  description   String? // Optional detailed description
+  bonusProducts Json? // JSON array of bonus products given to customer
+  bonusDate     DateTime @default(now()) // Date when bonus was given
+  createdById   Int // Admin/Manager who created the bonus
+  branchId      Int? // Branch where bonus was given
+  transactionId Int? // Related transaction ID for sales bonuses
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User         @relation("UserBonuses", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy   User         @relation("BonusCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  branch      Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdById])
+  @@index([branchId])
+  @@index([bonusDate])
+  @@index([transactionId])
+}
+
+model TransactionBonusProduct {
+  id            Int      @id @default(autoincrement())
+  transactionId Int
+  productId     Int
+  quantity      Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@index([productId])
 }
 
 model barcodeCounter {

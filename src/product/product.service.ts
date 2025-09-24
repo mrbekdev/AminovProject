@@ -50,6 +50,7 @@ async create(
       quantity: createProductDto.quantity,
       status: createProductDto.status || 'IN_STORE',
       defectiveQuantity: 0,
+      bonusPercentage: createProductDto.bonusPercentage || 0,
     },
   });
 
@@ -191,6 +192,10 @@ async update(
     throw new NotFoundException('Mahsulot topilmadi');
   }
 
+  // Check if price or marketPrice is being updated
+  const isPriceUpdated = updateProductDto.price !== undefined && updateProductDto.price !== product.price;
+  const isMarketPriceUpdated = updateProductDto.marketPrice !== undefined && updateProductDto.marketPrice !== product.marketPrice;
+
   const updatedProduct = await prismaClient.product.update({
     where: { id },
     data: {
@@ -202,8 +207,30 @@ async update(
       model: updateProductDto.model,
       status: updateProductDto.status,
       quantity: updateProductDto.quantity,
+      bonusPercentage: updateProductDto.bonusPercentage,
     },
   });
+
+  // If price or marketPrice is updated, sync with all products having same name and model
+  if ((isPriceUpdated || isMarketPriceUpdated) && updatedProduct.name && updatedProduct.model) {
+    const updateData: any = {};
+    if (isPriceUpdated) {
+      updateData.price = updatedProduct.price;
+    }
+    if (isMarketPriceUpdated) {
+      updateData.marketPrice = updatedProduct.marketPrice;
+    }
+
+    // Update all products with same name and model across all branches
+    await prismaClient.product.updateMany({
+      where: {
+        name: updatedProduct.name,
+        model: updatedProduct.model,
+        id: { not: id }, // Exclude the current product
+      },
+      data: updateData,
+    });
+  }
 
   // Convert price to som for display
   const priceInSom = await this.currencyExchangeRateService.convertCurrency(
@@ -652,6 +679,7 @@ return this.prisma.$transaction(async (tx) => {
       branchId: fromBranchId,
       categoryId: categoryId,
       status: (status || 'IN_STORE') as ProductStatus,
+      bonusPercentage: row['bonusPercentage'] ? Number(row['bonusPercentage']) : 0,
     };
 
     const existing = await tx.product.findUnique({

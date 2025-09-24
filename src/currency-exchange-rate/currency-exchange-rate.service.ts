@@ -70,6 +70,28 @@ export class CurrencyExchangeRateService {
     });
   }
 
+  async getActiveRate(fromCurrency: string, toCurrency: string, branchId?: number) {
+    const where: any = {
+      fromCurrency,
+      toCurrency,
+      isActive: true,
+    };
+    
+    if (branchId) {
+      where.OR = [
+        { branchId: branchId },
+        { branchId: null }, // Global rates
+      ];
+    }
+
+    return this.prisma.currencyExchangeRate.findFirst({
+      where,
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
   async findByCurrencies(fromCurrency: string, toCurrency: string, branchId?: number) {
     const where: any = {
       fromCurrency,

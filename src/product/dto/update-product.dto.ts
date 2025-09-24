@@ -53,4 +53,9 @@ export class UpdateProductDto {
   @IsNumber()
   @IsOptional()
   quantity?: number;
+
+  @ApiProperty({ required: false })
+  @IsNumber()
+  @IsOptional()
+  bonusPercentage?: number;
 }

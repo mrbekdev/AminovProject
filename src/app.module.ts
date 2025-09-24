@@ -16,13 +16,15 @@ import { CurrencyExchangeRateModule } from './currency-exchange-rate/currency-ex
 import { DailyRepaymentModule } from './daily-repayment/daily-repayment.module';
 import { CreditRepaymentModule } from './credit-repayment/credit-repayment.module';
 import { CashierReportModule } from './cashier-report/cashier-report.module';
+import { BonusModule } from './bonus/bonus.module';
+import { TransactionBonusProductModule } from './transaction-bonus-product/transaction-bonus-product.module';
 
 
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule, CurrencyExchangeRateModule, DailyRepaymentModule, CreditRepaymentModule, CashierReportModule
+    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule, CurrencyExchangeRateModule, DailyRepaymentModule, CreditRepaymentModule, CashierReportModule, BonusModule, TransactionBonusProductModule
   ],
   controllers: [AppController],
   providers: [AppService],

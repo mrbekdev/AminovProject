@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsOptional, MaxLength, IsInt, IsPositive } from 'class-validator';
+import { IsString, IsEnum, IsOptional, MaxLength, IsInt, IsPositive, IsArray, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 
@@ -60,4 +60,45 @@ export class CreateUserDto {
   @IsInt()
   @IsPositive()
   branchId: number;
+
+  @ApiPropertyOptional({
+    example: [1, 2, 3],
+    description: 'Marketing foydalanuvchilari uchun ruxsat berilgan filiallar',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  allowedBranches?: number[];
+
+  @ApiPropertyOptional({
+    example: '09:00',
+    description: 'Ish boshlanish vaqti (HH:MM formatida)',
+  })
+  @IsOptional()
+  @IsString()
+  workStartTime?: string;
+
+  @ApiPropertyOptional({
+    example: '18:00',
+    description: 'Ish tugash vaqti (HH:MM formatida)',
+  })
+  @IsOptional()
+  @IsString()
+  workEndTime?: string;
+
+  @ApiPropertyOptional({
+    example: 'DAY',
+    description: 'Ish smenasi (DAY, NIGHT)',
+  })
+  @IsOptional()
+  @IsString()
+  workShift?: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Foydalanuvchi faol yoki nofaol',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
