@@ -22,6 +22,7 @@ export class AttendanceController {
 
   @Post('check-out')
   checkOut(@Body() body: CheckOutDto) {
+    console.log("Face id dan sorov keldi", body);
     return this.attendanceService.checkOut({
       userId: body.userId,
       branchId: body.branchId,
