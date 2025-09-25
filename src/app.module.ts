@@ -19,13 +19,14 @@ import { CashierReportModule } from './cashier-report/cashier-report.module';
 import { BonusModule } from './bonus/bonus.module';
 import { TransactionBonusProductModule } from './transaction-bonus-product/transaction-bonus-product.module';
 import { WorkScheduleModule } from './work-schedule/work-schedule.module';
+import { AttendanceModule } from './attendance/attendance.module';
 
 
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule, CurrencyExchangeRateModule, DailyRepaymentModule, CreditRepaymentModule, CashierReportModule, BonusModule, TransactionBonusProductModule, WorkScheduleModule
+    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule, CurrencyExchangeRateModule, DailyRepaymentModule, CreditRepaymentModule, CashierReportModule, BonusModule, TransactionBonusProductModule, WorkScheduleModule, AttendanceModule
   ],
   controllers: [AppController],
   providers: [AppService],

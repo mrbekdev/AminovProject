@@ -2,6 +2,66 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// ===== Attendance Tracking =====
+enum AttendanceEventType {
+  CHECK_IN
+  CHECK_OUT
+  MANUAL_ADJUST
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  LEFT_EARLY
+}
+
+model AttendanceDay {
+  id           Int               @id @default(autoincrement())
+  userId       Int
+  branchId     Int?
+  date         DateTime          // store date (00:00 time) in UTC
+  checkInAt    DateTime?
+  checkOutAt   DateTime?
+  totalMinutes Int?              @default(0)
+  status       AttendanceStatus? @default(PRESENT)
+  deviceId     String?           @db.VarChar(100)
+  notes        String?           @db.VarChar(255)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  events AttendanceEvent[]
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([branchId])
+  @@index([date])
+}
+
+model AttendanceEvent {
+  id          Int                 @id @default(autoincrement())
+  userId      Int
+  branchId    Int?
+  dayId       Int?
+  eventType   AttendanceEventType
+  occurredAt  DateTime            @default(now())
+  deviceId    String?             @db.VarChar(100)
+  similarity  Float?              // face match score if provided by device
+  payload     Json?
+  createdAt   DateTime            @default(now())
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  day    AttendanceDay? @relation(fields: [dayId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([branchId])
+  @@index([occurredAt])
+  @@index([dayId])
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -87,6 +147,8 @@ model Branch {
   DailyRepayment  DailyRepayment[]
   CreditRepayment CreditRepayment[]
   bonuses         Bonus[]
+  attendanceDays  AttendanceDay[]
+  attendanceEvents AttendanceEvent[]
 
   @@index([name])
 }
@@ -122,6 +184,9 @@ model User {
   exchangeRates       CurrencyExchangeRate[]
   bonuses             Bonus[]                @relation("UserBonuses")
   createdBonuses      Bonus[]                @relation("BonusCreatedBy")
+  attendanceDays      AttendanceDay[]
+  attendanceEvents    AttendanceEvent[]
+  faceTemplates       FaceTemplate[]
 
   @@index([phone])
   @@index([branchId])
@@ -572,4 +637,19 @@ model barcodeCounter {
   counter   BigInt   @default(1000000000)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model FaceTemplate {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  deviceId   String?  @db.VarChar(100)
+  template   Bytes?
+  vector     Json?
+  imageUrl   String?  @db.VarChar(500)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
