@@ -643,9 +643,9 @@ model FaceTemplate {
   id         Int      @id @default(autoincrement())
   userId     Int
   deviceId   String?  @db.VarChar(100)
-  template   Bytes?
+  template   String?  @db.Text
   vector     Json?
-  imageUrl   String?  @db.VarChar(500)
+  imageUrl   String?  @db.Text
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

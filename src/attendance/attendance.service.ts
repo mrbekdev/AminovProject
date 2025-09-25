@@ -146,19 +146,24 @@ export class AttendanceService {
 
   // ===== Face Templates =====
   async registerFace(body: { userId: number; deviceId?: string; template?: string; vector?: any; imageUrl?: string }) {
-    const { userId, deviceId, template, vector, imageUrl } = body || {} as any;
+    const { userId, deviceId, template, vector, imageUrl } = (body || {}) as any;
     if (!userId) throw new BadRequestException('userId is required');
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    let templateBytes: Buffer | null = null;
+    // Store template as base64 TEXT (not Buffer) and imageUrl as full data URL for easy preview
+    let b64 = null as string | null;
+    let finalImageUrl = imageUrl ?? null;
     if (typeof template === 'string' && template.length > 0) {
-      // accept base64 (with or without data URL prefix)
-      const b64 = template.includes(',') ? template.split(',').pop()! : template;
-      try {
-        templateBytes = Buffer.from(b64, 'base64');
-      } catch {
-        throw new BadRequestException('Invalid base64 template');
+      if (template.startsWith('data:')) {
+        // data URL provided
+        const parts = template.split(',');
+        b64 = parts.length > 1 ? parts[1] : '';
+        finalImageUrl = template; // keep full data URL for preview
+      } else {
+        // raw base64
+        b64 = template;
+        finalImageUrl = finalImageUrl ?? `data:image/jpeg;base64,${b64}`;
       }
     }
 
@@ -166,9 +171,9 @@ export class AttendanceService {
       data: {
         userId,
         deviceId: deviceId ?? null,
-        template: templateBytes ?? null,
+        template: b64,
         vector: vector ?? undefined,
-        imageUrl: imageUrl ?? null,
+        imageUrl: finalImageUrl,
       },
     });
     return created;
@@ -182,10 +187,17 @@ export class AttendanceService {
     if (query.userId) where.userId = parseInt(query.userId);
     if (query.deviceId) where.deviceId = String(query.deviceId);
 
-    const [items, total] = await Promise.all([
+    const [itemsRaw, total] = await Promise.all([
       this.prisma.faceTemplate.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
       this.prisma.faceTemplate.count({ where }),
     ]);
+    // Ensure imageUrl present for preview
+    const items = itemsRaw.map((it: any) => {
+      if (!it?.imageUrl && it?.template) {
+        return { ...it, imageUrl: `data:image/jpeg;base64,${it.template}` };
+      }
+      return it;
+    });
     return { items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
