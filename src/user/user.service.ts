@@ -32,16 +32,18 @@ export class UserService {
       updatedAt: new Date(),
     };
 
-    // Only include branchId if role is not MARKETING
+    // Always handle allowedBranches for all roles
+    if (allowedBranches && allowedBranches.length > 0) {
+      data.allowedBranches = {
+        create: allowedBranches.map(branchId => ({
+          branch: { connect: { id: branchId } }
+        }))
+      };
+    }
+    
+    // For MARKETING role, don't set a primary branchId
     if (userData.role === 'MARKETING') {
       delete data.branchId;
-      if (allowedBranches && allowedBranches.length > 0) {
-        data.allowedBranches = {
-          create: allowedBranches.map(branchId => ({
-            branch: { connect: { id: branchId } }
-          }))
-        };
-      }
     }
 
     return this.prisma.user.create({
@@ -110,29 +112,24 @@ export class UserService {
     if (workEndTime) data.workEndTime = workEndTime;
     if (workShift) data.workShift = workShift;
 
-    // Handle branch relationships
-    if (userData.role === 'MARKETING') {
-      // Remove branchId for MARKETING role
-      delete data.branchId;
-      
-      // Delete existing allowed branches
-      await this.prisma.userBranchAccess.deleteMany({
-        where: { userId: id }
-      });
+    // Always handle branch relationships for all roles
+    // Delete existing allowed branches
+    await this.prisma.userBranchAccess.deleteMany({
+      where: { userId: id }
+    });
 
-      // Add new allowed branches if any
-      if (allowedBranches && allowedBranches.length > 0) {
-        data.allowedBranches = {
-          create: allowedBranches.map(branchId => ({
-            branch: { connect: { id: branchId } }
-          }))
-        };
-      }
-    } else {
-      // For non-MARKETING roles, clear allowedBranches
-      await this.prisma.userBranchAccess.deleteMany({
-        where: { userId: id }
-      });
+    // Add new allowed branches if any (for all roles)
+    if (allowedBranches && allowedBranches.length > 0) {
+      data.allowedBranches = {
+        create: allowedBranches.map(branchId => ({
+          branch: { connect: { id: branchId } }
+        }))
+      };
+    }
+    
+    // For MARKETING role, remove branchId
+    if (userData.role === 'MARKETING') {
+      delete data.branchId;
     }
 
     // Convert string role to enum value
