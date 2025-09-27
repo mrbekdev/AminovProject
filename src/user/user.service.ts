@@ -33,13 +33,20 @@ export class UserService {
     };
 
     // Always handle allowedBranches for all roles
-    if (allowedBranches && allowedBranches.length > 0) {
-      data.allowedBranches = {
-        create: allowedBranches.map(branchId => ({
-          branch: { connect: { id: branchId } }
-        }))
-      };
+    let finalAllowedBranches = allowedBranches || [];
+    if (finalAllowedBranches.length === 0) {
+      const allBranches = await this.prisma.branch.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true }
+      });
+      finalAllowedBranches = allBranches.map(b => b.id);
     }
+
+    data.allowedBranches = {
+      create: finalAllowedBranches.map(branchId => ({
+        branch: { connect: { id: branchId } }
+      }))
+    };
     
     // For MARKETING role, don't set a primary branchId
     if (userData.role === 'MARKETING') {
@@ -112,22 +119,28 @@ export class UserService {
     if (workEndTime) data.workEndTime = workEndTime;
     if (workShift) data.workShift = workShift;
 
-    // Always handle branch relationships for all roles
-    // Delete existing allowed branches
-    await this.prisma.userBranchAccess.deleteMany({
-      where: { userId: id }
-    });
+    if (allowedBranches !== undefined) {
+      // Delete existing allowed branches
+      await this.prisma.userBranchAccess.deleteMany({
+        where: { userId: id }
+      });
 
-    // Add new allowed branches if any (for all roles)
-    if (allowedBranches && allowedBranches.length > 0) {
+      let finalAllowedBranches = allowedBranches;
+      if (finalAllowedBranches.length === 0) {
+        const allBranches = await this.prisma.branch.findMany({
+          where: { status: 'ACTIVE' },
+          select: { id: true }
+        });
+        finalAllowedBranches = allBranches.map(b => b.id);
+      }
+
       data.allowedBranches = {
-        create: allowedBranches.map(branchId => ({
+        create: finalAllowedBranches.map(branchId => ({
           branch: { connect: { id: branchId } }
         }))
       };
     }
     
-    // For MARKETING role, remove branchId
     if (userData.role === 'MARKETING') {
       delete data.branchId;
     }
@@ -170,7 +183,7 @@ export class UserService {
   }
 
   async findByUsername(username: string) {
-    return this.prisma.user.findUnique({ 
+    const user = await this.prisma.user.findUnique({ 
       where: { username },
       include: {
         branch: true,
@@ -181,6 +194,8 @@ export class UserService {
         }
       }
     });
+
+    return user;
   }
 
   async getUserWithBranches(userId: number) {
