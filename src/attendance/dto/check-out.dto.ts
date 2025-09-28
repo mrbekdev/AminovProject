@@ -1,8 +1,13 @@
 import { IsInt, IsOptional, IsString, IsNumber } from 'class-validator';
 
 export class CheckOutDto {
+  @IsOptional()
   @IsInt()
-  userId: number;
+  userId?: number;
+
+  @IsOptional()
+  @IsInt()
+  faceTemplateId?: number;
 
   @IsOptional()
   @IsInt()

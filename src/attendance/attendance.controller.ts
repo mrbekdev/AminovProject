@@ -1,10 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CheckInDto } from './dto/check-in.dto';
 import { CheckOutDto } from './dto/check-out.dto';
 
-@UseGuards(JwtAuthGuard)
 @Controller('attendance')
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
@@ -13,6 +11,7 @@ export class AttendanceController {
   checkIn(@Body() body: CheckInDto) {
     return this.attendanceService.checkIn({
       userId: body.userId,
+      faceTemplateId: (body as any).faceTemplateId,
       branchId: body.branchId,
       deviceId: body.deviceId,
       similarity: body.similarity,
@@ -25,6 +24,7 @@ export class AttendanceController {
     console.log("Face id dan sorov keldi", body);
     return this.attendanceService.checkOut({
       userId: body.userId,
+      faceTemplateId: (body as any).faceTemplateId,
       branchId: body.branchId,
       deviceId: body.deviceId,
       similarity: body.similarity,

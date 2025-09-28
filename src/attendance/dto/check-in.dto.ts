@@ -1,8 +1,13 @@
 import { IsInt, IsOptional, IsString, IsNumber } from 'class-validator';
 
 export class CheckInDto {
+  @IsOptional()
   @IsInt()
-  userId: number;
+  userId?: number;
+
+  @IsOptional()
+  @IsInt()
+  faceTemplateId?: number; // identify user by registered face template
 
   @IsOptional()
   @IsInt()

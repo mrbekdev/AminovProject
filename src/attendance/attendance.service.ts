@@ -10,9 +10,16 @@ function startOfDayUTC(date?: Date) {
 export class AttendanceService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async checkIn(params: { userId: number; branchId?: number; deviceId?: string; similarity?: number; payload?: any; when?: Date }) {
-    const { userId, branchId, deviceId, similarity, payload } = params;
-    if (!userId) throw new BadRequestException('userId is required');
+  async checkIn(params: { userId?: number; faceTemplateId?: number; branchId?: number; deviceId?: string; similarity?: number; payload?: any; when?: Date }) {
+    const { branchId, deviceId, similarity, payload } = params;
+    // resolve userId
+    let userId = params.userId;
+    if (!userId && params.faceTemplateId) {
+      const face = await this.prisma.faceTemplate.findUnique({ where: { id: params.faceTemplateId } });
+      if (!face) throw new NotFoundException('Face template not found');
+      userId = face.userId;
+    }
+    if (!userId) throw new BadRequestException('userId or faceTemplateId is required');
 
     // ensure user exists
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -43,9 +50,15 @@ export class AttendanceService {
     return day;
   }
 
-  async checkOut(params: { userId: number; branchId?: number; deviceId?: string; similarity?: number; payload?: any; when?: Date }) {
-    const { userId, branchId, deviceId, similarity, payload } = params;
-    if (!userId) throw new BadRequestException('userId is required');
+  async checkOut(params: { userId?: number; faceTemplateId?: number; branchId?: number; deviceId?: string; similarity?: number; payload?: any; when?: Date }) {
+    const { branchId, deviceId, similarity, payload } = params;
+    let userId = params.userId;
+    if (!userId && params.faceTemplateId) {
+      const face = await this.prisma.faceTemplate.findUnique({ where: { id: params.faceTemplateId } });
+      if (!face) throw new NotFoundException('Face template not found');
+      userId = face.userId;
+    }
+    if (!userId) throw new BadRequestException('userId or faceTemplateId is required');
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
