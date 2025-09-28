@@ -194,7 +194,6 @@ export class UserService {
         }
       }
     });
-
     return user;
   }
 
@@ -216,5 +215,21 @@ export class UserService {
     }
 
     return user;
+  }
+
+  async checkUsernameExists(username: string, excludeUserId?: number) {
+    const existingUser = await this.prisma.user.findUnique({
+      where: { username },
+      select: { id: true }
+    });
+    
+    if (!existingUser) return false;
+    
+    // If we're checking for an existing user (edit mode), it's okay if the username belongs to that user
+    if (excludeUserId && existingUser.id === excludeUserId) {
+      return false;
+    }
+    
+    return true;
   }
 }

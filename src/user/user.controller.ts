@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
-  HttpException, HttpStatus, UseGuards
+  HttpException, HttpStatus, UseGuards, Req
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { UserService } from './user.service';
@@ -40,6 +40,18 @@ export class UserController {
       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
     return user;
+  }
+
+  @Get('check-username')
+  @ApiOperation({ summary: 'Check if username exists' })
+  @ApiQuery({ name: 'username', required: true })
+  @ApiQuery({ name: 'currentUserId', required: false })
+  async checkUsername(
+    @Query('username') username: string,
+    @Query('currentUserId') currentUserId?: string
+  ) {
+    const exists = await this.userService.checkUsernameExists(username, currentUserId ? +currentUserId : undefined);
+    return { exists, userId: exists ? (await this.userService.findByUsername(username))?.id  : null };
   }
 
   @Get()
