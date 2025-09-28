@@ -20,13 +20,30 @@ import { BonusModule } from './bonus/bonus.module';
 import { TransactionBonusProductModule } from './transaction-bonus-product/transaction-bonus-product.module';
 import { WorkScheduleModule } from './work-schedule/work-schedule.module';
 import { AttendanceModule } from './attendance/attendance.module';
-
+import { UserBranchAccessModule } from './user-branch-access/user-branch-access.module';
 
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    BranchModule, UserModule, CategoryModule, ProductModule, TransactionModule, AuthModule, CustomerModule, PaymentScheduleModule, DefectiveLogModule, CurrencyExchangeRateModule, DailyRepaymentModule, CreditRepaymentModule, CashierReportModule, BonusModule, TransactionBonusProductModule, WorkScheduleModule, AttendanceModule
+    BranchModule, 
+    UserModule, 
+    CategoryModule, 
+    ProductModule, 
+    TransactionModule, 
+    AuthModule, 
+    CustomerModule, 
+    PaymentScheduleModule, 
+    DefectiveLogModule, 
+    CurrencyExchangeRateModule, 
+    DailyRepaymentModule, 
+    CreditRepaymentModule, 
+    CashierReportModule, 
+    BonusModule, 
+    TransactionBonusProductModule, 
+    WorkScheduleModule, 
+    AttendanceModule,
+    UserBranchAccessModule
   ],
   controllers: [AppController],
   providers: [AppService],
