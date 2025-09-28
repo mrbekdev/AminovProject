@@ -11,7 +11,7 @@ export class UserBranchAccessService {
   async create(createDto: CreateUserBranchAccessDto): Promise<UserBranchAccessResponseDto> {
     // Check if user exists
     const user = await this.prisma.user.findUnique({
-      where: { id: createDto.userId },
+      where: { id: +createDto.userId },
     });
     if (!user) {
       throw new NotFoundException(`User with ID ${createDto.userId} not found`);
@@ -19,7 +19,7 @@ export class UserBranchAccessService {
 
     // Check if branch exists
     const branch = await this.prisma.branch.findUnique({
-      where: { id: createDto.branchId },
+      where: { id: +createDto.branchId },
     });
     if (!branch) {
       throw new NotFoundException(`Branch with ID ${createDto.branchId} not found`);
@@ -29,8 +29,8 @@ export class UserBranchAccessService {
     const existingAccess = await this.prisma.userBranchAccess.findUnique({
       where: {
         userId_branchId: {
-          userId: createDto.userId,
-          branchId: createDto.branchId,
+          userId: +createDto.userId,
+          branchId: +createDto.branchId,
         },
       },
     });
@@ -41,8 +41,8 @@ export class UserBranchAccessService {
 
     const access = await this.prisma.userBranchAccess.create({
       data: {
-        userId: createDto.userId,
-        branchId: createDto.branchId,
+        userId: +createDto.userId,
+        branchId: +createDto.branchId,
       },
       select: {
         id: true,
@@ -73,7 +73,7 @@ export class UserBranchAccessService {
 
   async findOne(id: number): Promise<UserBranchAccessResponseDto> {
     const access = await this.prisma.userBranchAccess.findUnique({
-      where: { id },
+      where: { id: +id },
       select: {
         id: true,
         userId: true,
@@ -96,7 +96,7 @@ export class UserBranchAccessService {
   ): Promise<UserBranchAccessResponseDto> {
     // Check if access exists
     const existingAccess = await this.prisma.userBranchAccess.findUnique({
-      where: { id },
+      where: { id: +id },
     });
     if (!existingAccess) {
       throw new NotFoundException(`UserBranchAccess with ID ${id} not found`);
@@ -105,7 +105,7 @@ export class UserBranchAccessService {
     // If updating userId, check if user exists
     if (updateDto.userId) {
       const user = await this.prisma.user.findUnique({
-        where: { id: updateDto.userId },
+        where: { id: +updateDto.userId },
       });
       if (!user) {
         throw new NotFoundException(`User with ID ${updateDto.userId} not found`);
@@ -115,7 +115,7 @@ export class UserBranchAccessService {
     // If updating branchId, check if branch exists
     if (updateDto.branchId) {
       const branch = await this.prisma.branch.findUnique({
-        where: { id: updateDto.branchId },
+        where: { id: +updateDto.branchId },
       });
       if (!branch) {
         throw new NotFoundException(`Branch with ID ${updateDto.branchId} not found`);
@@ -129,9 +129,9 @@ export class UserBranchAccessService {
 
       const duplicate = await this.prisma.userBranchAccess.findFirst({
         where: {
-          userId,
-          branchId,
-          id: { not: id }, // Exclude current record
+          userId: +userId,
+          branchId: +branchId,
+          id: { not: +id }, // Exclude current record
         },
       });
 
@@ -158,7 +158,7 @@ export class UserBranchAccessService {
   async remove(id: number): Promise<void> {
     // Check if access exists
     const access = await this.prisma.userBranchAccess.findUnique({
-      where: { id },
+      where: { id: +id },
     });
     
     if (!access) {
@@ -166,7 +166,7 @@ export class UserBranchAccessService {
     }
 
     await this.prisma.userBranchAccess.delete({
-      where: { id },
+      where: { id: +id },
     });
   }
 
@@ -180,7 +180,7 @@ export class UserBranchAccessService {
     }
 
     return this.prisma.userBranchAccess.findMany({
-      where: { userId },
+      where: { userId: +userId },
       select: {
         id: true,
         userId: true,
@@ -208,7 +208,7 @@ export class UserBranchAccessService {
     }
 
     return this.prisma.userBranchAccess.findMany({
-      where: { branchId },
+      where: { branchId: +branchId },
       select: {
         id: true,
         userId: true,
