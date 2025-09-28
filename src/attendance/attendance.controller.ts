@@ -9,26 +9,28 @@ export class AttendanceController {
 
   @Post('check-in')
   checkIn(@Body() body: CheckInDto) {
+    const b: any = body || {};
     return this.attendanceService.checkIn({
-      userId: body.userId,
-      faceTemplateId: (body as any).faceTemplateId,
-      branchId: body.branchId,
-      deviceId: body.deviceId,
-      similarity: body.similarity,
-      payload: body.payload,
+      userId: b.userId,
+      faceTemplateId: b.faceTemplateId,
+      branchId: b.branchId,
+      deviceId: b.deviceId,
+      similarity: b.similarity,
+      payload: b.payload,
     });
   }
 
   @Post('check-out')
   checkOut(@Body() body: CheckOutDto) {
     console.log("Face id dan sorov keldi", body);
+    const b: any = body || {};
     return this.attendanceService.checkOut({
-      userId: body.userId,
-      faceTemplateId: (body as any).faceTemplateId,
-      branchId: body.branchId,
-      deviceId: body.deviceId,
-      similarity: body.similarity,
-      payload: body.payload,
+      userId: b.userId,
+      faceTemplateId: b.faceTemplateId,
+      branchId: b.branchId,
+      deviceId: b.deviceId,
+      similarity: b.similarity,
+      payload: b.payload,
     });
   }
 
