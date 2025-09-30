@@ -10,6 +10,8 @@ export class AttendanceController {
   @Post('check-in')
   checkIn(@Body() body: CheckInDto) {
     const b: any = body || {};
+    console.log("Face id dan sorov keldi", body);
+
     return this.attendanceService.checkIn({
       userId: b.userId,
       faceTemplateId: b.faceTemplateId,

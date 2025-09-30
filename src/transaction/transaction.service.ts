@@ -1574,13 +1574,7 @@ export class TransactionService {
         console.log('\n Mahsulot tekshirilmoqda:', item.productName);
         
         const sellingPrice = Number(item.sellingPrice || item.price);
-        const originalPrice = Number(item.originalPrice || item.price);
         const quantity = Number(item.quantity || 1);
-
-        console.log(' Narxlar:');
-        console.log('  - Sotish narxi:', sellingPrice, 'som');
-        console.log('  - Bozor narxi:', originalPrice, 'som');
-        console.log('  - Miqdor:', quantity);
 
         // Product ma'lumotlarini olish (agar item.product yo'q bo'lsa)
         let productInfo = item.product;
@@ -1603,10 +1597,18 @@ export class TransactionService {
         
         console.log(' Bonus foizi:', bonusPercentage, '%');
 
-        // CASHIER bozor narxidan qimmatroq sotsa bonus hisoblanadi
-        if (sellingPrice > originalPrice && bonusPercentage > 0) {
+        // Bazaviy xarajat: mahsulotning kelish narxi (Product.price) USD bo'lsa UZS ga konvert qilamiz
+        const costInUzs = Number(productInfo?.price ? (Number(productInfo.price) * usdToUzsRate) : 0);
+
+        console.log(' Narxlar:');
+        console.log('  - Sotish narxi (UZS):', sellingPrice);
+        console.log('  - Kelish narxi (UZS, product.price * rate):', costInUzs);
+        console.log('  - Miqdor:', quantity);
+
+        // Sotish narxi kelish narxidan yuqori bo'lsa bonus hisoblanadi
+        if (sellingPrice > costInUzs && bonusPercentage > 0) {
           // Farq narxini hisoblash (som hisobida)
-          const priceDifference = (sellingPrice - originalPrice) * quantity;
+          const priceDifference = (sellingPrice - costInUzs) * quantity;
           
           // To'g'ri formula: ortiqcha pul - bonus products qiymati = sof ortiqcha summa
           const netExtraAmount = priceDifference - totalBonusProductsValue;
@@ -1615,7 +1617,7 @@ export class TransactionService {
           const bonusAmount = netExtraAmount > 0 ? netExtraAmount * (bonusPercentage / 100) : 0;
 
           console.log(' Bonus hisoblash:');
-          console.log('  - Narx farqi:', priceDifference, 'som');
+          console.log('  - Narx farqi (selling - cost):', priceDifference, 'som');
           console.log('  - Bonus products qiymati:', totalBonusProductsValue, 'som');
           console.log('  - Sof ortiqcha summa:', netExtraAmount, 'som');
           console.log('  - Bonus miqdori:', bonusAmount, 'som');
@@ -1637,7 +1639,7 @@ export class TransactionService {
               branchId: seller.branchId,
               amount: bonusAmount,
               reason: 'SALES_BONUS',
-              description: `${productInfo?.name || item.productName} mahsulotini yuqori narxda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice} som, Bozor narxi: ${originalPrice} som, Miqdor: ${quantity}, Bonus mahsulotlar qiymati: ${totalBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
+              description: `${productInfo?.name || item.productName} mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice} som, Kelish narxi: ${costInUzs} som, Miqdor: ${quantity}, Bonus mahsulotlar qiymati: ${totalBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
               bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
               transactionId: transaction.id,
               bonusDate: new Date().toISOString()
@@ -1654,8 +1656,8 @@ export class TransactionService {
           }
         } else {
           console.log(' Bonus yaratilmadi:');
-          if (sellingPrice <= originalPrice) {
-            console.log('   - Sotish narxi bozor narxidan yuqori emas');
+          if (sellingPrice <= costInUzs) {
+            console.log('   - Sotish narxi kelish narxidan yuqori emas');
           }
           if (bonusPercentage <= 0) {
             console.log('   - Mahsulotda bonus foizi yo\'q');
