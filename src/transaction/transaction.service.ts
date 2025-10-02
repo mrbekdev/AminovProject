@@ -999,522 +999,31 @@ export class TransactionService {
         fromBranchId: fromBranchId,
         toBranchId: toBranchId,
         status: TransactionStatus.PENDING,
-        total: total,
-        finalTotal: total, // Transfer uchun total va finalTotal bir xil
-        items: {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            price: item.price,
-            sellingPrice: item.sellingPrice || item.price,
-            originalPrice: item.originalPrice || item.price,
-            total: item.price * item.quantity
-          }))
-        }
-      },
-      include: {
-        customer: true,
-        user: true,
-        soldBy: true,
-        items: {
-          include: {
-            product: true
-          }
-        },
-        paymentSchedules: true
+        total: total
       }
     });
-
-    // Mahsulot miqdorlarini darhol yangilash - manba filialdan kamaytirish va maqsad filialga qo'shish
-    await this.updateProductQuantitiesForTransfer(transfer);
-
+    
     return transfer;
   }
 
-  // Filial bo'yicha barcha o'tkazmalarni olish (kiruvchi va chiqim)
-  async getTransfersByBranch(branchId: number) {
-    const where: any = {
-      type: TransactionType.TRANSFER
-    };
-
-    // Filialdan chiqgan va kirgan o'tkazmalarni olish
-    where.OR = [
-      { fromBranchId: branchId },
-      { toBranchId: branchId }
-    ];
-
-    let tx = await this.prisma.transaction.findMany({
-      where,
-      include: {
-        fromBranch: true,
-        toBranch: true,
-        soldBy: true,
-        user: true,
-        items: {
-          include: {
-            product: {
-              include: {
-                category: true,
-                branch: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    tx = await this.hydrateMissingProducts(tx);
-    return tx;
-  }
-
-  // Pending transferlarni olish
-  async getPendingTransfers(branchId?: number) {
-    const where: any = {
-      type: TransactionType.TRANSFER,
-      status: TransactionStatus.PENDING
-    };
-
-    if (branchId) {
-      where.OR = [
-        { fromBranchId: branchId },
-        { toBranchId: branchId }
-      ];
-    }
-
-    let tx = await this.prisma.transaction.findMany({
-      where,
-      include: {
-        fromBranch: true,
-        toBranch: true,
-        soldBy: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    tx = await this.hydrateMissingProducts(tx);
-    return tx;
-  }
-
-  private async updateProductQuantitiesForTransfer(transfer: any) {
-    for (const item of transfer.items) {
-      if (item.productId && item.product) {
-        console.log(`🔄 Processing transfer item: ${item.product.name} (${item.quantity})`);
-        
-        // Manba filialdan mahsulotni topish va miqdorini kamaytirish
-        const sourceProduct = await this.prisma.product.findFirst({
-          where: {
-            id: item.productId,
-            branchId: transfer.fromBranchId
-          }
-        });
-
-        if (sourceProduct) {
-          console.log(`📤 Source product found: ${sourceProduct.name}, current quantity: ${sourceProduct.quantity}`);
-          // Manba filialdan kamaytirish
-          await this.prisma.product.update({
-            where: { id: sourceProduct.id },
-            data: {
-              quantity: Math.max(0, sourceProduct.quantity - item.quantity),
-              status: sourceProduct.quantity - item.quantity === 0 ? 'SOLD' : 'IN_STORE'
-            }
-          });
-          console.log(`📤 Source product updated: new quantity: ${Math.max(0, sourceProduct.quantity - item.quantity)}`);
-        }
-
-        // Maqsad filialda mahsulotni topish yoki yaratish
-        // Avval barcode bilan qidirish, keyin name bilan (case-insensitive)
-        let targetProduct: any = null;
-        
-        if (item.product.barcode) {
-          console.log(`🔍 Searching by barcode: ${item.product.barcode}`);
-          // Barcode bilan qidirish
-          targetProduct = await this.prisma.product.findFirst({
-            where: {
-              barcode: item.product.barcode,
-              branchId: transfer.toBranchId
-            }
-          });
-          if (targetProduct) {
-            console.log(`✅ Found existing product by barcode: ${targetProduct.name}`);
-          }
-        }
-        
-        // Agar barcode bilan topilmagan bo'lsa, name VA model bilan qidirish (case-insensitive)
-        if (!targetProduct) {
-          console.log(`🔍 Searching by name: "${item.product.name}" and model: "${item.product.model || 'N/A'}"`);
-          
-          // Prisma da case-insensitive qidirish uchun contains va mode: 'insensitive' ishlatamiz
-          // Name VA model ikkalasi ham mos kelishi kerak
-          const searchConditions: any = {
-            AND: [
-              {
-                OR: [
-                  { name: { equals: item.product.name, mode: 'insensitive' } },
-                  { name: { contains: item.product.name, mode: 'insensitive' } },
-                  { name: { contains: item.product.name.trim(), mode: 'insensitive' } }
-                ]
-              },
-              { branchId: transfer.toBranchId }
-            ]
-          };
-
-          // Model ham tekshirish - agar model mavjud bo'lsa
-          if (item.product.model && item.product.model.trim()) {
-            searchConditions.AND.push({
-              OR: [
-                { model: { equals: item.product.model, mode: 'insensitive' } },
-                { model: { contains: item.product.model, mode: 'insensitive' } },
-                { model: { contains: item.product.model.trim(), mode: 'insensitive' } }
-              ]
-            });
-          } else {
-            // Agar yuborilayotgan mahsulotda model yo'q bo'lsa, maqsad filialda ham model yo'q bo'lgan mahsulotni qidirish
-            searchConditions.AND.push({
-              OR: [
-                { model: null },
-                { model: '' },
-                { model: { equals: '', mode: 'insensitive' } }
-              ]
-            });
-          }
-
-          targetProduct = await this.prisma.product.findFirst({
-            where: searchConditions
-          });
-          
-          if (targetProduct) {
-            console.log(`✅ Found existing product by name and model: ${targetProduct.name} (model: ${targetProduct.model || 'N/A'}) (current quantity: ${targetProduct.quantity})`);
-          } else {
-            console.log(`❌ No existing product found by name "${item.product.name}" and model "${item.product.model || 'N/A'}"`);
-          }
-        }
-
-        if (targetProduct) {
-          // Mavjud mahsulotga qo'shish
-          const newQuantity = targetProduct.quantity + item.quantity;
-          console.log(`📥 Updating existing product: ${targetProduct.name}, adding ${item.quantity} to current ${targetProduct.quantity} = ${newQuantity}`);
-          
-          await this.prisma.product.update({
-            where: { id: targetProduct.id },
-            data: {
-              quantity: newQuantity,
-              status: 'IN_WAREHOUSE'
-            }
-          });
-          console.log(`✅ Existing product updated successfully`);
-        } else {
-          // Yangi mahsulot yaratish - barcode unique constraint ni hisobga olish
-          console.log(`🆕 Creating new product: ${item.product.name} in branch ${transfer.toBranchId} with quantity ${item.quantity}`);
-          
-          try {
-            const newProduct = await this.prisma.product.create({
-              data: {
-                name: item.product.name,
-                barcode: item.product.barcode || `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                model: item.product.model,
-                price: item.product.price,
-                quantity: item.quantity,
-                status: 'IN_WAREHOUSE',
-                branchId: transfer.toBranchId,
-                categoryId: item.product.categoryId,
-                marketPrice: item.product.marketPrice
-              }
-            });
-            console.log(`✅ New product created successfully: ${newProduct.name} (ID: ${newProduct.id})`);
-          } catch (error) {
-            console.error(`❌ Error creating new product:`, error);
-            // Agar barcode bilan xatolik bo'lsa, unique barcode yaratish
-            if (error.code === 'P2002') {
-              console.log(`🔄 Retrying with unique barcode...`);
-              const uniqueBarcode = `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-              const newProduct = await this.prisma.product.create({
-                data: {
-                  name: item.product.name,
-                  barcode: uniqueBarcode,
-                  model: item.product.model,
-                  price: item.product.price,
-                  quantity: item.quantity,
-                  status: 'IN_WAREHOUSE',
-                  branchId: transfer.toBranchId,
-                  categoryId: item.product.categoryId,
-                  marketPrice: item.product.marketPrice
-                }
-              });
-              console.log(`✅ New product created with unique barcode: ${newProduct.name} (ID: ${newProduct.id})`);
-            } else {
-              throw error;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  async approveTransfer(id: number, approvedById: number) {
-    // Validate that id is provided and is a valid number
-    if (id === undefined || id === null || isNaN(id) || id <= 0) {
-      throw new BadRequestException('Invalid transaction ID provided');
-    }
-
-    const transaction = await this.findOne(id);
-    
-    if (transaction.type !== TransactionType.TRANSFER) {
-      throw new BadRequestException('Only transfer transactions can be approved');
-    }
-
-    if (transaction.status !== TransactionStatus.PENDING) {
-      throw new BadRequestException('Transaction is not pending');
-    }
-
-    // O'tkazmani tasdiqlash - mahsulotlar allaqachon ko'chirilgan
-    return (this.prisma as any).transaction.update({
-      where: { id },
-      data: {
-        status: TransactionStatus.COMPLETED,
-        userId: approvedById
-      }
-    });
-  }
-
-  async rejectTransfer(id: number) {
-    // Validate that id is provided and is a valid number
-    if (id === undefined || id === null || isNaN(id) || id <= 0) {
-      throw new BadRequestException('Invalid transaction ID provided');
-    }
-
-    const transaction = await this.findOne(id);
-    
-    if (transaction.type !== TransactionType.TRANSFER) {
-      throw new BadRequestException('Only transfer transactions can be rejected');
-    }
-
-    return (this.prisma as any).transaction.update({
-      where: { id },
-      data: { status: TransactionStatus.CANCELLED }
-    });
-  }
-
-  // Statistika
-  async getStatistics(branchId?: number, startDate?: string, endDate?: string) {
-    const where: any = {};
-    const whereOr: any = [];
-    
-    if (branchId) {
-      whereOr.push({ fromBranchId: branchId });
-      whereOr.push({ toBranchId: branchId });
-    }
-    
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
-    }
-
-    // Agar branchId berilgan bo'lsa, OR shartini qo'shamiz
-    if (whereOr.length > 0) {
-      where.OR = whereOr;
-    }
-
-    // Credit va daily repaymentlar uchun where clause
-    const repaymentWhere: any = {};
-    if (branchId) {
-      repaymentWhere.branchId = branchId;
-    }
-    if (startDate || endDate) {
-      repaymentWhere.paidAt = {};
-      if (startDate) repaymentWhere.paidAt.gte = new Date(startDate);
-      if (endDate) repaymentWhere.paidAt.lte = new Date(endDate);
-    }
-
-    // Get credit and daily repayments separately to avoid potential Prisma client issues
-    let creditRepaymentsCash: any = { _sum: { amount: 0 }, _count: 0 };
-    let creditRepaymentsCard: any = { _sum: { amount: 0 }, _count: 0 };
-    let dailyRepaymentsCash: any = { _sum: { amount: 0 }, _count: 0 };
-    let dailyRepaymentsCard: any = { _sum: { amount: 0 }, _count: 0 };
-
-    try {
-      [creditRepaymentsCash, creditRepaymentsCard, dailyRepaymentsCash, dailyRepaymentsCard] = await Promise.all([
-        (this.prisma as any).creditRepayment.aggregate({
-          where: { ...repaymentWhere, channel: 'CASH' },
-          _sum: { amount: true },
-          _count: true
-        }),
-        (this.prisma as any).creditRepayment.aggregate({
-          where: { ...repaymentWhere, channel: 'CARD' },
-          _sum: { amount: true },
-          _count: true
-        }),
-        (this.prisma as any).dailyRepayment.aggregate({
-          where: { ...repaymentWhere, channel: 'CASH' },
-          _sum: { amount: true },
-          _count: true
-        }),
-        (this.prisma as any).dailyRepayment.aggregate({
-          where: { ...repaymentWhere, channel: 'CARD' },
-          _sum: { amount: true },
-          _count: true
-        })
-      ]);
-    } catch (error) {
-      console.warn('Failed to fetch repayment statistics:', error);
-      // Use default values if repayment tables don't exist or have issues
-    }
-
-    const [totalSales, creditSales, cashSales, cardSales, purchases, transfers, upfrontCashSales, upfrontCardSales] = await Promise.all([
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE },
-        _sum: { finalTotal: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CREDIT },
-        _sum: { finalTotal: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CASH },
-        _sum: { finalTotal: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CARD },
-        _sum: { finalTotal: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.PURCHASE },
-        _sum: { finalTotal: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.TRANSFER },
-        _sum: { finalTotal: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CASH' },
-        _sum: { downPayment: true, amountPaid: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CARD' },
-        _sum: { downPayment: true, amountPaid: true },
-        _count: true
-      })
-    ]);
-
-    // Calculate total repayments by channel
-    const totalCashRepayments = (creditRepaymentsCash._sum.amount || 0) + (dailyRepaymentsCash._sum.amount || 0);
-    const totalCardRepayments = (creditRepaymentsCard._sum.amount || 0) + (dailyRepaymentsCard._sum.amount || 0);
-    const totalRepayments = totalCashRepayments + totalCardRepayments;
-
-    return {
-      totalSales: totalSales._sum.finalTotal || 0,
-      totalTransactions: totalSales._count || 0,
-      creditSales: creditSales._sum.finalTotal || 0,
-      creditTransactions: creditSales._count || 0,
-      cashSales: cashSales._sum.finalTotal || 0,
-      cashTransactions: cashSales._count || 0,
-      cardSales: cardSales._sum.finalTotal || 0,
-      cardTransactions: cardSales._count || 0,
-      totalPurchases: purchases._sum.finalTotal || 0,
-      purchaseTransactions: purchases._count || 0,
-      totalTransfers: transfers._sum.finalTotal || 0,
-      transferTransactions: transfers._count || 0,
-      upfrontCashTotal: (upfrontCashSales._sum.downPayment || 0) + (upfrontCashSales._sum.amountPaid || 0),
-      upfrontCashTransactions: upfrontCashSales._count || 0,
-      upfrontCardTotal: (upfrontCardSales._sum.downPayment || 0) + (upfrontCardSales._sum.amountPaid || 0),
-      upfrontCardTransactions: upfrontCardSales._count || 0,
-      // Add repayment totals
-      creditRepaymentsCash: totalCashRepayments,
-      creditRepaymentsCard: totalCardRepayments,
-      totalCreditRepayments: totalRepayments,
-      creditRepaymentTransactions: (creditRepaymentsCash._count || 0) + (creditRepaymentsCard._count || 0) + (dailyRepaymentsCash._count || 0) + (dailyRepaymentsCard._count || 0)
-    };
-  }
-
-  // Currency conversion methods
-  async getTransactionWithCurrencyConversion(id: number, branchId?: number) {
-    const transaction = await this.findOne(id);
-    if (!transaction) return null;
-
-    // Convert totals to som
-    const totalInSom = await this.currencyExchangeRateService.convertCurrency(
-      transaction.total,
-      'USD',
-      'UZS',
-      branchId || transaction.fromBranchId || undefined,
-    );
-
-    const finalTotalInSom = await this.currencyExchangeRateService.convertCurrency(
-      transaction.finalTotal,
-      'USD',
-      'UZS',
-      branchId || transaction.fromBranchId || undefined,
-    );
-
-    return {
-      ...transaction,
-      totalInSom,
-      finalTotalInSom,
-      totalInDollar: transaction.total,
-      finalTotalInDollar: transaction.finalTotal,
-    };
-  }
-
-  async getTransactionsWithCurrencyConversion(branchId?: number, startDate?: string, endDate?: string) {
-    const result = await this.findAll({ branchId, startDate, endDate });
-    const transactions = result.transactions;
-    
-    // Convert all transaction totals to som
-    const transactionsWithCurrency = await Promise.all(
-      transactions.map(async (transaction) => {
-        const totalInSom = await this.currencyExchangeRateService.convertCurrency(
-          transaction.total,
-          'USD',
-          'UZS',
-          branchId || transaction.fromBranchId || undefined,
-        );
-
-        const finalTotalInSom = await this.currencyExchangeRateService.convertCurrency(
-          transaction.finalTotal,
-          'USD',
-          'UZS',
-          branchId || transaction.fromBranchId || undefined,
-        );
-
-        return {
-          ...transaction,
-          totalInSom,
-          finalTotalInSom,
-          totalInDollar: transaction.total,
-          finalTotalInDollar: transaction.finalTotal,
-        };
-      })
-    );
-
-    return {
-      ...result,
-      transactions: transactionsWithCurrency,
-    };
-  }
-
-  /**
-   * Avtomatik bonus hisoblash va yaratish
-   * CASHIER bozor narxini o'zgartirib, bozor narxidan qimmatroq sotsa, 
-   * sotish narxidan bozor narxini ayirib, ayirmaning product ichidagi bonus foizini hisoblab
-   * belgilangan sotuvchiga bonus tariqasida qo'shilishi kerak
-   */
   private async calculateAndCreateSalesBonuses(transaction: any, soldByUserId: number, createdById?: number) {
     try {
       console.log(' BONUS CALCULATION STARTED');
       console.log('Transaction ID:', transaction.id);
       console.log('Sold by user ID:', soldByUserId);
       console.log('Created by ID (cashier):', createdById);
+      
+      // Initialize total extra profit for this transaction
+      let totalExtraProfit = 0;
+      const extraProfitByProduct: Array<{
+        productId: number;
+        productName: string;
+        quantity: number;
+        extraPerItem: number;
+        totalExtra: number;
+        bonusPercentage: number;
+        bonusAmount: number;
+      }> = [];
 
       // Sotuvchining branch ma'lumotini olish
       const seller = await this.prisma.user.findUnique({
@@ -1568,13 +1077,21 @@ export class TransactionService {
       } else {
         console.log(' Bonus products topilmadi yoki bo\'sh');
       }
+      
+      // extraProfitByProduct is already declared at the beginning of the method
 
       // Har bir mahsulot uchun bonus hisoblash
       for (const item of transaction.items) {
         console.log('\n Mahsulot tekshirilmoqda:', item.productName);
         
         const sellingPrice = Number(item.sellingPrice || item.price);
+        const originalPrice = Number(item.originalPrice || item.price);
         const quantity = Number(item.quantity || 1);
+
+        console.log(' Narxlar:');
+        console.log('  - Sotish narxi:', sellingPrice, 'som');
+        console.log('  - Bozor narxi:', originalPrice, 'som');
+        console.log('  - Miqdor:', quantity);
 
         // Product ma'lumotlarini olish (agar item.product yo'q bo'lsa)
         let productInfo = item.product;
@@ -1594,81 +1111,63 @@ export class TransactionService {
             }
           }
         }
-        
-        console.log(' Bonus foizi:', bonusPercentage, '%');
+        if (bonusPercentage <= 0) {
+          console.log('   - Mahsulotda bonus foizi yo\'q');
+        }
 
-        // Bazaviy xarajat: mahsulotning kelish narxi (Product.price) USD bo'lsa UZS ga konvert qilamiz
-        const costInUzs = Number(productInfo?.price ? (Number(productInfo.price) * usdToUzsRate) : 0);
-
-        console.log(' Narxlar:');
-        console.log('  - Sotish narxi (UZS):', sellingPrice);
-        console.log('  - Kelish narxi (UZS, product.price * rate):', costInUzs);
-        console.log('  - Miqdor:', quantity);
-
-        // Sotish narxi kelish narxidan yuqori bo'lsa bonus hisoblanadi
-        if (sellingPrice > costInUzs && bonusPercentage > 0) {
-          // Farq narxini hisoblash (som hisobida)
-          const priceDifference = (sellingPrice - costInUzs) * quantity;
+        // Agar sotish narxi bozor narxidan katta bo'lsa, bonus hisoblaymiz
+        if (sellingPrice > originalPrice) {
+          const extraPerItem = sellingPrice - originalPrice;
+          const totalExtra = extraPerItem * quantity;
+          const bonusAmount = (totalExtra * bonusPercentage) / 100;
           
-          // To'g'ri formula: ortiqcha pul - bonus products qiymati = sof ortiqcha summa
-          const netExtraAmount = priceDifference - totalBonusProductsValue;
+          // Add to total extra profit
+          totalExtraProfit += totalExtra;
           
-          // Faqat sof ortiqcha summaga bonus foizini qo'llash
-          const bonusAmount = netExtraAmount > 0 ? netExtraAmount * (bonusPercentage / 100) : 0;
-
-          console.log(' Bonus hisoblash:');
-          console.log('  - Narx farqi (selling - cost):', priceDifference, 'som');
-          console.log('  - Bonus products qiymati:', totalBonusProductsValue, 'som');
-          console.log('  - Sof ortiqcha summa:', netExtraAmount, 'som');
-          console.log('  - Bonus miqdori:', bonusAmount, 'som');
-
-          if (bonusAmount > 0) {
-            // Bonus products ma'lumotini tayyorlash
-            const bonusProductsData = bonusProducts.map(bp => ({
-              productId: bp.productId,
-              productName: bp.product?.name || 'Номаълум махсулот',
-              productCode: bp.product?.barcode || 'N/A',
-              quantity: bp.quantity,
-              price: (bp.product?.price || 0) * usdToUzsRate, // USD dan UZS ga o'tkazish
-              totalValue: (bp.product?.price || 0) * bp.quantity * usdToUzsRate
-            }));
-
-            // Bonus yaratish - belgilangan sotuvchiga
-            const bonusData = {
-              userId: soldByUserId, // Belgilangan sotuvchi
-              branchId: seller.branchId,
-              amount: bonusAmount,
-              reason: 'SALES_BONUS',
-              description: `${productInfo?.name || item.productName} mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice} som, Kelish narxi: ${costInUzs} som, Miqdor: ${quantity}, Bonus mahsulotlar qiymati: ${totalBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
-              bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
-              transactionId: transaction.id,
-              bonusDate: new Date().toISOString()
-            };
-
-            console.log(' Bonus yaratilmoqda:', bonusData);
-
-            await this.bonusService.create(bonusData, createdById || soldByUserId);
-
-            console.log(` BONUS YARATILDI: ${bonusAmount} som`);
-            console.log(`   Mahsulot: ${productInfo?.name || item.productName}`);
-            console.log(`   Sotuvchi: ${seller.username} (ID: ${soldByUserId})`);
-            console.log(`   Yaratuvchi: Kassir (ID: ${createdById})`);
-          }
-        } else {
-          console.log(' Bonus yaratilmadi:');
-          if (sellingPrice <= costInUzs) {
-            console.log('   - Sotish narxi kelish narxidan yuqori emas');
-          }
-          if (bonusPercentage <= 0) {
-            console.log('   - Mahsulotda bonus foizi yo\'q');
-          }
+          // Store extra profit by product for detailed logging
+          extraProfitByProduct.push({
+            productId: item.productId,
+            productName: item.productName || `Product ${item.productId}`,
+            quantity: quantity,
+            extraPerItem: extraPerItem,
+            totalExtra: totalExtra,
+            bonusPercentage: bonusPercentage,
+            bonusAmount: bonusAmount
+          });
         }
       }
 
-      console.log(' BONUS CALCULATION COMPLETED\n');
+      // Update transaction with total extra profit if any
+      if (totalExtraProfit > 0) {
+        console.log('\n Jami ortiqcha foyda:', totalExtraProfit.toLocaleString(), 'som');
+        
+        // Update the transaction with extra profit
+        await this.prisma.transaction.update({
+          where: { id: transaction.id },
+          data: { 
+            extraProfit: totalExtraProfit,
+            description: transaction.description 
+              ? `${transaction.description}\nOrtiqcha foyda: ${totalExtraProfit.toLocaleString()} som`
+              : `Ortiqcha foyda: ${totalExtraProfit.toLocaleString()} som`
+          }
+        });
+        
+        console.log(' Ortiqcha foyda transaksiyaga yozib qo\'yildi');
+        
+        // Log detailed extra profit information
+        console.log('\n Mahsulot bo\'yicha ortiqcha foyda:');
+        extraProfitByProduct.forEach(item => {
+          console.log(`  - ${item.productName} (${item.quantity} ta):`);
+          console.log(`    - Ortiqcha narx: ${item.extraPerItem.toLocaleString()} som/ta`);
+          console.log(`    - Jami ortiqcha: ${item.totalExtra.toLocaleString()} som`);
+          console.log(`    - Bonus foizi: ${item.bonusPercentage}%`);
+          console.log(`    - Bonus miqdori: ${item.bonusAmount.toLocaleString()} som`);
+        });
+      }
+      
+      console.log('\n Barcha bonuslar muvaffaqiyatli yaratildi');
     } catch (error) {
-      console.error(' Bonus hisoblashda xatolik:', error);
-      // Bonus yaratishda xatolik bo'lsa ham, asosiy tranzaksiya davom etsin
+      console.error('Bonus hisoblashda xatolik:', error);
     }
   }
 }

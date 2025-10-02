@@ -346,6 +346,7 @@ model Transaction {
   // Credit repayment tracking fields
   creditRepaymentAmount Float?    @default(0)
   lastRepaymentDate     DateTime?
+  extraProfit          Float?    @default(0) // Additional profit from selling above cost price
 
   // Term fields for credit/installment
   days   Int? // Kunlar soni (kunlik bo'lib to'lash uchun)
