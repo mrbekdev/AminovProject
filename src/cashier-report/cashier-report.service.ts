@@ -192,7 +192,8 @@ export class CashierReportService {
           upfrontTotal += upfront;
           if (transaction.upfrontPaymentType === 'CASH') {
             upfrontCash += upfront;
-          } else if (transaction.upfrontPaymentType === 'CARD') {
+          } else if (transaction.upfrontPaymentType === 'CARD' || transaction.upfrontPaymentType === 'TERMINAL') {
+            // TERMINAL upfront payments are accounted as card
             upfrontCard += upfront;
           }
           break;
@@ -201,7 +202,8 @@ export class CashierReportService {
           upfrontTotal += upfront;
           if (transaction.upfrontPaymentType === 'CASH') {
             upfrontCash += upfront;
-          } else if (transaction.upfrontPaymentType === 'CARD') {
+          } else if (transaction.upfrontPaymentType === 'CARD' || transaction.upfrontPaymentType === 'TERMINAL') {
+            // TERMINAL upfront payments are accounted as card
             upfrontCard += upfront;
           }
           break;

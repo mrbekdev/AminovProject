@@ -137,7 +137,7 @@ export class CreateTransactionDto {
 
   @IsOptional()
   @IsString()
-  upfrontPaymentType?: 'CASH' | 'CARD'; // CASH or CARD for upfront payments
+  upfrontPaymentType?: 'CASH' | 'CARD' | 'TERMINAL'; // CASH, CARD or TERMINAL for upfront payments
 
   @IsOptional()
   @IsString()

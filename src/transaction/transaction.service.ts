@@ -71,10 +71,10 @@ export class TransactionService {
       }
     }
 
-    // Validate upfrontPaymentType
+    // Validate upfrontPaymentType (allow CASH, CARD, TERMINAL)
     const upfrontPaymentType = (transactionData as any).upfrontPaymentType;
-    if (upfrontPaymentType && !['CASH', 'CARD'].includes(upfrontPaymentType)) {
-      throw new BadRequestException('Invalid upfrontPaymentType. Must be CASH or CARD');
+    if (upfrontPaymentType && !['CASH', 'CARD', 'TERMINAL'].includes(upfrontPaymentType)) {
+      throw new BadRequestException('Invalid upfrontPaymentType. Must be CASH, CARD, or TERMINAL');
     }
 
     // Resolve created-by and sold-by users
