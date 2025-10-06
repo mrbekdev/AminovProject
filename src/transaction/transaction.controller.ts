@@ -37,6 +37,20 @@ export class TransactionController {
     return this.transactionService.findAll(query);
   }
 
+  @Get('delivery')
+  async findDeliveryOrders() {
+    return this.transactionService.findByType('DELIVERY');
+  }
+
+  @Patch(':id/status')
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string },
+    @CurrentUser() user: any
+  ) {
+    return this.transactionService.updateStatus(parseInt(id), body.status, user.id);
+  }
+
   @Get('product/:productId')
   async findByProductId(
     @Param('productId') productId: string,

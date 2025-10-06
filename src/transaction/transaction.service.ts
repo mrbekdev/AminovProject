@@ -615,6 +615,105 @@ export class TransactionService {
     return hydrated[0];
   }
 
+    async findByType(type: string) {
+    return this.prisma.transaction.findMany({
+      where: { 
+        type: type as TransactionType,
+        status: { not: 'CANCELLED' }
+      },
+      include: {
+        customer: true,
+        items: {
+          include: {
+            product: true
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+  }
+
+  async updateStatus(id: number, status: string, userId: number) {
+    const validStatuses = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
+    if (!validStatuses.includes(status)) {
+      throw new BadRequestException('Invalid status');
+    }
+
+    const transaction = await this.prisma.transaction.findUnique({
+      where: { id },
+      include: { customer: true }
+    });
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    // If marking as completed, ensure all items are properly processed
+    if (status === 'COMPLETED') {
+      const pendingItems = await this.prisma.transactionItem.findMany({
+        where: {
+          transactionId: id,
+          status: 'PENDING'
+        }
+      });
+
+      if (pendingItems.length > 0) {
+        throw new BadRequestException('Cannot complete transaction with pending items');
+      }
+    }
+
+    // Update the transaction status
+const updatedTransaction = await this.prisma.transaction.update({
+  where: { id },
+  data: {
+    status: status as TransactionStatus,
+    updatedAt: new Date(),
+    updatedBy: { connect: { id: +userId } }
+  },
+  include: {
+    customer: true,
+    items: {
+      include: {
+        product: true
+      }
+    }
+  }
+});
+
+
+    // If this is a delivery being marked as completed, update inventory
+    if (status === 'COMPLETED' && transaction.type === 'DELIVERY') {
+      await this.processDeliveryCompletion(transaction);
+    }
+
+    return updatedTransaction;
+  }
+
+    private async processDeliveryCompletion(transaction: any) {
+    // Update inventory for each item in the delivery
+    for (const item of transaction.items) {
+      await this.prisma.product.update({
+        where: { id: item.productId },
+        data: {
+          quantity: {
+            decrement: item.quantity
+          }
+        }
+      });
+    }
+  }
+
+
   // Attach product details to items that have productId but product is null
   private async hydrateMissingProducts(transactions: any[]) {
     try {

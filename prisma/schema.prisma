@@ -20,7 +20,7 @@ model AttendanceDay {
   id           Int               @id @default(autoincrement())
   userId       Int
   branchId     Int?
-  date         DateTime          // store date (00:00 time) in UTC
+  date         DateTime // store date (00:00 time) in UTC
   checkInAt    DateTime?
   checkOutAt   DateTime?
   totalMinutes Int?              @default(0)
@@ -30,8 +30,8 @@ model AttendanceDay {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
   events AttendanceEvent[]
 
   @@unique([userId, date])
@@ -41,16 +41,16 @@ model AttendanceDay {
 }
 
 model AttendanceEvent {
-  id          Int                 @id @default(autoincrement())
-  userId      Int
-  branchId    Int?
-  dayId       Int?
-  eventType   AttendanceEventType
-  occurredAt  DateTime            @default(now())
-  deviceId    String?             @db.VarChar(100)
-  similarity  Float?              // face match score if provided by device
-  payload     Json?
-  createdAt   DateTime            @default(now())
+  id         Int                 @id @default(autoincrement())
+  userId     Int
+  branchId   Int?
+  dayId      Int?
+  eventType  AttendanceEventType
+  occurredAt DateTime            @default(now())
+  deviceId   String?             @db.VarChar(100)
+  similarity Float? // face match score if provided by device
+  payload    Json?
+  createdAt  DateTime            @default(now())
 
   user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   branch Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
@@ -74,6 +74,7 @@ enum TransactionType {
   PURCHASE
   RETURN
   WRITE_OFF
+  DELIVERY
 }
 
 enum TransactionStatus {
@@ -97,6 +98,7 @@ enum UserRole {
   WAREHOUSE
   AUDITOR
   MARKETING
+  OPERATOR
 }
 
 enum BranchType {
@@ -124,30 +126,30 @@ enum ProductStatus {
 }
 
 model Branch {
-  id              Int                    @id @default(autoincrement())
-  name            String
-  address         String?
-  type            BranchType             @default(SAVDO_MARKAZ)
-  cashBalance     Float                  @default(0)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  phoneNumber     String?
-  status          BranchStatus           @default(ACTIVE)
-  products        Product[]
-  transactions    Transaction[]          @relation("FromBranch")
-  toTransactions  Transaction[]          @relation("ToBranch")
-  users           User[]
-  allowedUsers    UserBranchAccess[]
-  categories      Category[]
-  fromTransfers   ProductTransfer[]      @relation("FromBranch")
-  toTransfers     ProductTransfer[]      @relation("ToBranch")
-  defectiveLogs   DefectiveLog[]
-  exchangeRates   CurrencyExchangeRate[]
-  cashierReports  CashierReport[]
-  DailyRepayment  DailyRepayment[]
-  CreditRepayment CreditRepayment[]
-  bonuses         Bonus[]
-  attendanceDays  AttendanceDay[]
+  id               Int                    @id @default(autoincrement())
+  name             String
+  address          String?
+  type             BranchType             @default(SAVDO_MARKAZ)
+  cashBalance      Float                  @default(0)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  phoneNumber      String?
+  status           BranchStatus           @default(ACTIVE)
+  products         Product[]
+  transactions     Transaction[]          @relation("FromBranch")
+  toTransactions   Transaction[]          @relation("ToBranch")
+  users            User[]
+  allowedUsers     UserBranchAccess[]
+  categories       Category[]
+  fromTransfers    ProductTransfer[]      @relation("FromBranch")
+  toTransfers      ProductTransfer[]      @relation("ToBranch")
+  defectiveLogs    DefectiveLog[]
+  exchangeRates    CurrencyExchangeRate[]
+  cashierReports   CashierReport[]
+  DailyRepayment   DailyRepayment[]
+  CreditRepayment  CreditRepayment[]
+  bonuses          Bonus[]
+  attendanceDays   AttendanceDay[]
   attendanceEvents AttendanceEvent[]
 
   @@index([name])
@@ -187,6 +189,7 @@ model User {
   attendanceDays      AttendanceDay[]
   attendanceEvents    AttendanceEvent[]
   faceTemplates       FaceTemplate[]
+  Transaction         Transaction[]
 
   @@index([phone])
   @@index([branchId])
@@ -319,34 +322,34 @@ model Customer {
 }
 
 model Transaction {
-  id                 Int               @id @default(autoincrement())
-  customerId         Int?
-  userId             Int?
-  soldByUserId       Int? // Kim sotganini saqlash uchun
-  fromBranchId       Int? // Qaysi filialdan chiqayotgani (SALE, PURCHASE, TRANSFER uchun)
-  toBranchId         Int? // Qaysi filialga ketayotgani (TRANSFER uchun)
-  type               TransactionType
-  transactionType    String? // Qo'shimcha transaction turi (SALE, PURCHASE, TRANSFER, RETURN, etc.)
-  status             TransactionStatus @default(PENDING)
-  discount           Float             @default(0)
-  total              Float
-  finalTotal         Float
-  paymentType        PaymentType?
-  upfrontPaymentType String? // CASH or CARD - for upfront payments in credit/installment
-  termUnit           String? // MONTHS or DAYS - for payment terms
-  deliveryMethod     String?
-  deliveryType       String? // PICKUP or DELIVERY
-  deliveryAddress    String? // Delivery address for customer
-  amountPaid         Float?
-  downPayment        Float?
-  remainingBalance   Float?
-  receiptId          String?
-  description        String?
-
+  id                    Int               @id @default(autoincrement())
+  customerId            Int?
+  userId                Int?
+  soldByUserId          Int? // Kim sotganini saqlash uchun
+  fromBranchId          Int? // Qaysi filialdan chiqayotgani (SALE, PURCHASE, TRANSFER uchun)
+  toBranchId            Int? // Qaysi filialga ketayotgani (TRANSFER uchun)
+  type                  TransactionType
+  transactionType       String? // Qo'shimcha transaction turi (SALE, PURCHASE, TRANSFER, RETURN, etc.)
+  status                TransactionStatus @default(PENDING)
+  discount              Float             @default(0)
+  total                 Float
+  finalTotal            Float
+  paymentType           PaymentType?
+  upfrontPaymentType    String? // CASH or CARD - for upfront payments in credit/installment
+  termUnit              String? // MONTHS or DAYS - for payment terms
+  deliveryMethod        String?
+  deliveryType          String? // PICKUP or DELIVERY
+  deliveryAddress       String? // Delivery address for customer
+  amountPaid            Float?
+  downPayment           Float?
+  remainingBalance      Float?
+  receiptId             String?
+  description           String?
+  updatedById           Int?
   // Credit repayment tracking fields
-  creditRepaymentAmount Float?    @default(0)
+  creditRepaymentAmount Float?            @default(0)
   lastRepaymentDate     DateTime?
-  extraProfit          Float?    @default(0) // Additional profit from selling above cost price
+  extraProfit           Float?            @default(0)
 
   // Term fields for credit/installment
   days   Int? // Kunlar soni (kunlik bo'lib to'lash uchun)
@@ -360,6 +363,7 @@ model Transaction {
   soldBy           User?                     @relation("TransactionsSoldBy", fields: [soldByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   fromBranch       Branch?                   @relation("FromBranch", fields: [fromBranchId], references: [id], onDelete: Cascade)
   toBranch         Branch?                   @relation("ToBranch", fields: [toBranchId], references: [id], onDelete: Cascade)
+  updatedBy        User?                     @relation(fields: [updatedById], references: [id])
   items            TransactionItem[]
   paymentSchedules PaymentSchedule[]
   PaymentRepayment PaymentRepayment[]
@@ -641,14 +645,14 @@ model barcodeCounter {
 }
 
 model FaceTemplate {
-  id         Int      @id @default(autoincrement())
-  userId     Int
-  deviceId   String?  @db.VarChar(100)
-  template   String?  @db.Text
-  vector     Json?
-  imageUrl   String?  @db.Text
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  deviceId  String?  @db.VarChar(100)
+  template  String?  @db.Text
+  vector    Json?
+  imageUrl  String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
