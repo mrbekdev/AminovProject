@@ -36,8 +36,16 @@ export class PaymentScheduleService {
 
   async update(id: number, updateData: any) {
     console.log('Payment schedule update received:', { id, updateData });
-    const { paidAmount, isPaid, paidAt, paidChannel, paidByUserId, amountDelta, rating, ...rest } = updateData;
+    const { paidAmount, isPaid, paidAt, paidChannel, paidByUserId, amountDelta, rating, note, ...rest } = updateData;
     console.log('Extracted paidChannel:', { paidChannel, type: typeof paidChannel, isNull: paidChannel === null, isUndefined: paidChannel === undefined });
+    
+    // Filter out any undefined or null values and invalid fields
+    const validUpdateData = Object.entries(rest).reduce((acc, [key, value]) => {
+      if (value !== undefined && value !== null) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
 
     // Read existing schedule and related data to compute deltas and targets
     const existing = await this.prisma.paymentSchedule.findUnique({
@@ -62,43 +70,67 @@ export class PaymentScheduleService {
       : (inputHasPaidAmount ? Number(paidAmount) : existingPaidAmount);
     const effectivePaidAt = paidAt ? new Date(paidAt) : (deltaPaid > 0 ? new Date() : undefined);
 
-    // Build schedule update data
-    const data: any = { ...rest };
-    if (inputHasPaidAmount) data.paidAmount = requestedPaidAmount;
-    if (typeof isPaid === 'boolean') data.isPaid = isPaid;
-    if (effectivePaidAt) {
-      data.paidAt = effectivePaidAt;
-      data.repaymentDate = effectivePaidAt;
-    }
-    if (inputHasPaidAmount) data.creditRepaymentAmount = deltaPaid;
-    if (paidChannel !== undefined && paidChannel !== null) data.paidChannel = paidChannel;
-    if (paidByUserId) data.paidByUserId = Number(paidByUserId);
-    if (rating) data.rating = rating;
+    // Build schedule update data with only valid fields
+    const data: any = {
+      ...validUpdateData,
+      paidAmount: inputHasPaidAmount ? requestedPaidAmount : undefined,
+      isPaid: isPaid !== undefined ? isPaid : undefined,
+      paidAt: effectivePaidAt,
+      paidChannel: paidChannel !== undefined ? paidChannel : undefined,
+      paidByUserId: paidByUserId !== undefined ? paidByUserId : undefined,
+      rating: rating !== undefined ? rating : undefined,
+      repaymentDate: effectivePaidAt
+    };
     
-            // Kunlik bo'lib to'lash uchun remaining balance ni yangilash
-        if (existing.isDailyInstallment && deltaPaid > 0) {
-          const currentRemaining = existing.remainingBalance || 0;
-          const newRemaining = Math.max(0, currentRemaining - deltaPaid);
-          data.remainingBalance = newRemaining;
-          
-          console.log('Daily installment schedule - updating remaining balance:', {
-            scheduleId: id,
-            currentRemaining,
-            deltaPaid,
-            newRemaining
-          });
-          
-          // Kunlik bo'lib to'lash uchun payment schedule ning isPaid ni ham yangilash
-          if (newRemaining <= 0) {
-            data.isPaid = true;
-            console.log('Daily installment fully paid, marking as paid');
-          }
-        }
+    // Remove undefined values
+    Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
+
+    if (existing.isDailyInstallment && deltaPaid > 0) {
+      const currentRemaining = existing.remainingBalance || 0;
+      const newRemaining = Math.max(0, currentRemaining - deltaPaid);
+      data.remainingBalance = newRemaining;
+      
+      console.log('Daily installment schedule - updating remaining balance:', {
+        scheduleId: id,
+        currentRemaining,
+        deltaPaid,
+        newRemaining
+      });
+      
+      // Mark as paid if remaining balance is zero or less
+      if (newRemaining <= 0) {
+        data.isPaid = true;
+        console.log('Daily installment fully paid, marking as paid');
+      }
+    }
 
     console.log('Final update data being saved:', data);
 
     // Execute as a single DB transaction to keep ledger consistent
     const result = await this.prisma.$transaction(async (tx) => {
+      // Get the existing schedule to calculate deltas
+      const existing = await tx.paymentSchedule.findUnique({
+        where: { id },
+        include: {
+          transaction: {
+            include: {
+              customer: true,
+              fromBranch: true,
+              toBranch: true,
+              items: {
+                include: {
+                  product: true
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      if (!existing) {
+        throw new Error(`Payment schedule with ID ${id} not found`);
+      }
+      
       const updatedSchedule = await tx.paymentSchedule.update({
         where: { id },
         data,
