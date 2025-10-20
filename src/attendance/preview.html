@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FaceID Latest Event Preview</title>
+  <style>
+    body{font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; margin:16px;}
+    .wrap{max-width:900px;margin:0 auto}
+    pre{background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; overflow:auto}
+    .img{margin-top:16px}
+    img{max-width:100%;height:auto;border-radius:8px;border:1px solid #e5e7eb}
+    .meta{color:#334155;margin-bottom:8px}
+    .muted{color:#64748b}
+    .row{display:flex;gap:12px;align-items:center}
+    .small{font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row">
+      <h2 style="margin:0">FaceID Latest Event</h2>
+      <button onclick="loadData()">Reload</button>
+    </div>
+    <div id="time" class="muted small"></div>
+    <h3>event_log</h3>
+    <pre id="json">Loading...</pre>
+    <div class="img" id="imgBox" style="display:none">
+      <h3>Picture</h3>
+      <img id="img" alt="Picture"/>
+    </div>
+  </div>
+  <script>
+  async function loadData(){
+    try{
+      // Fetch from production backend
+      const res = await fetch('https://alikafecrm.uz/attendance/last', { cache: 'no-store' });
+      const data = await res.json();
+      document.getElementById('time').textContent = 'Updated at: ' + (data.updatedAt || '');
+      const jsonEl = document.getElementById('json');
+      jsonEl.textContent = data.event ? JSON.stringify(data.event, null, 2) : 'No event yet';
+      const imgBox = document.getElementById('imgBox');
+      const img = document.getElementById('img');
+      if (data.imageDataUrl){
+        img.src = data.imageDataUrl;
+        imgBox.style.display = '';
+      } else {
+        img.removeAttribute('src');
+        imgBox.style.display = 'none';
+      }
+    }catch(e){
+      document.getElementById('json').textContent = 'Failed to load: ' + e;
+    }
+  }
+  loadData();
+  </script>
+</body>
+</html>
