@@ -192,9 +192,10 @@ async update(
     throw new NotFoundException('Mahsulot topilmadi');
   }
 
-  // Check if price or marketPrice is being updated
+  // Check if price, marketPrice or bonusPercentage is being updated
   const isPriceUpdated = updateProductDto.price !== undefined && updateProductDto.price !== product.price;
   const isMarketPriceUpdated = updateProductDto.marketPrice !== undefined && updateProductDto.marketPrice !== product.marketPrice;
+  const isBonusUpdated = updateProductDto.bonusPercentage !== undefined && updateProductDto.bonusPercentage !== product.bonusPercentage;
 
   const updatedProduct = await prismaClient.product.update({
     where: { id },
@@ -211,14 +212,17 @@ async update(
     },
   });
 
-  // If price or marketPrice is updated, sync with all products having same name and model
-  if ((isPriceUpdated || isMarketPriceUpdated) && updatedProduct.name && updatedProduct.model) {
+  // If price, marketPrice or bonusPercentage is updated, sync with all products having same name and model
+  if ((isPriceUpdated || isMarketPriceUpdated || isBonusUpdated) && updatedProduct.name && updatedProduct.model) {
     const updateData: any = {};
     if (isPriceUpdated) {
       updateData.price = updatedProduct.price;
     }
     if (isMarketPriceUpdated) {
       updateData.marketPrice = updatedProduct.marketPrice;
+    }
+    if (isBonusUpdated) {
+      updateData.bonusPercentage = updatedProduct.bonusPercentage;
     }
 
     // Update all products with same name and model across all branches
