@@ -1301,7 +1301,9 @@ const updatedTransaction = await this.prisma.transaction.update({
             where: { id: targetProduct.id },
             data: {
               quantity: newQuantity,
-              status: 'IN_WAREHOUSE'
+              status: 'IN_WAREHOUSE',
+              // Bonus foizini ham manba mahsulotdan sync qilamiz
+              bonusPercentage: sourceProduct?.bonusPercentage ?? targetProduct.bonusPercentage
             }
           });
           console.log(`✅ Existing product updated successfully`);
@@ -1320,7 +1322,9 @@ const updatedTransaction = await this.prisma.transaction.update({
                 status: 'IN_WAREHOUSE',
                 branchId: transfer.toBranchId,
                 categoryId: item.product.categoryId,
-                marketPrice: item.product.marketPrice
+                marketPrice: item.product.marketPrice,
+                // Bonus foizini ham ko'chiramiz
+                bonusPercentage: sourceProduct?.bonusPercentage ?? item.product.bonusPercentage ?? 0
               }
             });
             console.log(`✅ New product created successfully: ${newProduct.name} (ID: ${newProduct.id})`);
@@ -1340,7 +1344,9 @@ const updatedTransaction = await this.prisma.transaction.update({
                   status: 'IN_WAREHOUSE',
                   branchId: transfer.toBranchId,
                   categoryId: item.product.categoryId,
-                  marketPrice: item.product.marketPrice
+                  marketPrice: item.product.marketPrice,
+                  // Bonus foizini ham ko'chiramiz
+                  bonusPercentage: sourceProduct?.bonusPercentage ?? item.product.bonusPercentage ?? 0
                 }
               });
               console.log(`✅ New product created with unique barcode: ${newProduct.name} (ID: ${newProduct.id})`);
