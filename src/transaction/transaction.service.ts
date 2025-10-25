@@ -1127,7 +1127,19 @@ const updatedTransaction = await this.prisma.transaction.update({
     // Mahsulot miqdorlarini darhol yangilash - manba filialdan kamaytirish va maqsad filialga qo'shish
     await this.updateProductQuantitiesForTransfer(transfer);
 
-    return transfer;
+    // Inventar yangilangach, yangilangan tranzaksiyani qayta yuklaymiz (item miqdorlari moslashtirilgan bo'lishi mumkin)
+    const refreshed = await this.prisma.transaction.findUnique({
+      where: { id: transfer.id },
+      include: {
+        customer: true,
+        user: true,
+        soldBy: true,
+        items: { include: { product: true } },
+        paymentSchedules: true
+      }
+    });
+
+    return { success: true, data: refreshed } as any;
   }
 
   // Filial bo'yicha barcha o'tkazmalarni olish (kiruvchi va chiqim)
@@ -1202,14 +1214,19 @@ const updatedTransaction = await this.prisma.transaction.update({
     for (const item of transfer.items) {
       if (!item.productId) continue;
 
-      // Manba filialdan mahsulotni topish
-      const sourceProduct = await this.prisma.product.findFirst({
-        where: { id: item.productId, branchId: transfer.fromBranchId }
+      // Manba filialdan mahsulotni topish (ID bo'yicha). Branch bilan cheklamaymiz, chunki ayrim hollarda transfer.fromBranchId mos kelmasligi mumkin
+      const sourceProduct = await this.prisma.product.findUnique({
+        where: { id: item.productId }
       });
 
       if (!sourceProduct) {
         console.log(`❌ Source product not found for productId=${item.productId} in branch ${transfer.fromBranchId}`);
         continue;
+      }
+
+      // Agar manba mahsulot branchi transfer.fromBranchId dan farq qilsa, ogohlantiramiz va davom etamiz
+      if (sourceProduct.branchId !== transfer.fromBranchId) {
+        console.log(`⚠️ Source product branch (${sourceProduct.branchId}) differs from transfer.fromBranchId (${transfer.fromBranchId}). Proceeding with actual source branch.`);
       }
 
       // Haqiqiy ko'chiriladigan miqdor: mavjud qolgan son bilan cheklaymiz
