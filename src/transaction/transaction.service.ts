@@ -1200,161 +1200,146 @@ const updatedTransaction = await this.prisma.transaction.update({
 
   private async updateProductQuantitiesForTransfer(transfer: any) {
     for (const item of transfer.items) {
-      if (item.productId && item.product) {
-        console.log(`🔄 Processing transfer item: ${item.product.name} (${item.quantity})`);
-        
-        // Manba filialdan mahsulotni topish va miqdorini kamaytirish
-        const sourceProduct = await this.prisma.product.findFirst({
-          where: {
-            id: item.productId,
-            branchId: transfer.fromBranchId
+      if (!item.productId) continue;
+
+      // Manba filialdan mahsulotni topish
+      const sourceProduct = await this.prisma.product.findFirst({
+        where: { id: item.productId, branchId: transfer.fromBranchId }
+      });
+
+      if (!sourceProduct) {
+        console.log(`❌ Source product not found for productId=${item.productId} in branch ${transfer.fromBranchId}`);
+        continue;
+      }
+
+      // Haqiqiy ko'chiriladigan miqdor: mavjud qolgan son bilan cheklaymiz
+      const requestedQty = Number(item.quantity) || 0;
+      const availableQty = Number(sourceProduct.quantity) || 0;
+      const transferQty = Math.min(Math.max(0, requestedQty), availableQty);
+
+      console.log(`🔄 Processing transfer item: ${sourceProduct.name} (requested: ${requestedQty}, available: ${availableQty}, willTransfer: ${transferQty})`);
+
+      if (transferQty <= 0) {
+        console.log('⚠️ Nothing to transfer for this item');
+        continue;
+      }
+
+      // Manba filialdan kamaytirish
+      const newSourceQty = Math.max(0, availableQty - transferQty);
+      await this.prisma.product.update({
+        where: { id: sourceProduct.id },
+        data: {
+          quantity: newSourceQty,
+          status: newSourceQty === 0 ? 'SOLD' : 'IN_STORE'
+        }
+      });
+      console.log(`📤 Source product updated: ${sourceProduct.name}, ${availableQty} -> ${newSourceQty}`);
+
+      // Maqsad filialda mahsulotni topish yoki yaratish
+      let targetProduct: any = null;
+
+      // Prefer barcode if available on source product or item.product
+      const barcode = (item as any).product?.barcode || sourceProduct.barcode;
+      if (barcode) {
+        targetProduct = await this.prisma.product.findFirst({
+          where: { barcode, branchId: transfer.toBranchId }
+        });
+        if (targetProduct) {
+          console.log(`✅ Found existing target by barcode: ${targetProduct.name}`);
+        }
+      }
+
+      if (!targetProduct) {
+        // Fallback to name+model match
+        const name = (item as any).product?.name || sourceProduct.name;
+        const model = (item as any).product?.model || sourceProduct.model || '';
+        const searchConditions: any = {
+          AND: [
+            {
+              OR: [
+                { name: { equals: name, mode: 'insensitive' } },
+                { name: { contains: name, mode: 'insensitive' } },
+                { name: { contains: name?.trim?.() || name, mode: 'insensitive' } }
+              ]
+            },
+            { branchId: transfer.toBranchId }
+          ]
+        };
+        if (model && model.trim()) {
+          searchConditions.AND.push({
+            OR: [
+              { model: { equals: model, mode: 'insensitive' } },
+              { model: { contains: model, mode: 'insensitive' } },
+              { model: { contains: model.trim(), mode: 'insensitive' } }
+            ]
+          });
+        } else {
+          searchConditions.AND.push({ OR: [{ model: null }, { model: '' }, { model: { equals: '', mode: 'insensitive' } }] });
+        }
+        targetProduct = await this.prisma.product.findFirst({ where: searchConditions });
+      }
+
+      if (targetProduct) {
+        const newQuantity = (Number(targetProduct.quantity) || 0) + transferQty;
+        await this.prisma.product.update({
+          where: { id: targetProduct.id },
+          data: {
+            quantity: newQuantity,
+            status: 'IN_WAREHOUSE',
+            bonusPercentage: sourceProduct?.bonusPercentage ?? targetProduct.bonusPercentage
           }
         });
-
-        if (sourceProduct) {
-          console.log(`📤 Source product found: ${sourceProduct.name}, current quantity: ${sourceProduct.quantity}`);
-          // Manba filialdan kamaytirish
-          await this.prisma.product.update({
-            where: { id: sourceProduct.id },
+        console.log(`📥 Updated target product ${targetProduct.name}: +${transferQty} -> ${newQuantity}`);
+      } else {
+        // Create new product at target
+        const safeBarcode = barcode || `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        try {
+          const newProduct = await this.prisma.product.create({
             data: {
-              quantity: Math.max(0, sourceProduct.quantity - item.quantity),
-              status: sourceProduct.quantity - item.quantity === 0 ? 'SOLD' : 'IN_STORE'
-            }
-          });
-          console.log(`📤 Source product updated: new quantity: ${Math.max(0, sourceProduct.quantity - item.quantity)}`);
-        }
-
-        // Maqsad filialda mahsulotni topish yoki yaratish
-        // Avval barcode bilan qidirish, keyin name bilan (case-insensitive)
-        let targetProduct: any = null;
-        
-        if (item.product.barcode) {
-          console.log(`🔍 Searching by barcode: ${item.product.barcode}`);
-          // Barcode bilan qidirish
-          targetProduct = await this.prisma.product.findFirst({
-            where: {
-              barcode: item.product.barcode,
-              branchId: transfer.toBranchId
-            }
-          });
-          if (targetProduct) {
-            console.log(`✅ Found existing product by barcode: ${targetProduct.name}`);
-          }
-        }
-        
-        // Agar barcode bilan topilmagan bo'lsa, name VA model bilan qidirish (case-insensitive)
-        if (!targetProduct) {
-          console.log(`🔍 Searching by name: "${item.product.name}" and model: "${item.product.model || 'N/A'}"`);
-          
-          // Prisma da case-insensitive qidirish uchun contains va mode: 'insensitive' ishlatamiz
-          // Name VA model ikkalasi ham mos kelishi kerak
-          const searchConditions: any = {
-            AND: [
-              {
-                OR: [
-                  { name: { equals: item.product.name, mode: 'insensitive' } },
-                  { name: { contains: item.product.name, mode: 'insensitive' } },
-                  { name: { contains: item.product.name.trim(), mode: 'insensitive' } }
-                ]
-              },
-              { branchId: transfer.toBranchId }
-            ]
-          };
-
-          // Model ham tekshirish - agar model mavjud bo'lsa
-          if (item.product.model && item.product.model.trim()) {
-            searchConditions.AND.push({
-              OR: [
-                { model: { equals: item.product.model, mode: 'insensitive' } },
-                { model: { contains: item.product.model, mode: 'insensitive' } },
-                { model: { contains: item.product.model.trim(), mode: 'insensitive' } }
-              ]
-            });
-          } else {
-            // Agar yuborilayotgan mahsulotda model yo'q bo'lsa, maqsad filialda ham model yo'q bo'lgan mahsulotni qidirish
-            searchConditions.AND.push({
-              OR: [
-                { model: null },
-                { model: '' },
-                { model: { equals: '', mode: 'insensitive' } }
-              ]
-            });
-          }
-
-          targetProduct = await this.prisma.product.findFirst({
-            where: searchConditions
-          });
-          
-          if (targetProduct) {
-            console.log(`✅ Found existing product by name and model: ${targetProduct.name} (model: ${targetProduct.model || 'N/A'}) (current quantity: ${targetProduct.quantity})`);
-          } else {
-            console.log(`❌ No existing product found by name "${item.product.name}" and model "${item.product.model || 'N/A'}"`);
-          }
-        }
-
-        if (targetProduct) {
-          // Mavjud mahsulotga qo'shish
-          const newQuantity = targetProduct.quantity + item.quantity;
-          console.log(`📥 Updating existing product: ${targetProduct.name}, adding ${item.quantity} to current ${targetProduct.quantity} = ${newQuantity}`);
-          
-          await this.prisma.product.update({
-            where: { id: targetProduct.id },
-            data: {
-              quantity: newQuantity,
+              name: (item as any).product?.name || sourceProduct.name,
+              barcode: safeBarcode,
+              model: (item as any).product?.model || sourceProduct.model,
+              price: (item as any).product?.price || sourceProduct.price,
+              quantity: transferQty,
               status: 'IN_WAREHOUSE',
-              // Bonus foizini ham manba mahsulotdan sync qilamiz
-              bonusPercentage: sourceProduct?.bonusPercentage ?? targetProduct.bonusPercentage
+              branchId: transfer.toBranchId,
+              categoryId: (item as any).product?.categoryId || sourceProduct.categoryId,
+              marketPrice: (item as any).product?.marketPrice || sourceProduct.marketPrice,
+              bonusPercentage: sourceProduct?.bonusPercentage ?? (item as any).product?.bonusPercentage ?? 0
             }
           });
-          console.log(`✅ Existing product updated successfully`);
-        } else {
-          // Yangi mahsulot yaratish - barcode unique constraint ni hisobga olish
-          console.log(`🆕 Creating new product: ${item.product.name} in branch ${transfer.toBranchId} with quantity ${item.quantity}`);
-          
-          try {
+          console.log(`✅ New target product created: ${newProduct.name} (+${transferQty})`);
+        } catch (error: any) {
+          if (error?.code === 'P2002') {
+            const uniqueBarcode = `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const newProduct = await this.prisma.product.create({
               data: {
-                name: item.product.name,
-                barcode: item.product.barcode || `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                model: item.product.model,
-                price: item.product.price,
-                quantity: item.quantity,
+                name: (item as any).product?.name || sourceProduct.name,
+                barcode: uniqueBarcode,
+                model: (item as any).product?.model || sourceProduct.model,
+                price: (item as any).product?.price || sourceProduct.price,
+                quantity: transferQty,
                 status: 'IN_WAREHOUSE',
                 branchId: transfer.toBranchId,
-                categoryId: item.product.categoryId,
-                marketPrice: item.product.marketPrice,
-                // Bonus foizini ham ko'chiramiz
-                bonusPercentage: sourceProduct?.bonusPercentage ?? item.product.bonusPercentage ?? 0
+                categoryId: (item as any).product?.categoryId || sourceProduct.categoryId,
+                marketPrice: (item as any).product?.marketPrice || sourceProduct.marketPrice,
+                bonusPercentage: sourceProduct?.bonusPercentage ?? (item as any).product?.bonusPercentage ?? 0
               }
             });
-            console.log(`✅ New product created successfully: ${newProduct.name} (ID: ${newProduct.id})`);
-          } catch (error) {
-            console.error(`❌ Error creating new product:`, error);
-            // Agar barcode bilan xatolik bo'lsa, unique barcode yaratish
-            if (error.code === 'P2002') {
-              console.log(`🔄 Retrying with unique barcode...`);
-              const uniqueBarcode = `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-              const newProduct = await this.prisma.product.create({
-                data: {
-                  name: item.product.name,
-                  barcode: uniqueBarcode,
-                  model: item.product.model,
-                  price: item.product.price,
-                  quantity: item.quantity,
-                  status: 'IN_WAREHOUSE',
-                  branchId: transfer.toBranchId,
-                  categoryId: item.product.categoryId,
-                  marketPrice: item.product.marketPrice,
-                  // Bonus foizini ham ko'chiramiz
-                  bonusPercentage: sourceProduct?.bonusPercentage ?? item.product.bonusPercentage ?? 0
-                }
-              });
-              console.log(`✅ New product created with unique barcode: ${newProduct.name} (ID: ${newProduct.id})`);
-            } else {
-              throw error;
-            }
+            console.log(`✅ New target product created with unique barcode: ${newProduct.name} (+${transferQty})`);
+          } else {
+            throw error;
           }
         }
+      }
+
+      // Agar transfer cheklangan bo'lsa, transactionItem miqdorini ham moslashtiramiz
+      if (transferQty !== requestedQty) {
+        await this.prisma.transactionItem.update({
+          where: { id: item.id },
+          data: { quantity: transferQty, total: (item.price || 0) * transferQty }
+        }).catch(() => {});
+        console.log(`ℹ️ Transaction item ${item.id} quantity adjusted from ${requestedQty} to ${transferQty}`);
       }
     }
   }
@@ -1627,12 +1612,19 @@ const updatedTransaction = await this.prisma.transaction.update({
         include: { branch: true }
       });
 
-      if (!seller || !seller.branchId) {
-        console.log(' Sotuvchi yoki branch topilmadi, bonus hisoblanmaydi');
+      if (!seller) {
+        console.log(' Sotuvchi topilmadi, bonus hisoblanmaydi');
         return;
       }
 
-      console.log(' Sotuvchi topildi:', seller.username, 'Role:', seller.role, 'Branch:', seller.branch?.name);
+      // Agar sotuvchida branch biriktirilmagan bo'lsa, tranzaksiyadagi filialdan foydalangan holda bonus yaratamiz
+      const branchIdForBonus = seller.branchId || transaction.fromBranchId || transaction.toBranchId || null;
+      if (!branchIdForBonus) {
+        console.log(' Bonus uchun filial aniqlanmadi (seller.branchId ham, transaction.fromBranchId ham yo\'q)');
+        return;
+      }
+
+      console.log(' Sotuvchi topildi:', seller.username, 'Role:', seller.role, 'BranchId:', branchIdForBonus, 'Branch:', seller.branch?.name);
 
       // USD to UZS exchange rate olish
       const exchangeRate = await this.currencyExchangeRateService.getActiveRate('USD', 'UZS');
@@ -1746,7 +1738,7 @@ const updatedTransaction = await this.prisma.transaction.update({
             // Bonus yaratish - belgilangan sotuvchiga
             const bonusData = {
               userId: soldByUserId, // Belgilangan sotuvchi
-              branchId: seller.branchId,
+              branchId: branchIdForBonus,
               amount: bonusAmount,
               reason: 'SALES_BONUS',
               description: `${productInfo?.name || item.productName} mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice} som, Kelish narxi: ${costInUzs} som, Miqdor: ${quantity}, Bonus mahsulotlar qiymati: ${totalBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
