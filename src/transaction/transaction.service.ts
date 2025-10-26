@@ -333,15 +333,17 @@ export class TransactionService {
   private async updateProductQuantities(transaction: any) {
     for (const item of transaction.items) {
       if (item.productId) {
-        // Mahsulotni fromBranchId orqali topish
-        const product = await this.prisma.product.findFirst({
-          where: { 
-            id: item.productId,
-            branchId: transaction.fromBranchId 
-          }
+        // Mahsulotni ID bo'yicha topish (branch bilan cheklamaymiz)
+        const product = await this.prisma.product.findUnique({
+          where: { id: item.productId }
         });
 
         if (!product) continue;
+
+        // Agar mahsulot branchi transaction.fromBranchId dan farq qilsa, ogohlantirib, davom etamiz
+        if (product.branchId !== transaction.fromBranchId) {
+          console.log(`⚠️ Product ${product.id} branch (${product.branchId}) differs from fromBranchId (${transaction.fromBranchId}) for transaction ${transaction.id}. Proceeding with actual product branch.`);
+        }
 
         let newQuantity = product.quantity;
         let newStatus = product.status;
@@ -1142,7 +1144,7 @@ const updatedTransaction = await this.prisma.transaction.update({
     return { success: true, data: refreshed } as any;
   }
 
-  // Filial bo'yicha barcha o'tkazmalarni olish (kiruvchi va chiqim)
+
   async getTransfersByBranch(branchId: number) {
     const where: any = {
       type: TransactionType.TRANSFER
