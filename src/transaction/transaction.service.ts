@@ -1688,101 +1688,102 @@ const updatedTransaction = await this.prisma.transaction.update({
       // Transaction darajasida umumiy narx farqini jamlash uchun akkumulyator
       let totalPriceDifferenceForTransaction = 0;
 
-      // Har bir mahsulot uchun bonus hisoblash
+      // 1-bosqich: Har bir mahsulot uchun narx farqini hisoblab, jami farqni yig'ish
+      const itemDiffs: Array<{
+        item: any;
+        productInfo: any;
+        sellingPrice: number;
+        quantity: number;
+        bonusPercentage: number;
+        costInUzs: number;
+        priceDifference: number;
+      }> = [];
+
       for (const item of transaction.items) {
-        console.log('\n Mahsulot tekshirilmoqda:', item.productName);
-        
+        console.log('\n Mahsulot tekshirilmoqda (precompute):', item.productName);
+
         const sellingPrice = Number(item.sellingPrice || item.price);
         const quantity = Number(item.quantity || 1);
 
         // Product ma'lumotlarini olish (agar item.product yo'q bo'lsa)
         let productInfo = item.product;
         let bonusPercentage = Number(productInfo?.bonusPercentage || 0);
-        
-        // Agar product ma'lumoti yo'q bo'lsa yoki bonusPercentage yo'q bo'lsa, database dan olish
+
         if (!productInfo || bonusPercentage === 0) {
           if (item.productId) {
-            const dbProduct = await this.prisma.product.findUnique({
-              where: { id: item.productId }
-            });
+            const dbProduct = await this.prisma.product.findUnique({ where: { id: item.productId } });
             console.log(' Database dan product ma\'lumoti olindi:', dbProduct?.name);
-            
             if (dbProduct) {
               productInfo = dbProduct;
               bonusPercentage = Number(dbProduct.bonusPercentage || 0);
             }
           }
         }
-        
-        console.log(' Bonus foizi:', bonusPercentage, '%');
 
-        // Bazaviy xarajat: mahsulotning kelish narxi (Product.price) USD bo'lsa UZS ga konvert qilamiz
         const costInUzs = Number(productInfo?.price ? (Number(productInfo.price) * usdToUzsRate) : 0);
+        const priceDifference = (sellingPrice > costInUzs && bonusPercentage > 0)
+          ? (sellingPrice - costInUzs) * quantity
+          : 0;
 
-        console.log(' Narxlar:');
-        console.log('  - Sotish narxi (UZS):', sellingPrice);
-        console.log('  - Kelish narxi (UZS, product.price * rate):', costInUzs);
-        console.log('  - Miqdor:', quantity);
-
-        // Sotish narxi kelish narxidan yuqori bo'lsa bonus hisoblanadi
-        if (sellingPrice > costInUzs && bonusPercentage > 0) {
-          // Farq narxini hisoblash (som hisobida)
-          const priceDifference = (sellingPrice - costInUzs) * quantity;
-          // Transaction darajasida jamlash
+        if (priceDifference > 0) {
           totalPriceDifferenceForTransaction += priceDifference;
-          
-          // To'g'ri formula: ortiqcha pul - bonus products qiymati = sof ortiqcha summa
-          const netExtraAmount = priceDifference - totalBonusProductsValue;
-          
-          // Faqat sof ortiqcha summaga bonus foizini qo'llash
-          const bonusAmount = netExtraAmount > 0 ? netExtraAmount * (bonusPercentage / 100) : 0;
-
-          console.log(' Bonus hisoblash:');
-          console.log('  - Narx farqi (selling - cost):', priceDifference, 'som');
-          console.log('  - Bonus products qiymati:', totalBonusProductsValue, 'som');
-          console.log('  - Sof ortiqcha summa:', netExtraAmount, 'som');
-          console.log('  - Bonus miqdori:', bonusAmount, 'som');
-
-          if (bonusAmount > 0) {
-            // Bonus products ma'lumotini tayyorlash
-            const bonusProductsData = bonusProducts.map(bp => ({
-              productId: bp.productId,
-              productName: bp.product?.name || 'Номаълум махсулот',
-              productCode: bp.product?.barcode || 'N/A',
-              quantity: bp.quantity,
-              price: (bp.product?.price || 0) * usdToUzsRate, // USD dan UZS ga o'tkazish
-              totalValue: (bp.product?.price || 0) * bp.quantity * usdToUzsRate
-            }));
-
-            // Bonus yaratish - belgilangan sotuvchiga
-            const bonusData = {
-              userId: soldByUserId, // Belgilangan sotuvchi
-              branchId: branchIdForBonus,
-              amount: bonusAmount,
-              reason: 'SALES_BONUS',
-              description: `${productInfo?.name || item.productName} mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice} som, Kelish narxi: ${costInUzs} som, Miqdor: ${quantity}, Bonus mahsulotlar qiymati: ${totalBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
-              bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
-              transactionId: transaction.id,
-              bonusDate: new Date().toISOString()
-            };
-
-            console.log(' Bonus yaratilmoqda:', bonusData);
-
-            await this.bonusService.create(bonusData, createdById || soldByUserId);
-
-            console.log(` BONUS YARATILDI: ${bonusAmount} som`);
-            console.log(`   Mahsulot: ${productInfo?.name || item.productName}`);
-            console.log(`   Sotuvchi: ${seller.username} (ID: ${soldByUserId})`);
-            console.log(`   Yaratuvchi: Kassir (ID: ${createdById})`);
-          }
+          itemDiffs.push({ item, productInfo, sellingPrice, quantity, bonusPercentage, costInUzs, priceDifference });
         } else {
-          console.log(' Bonus yaratilmadi:');
-          if (sellingPrice <= costInUzs) {
-            console.log('   - Sotish narxi kelish narxidan yuqori emas');
-          }
-          if (bonusPercentage <= 0) {
-            console.log('   - Mahsulotda bonus foizi yo\'q');
-          }
+          console.log(' Bonus yaratilmadi (precompute):');
+          if (sellingPrice <= costInUzs) console.log('   - Sotish narxi kelish narxidan yuqori emas');
+          if (bonusPercentage <= 0) console.log('   - Mahsulotda bonus foizi yo\'q');
+        }
+      }
+
+      console.log(`\n Jami narx farqi (transaction-level): ${totalPriceDifferenceForTransaction} som`);
+
+      // 2-bosqich: Bonus mahsulotlar qiymatini TRANZAKSIYA darajasida bir marta ayirib, ulushlab taqsimlash
+      for (const info of itemDiffs) {
+        const { item, productInfo, sellingPrice, quantity, bonusPercentage, costInUzs, priceDifference } = info;
+
+        // Bonus products qiymatini proporsional taqsimlash (har bir item ulushi bo'yicha)
+        const allocatedBonusProductsValue = totalPriceDifferenceForTransaction > 0
+          ? (totalBonusProductsValue * (priceDifference / totalPriceDifferenceForTransaction))
+          : 0;
+
+        const netExtraAmount = Math.max(0, priceDifference - allocatedBonusProductsValue);
+        const bonusAmount = netExtraAmount * (bonusPercentage / 100);
+
+        console.log(' Bonus hisoblash (allocated):');
+        console.log('  - Narx farqi (selling - cost):', priceDifference, 'som');
+        console.log('  - Ajratilgan bonus products qiymati:', allocatedBonusProductsValue, 'som');
+        console.log('  - Sof ortiqcha summa:', netExtraAmount, 'som');
+        console.log('  - Bonus foizi:', bonusPercentage, '%');
+        console.log('  - Bonus miqdori:', bonusAmount, 'som');
+
+        if (bonusAmount > 0) {
+          const bonusProductsData = bonusProducts.map(bp => ({
+            productId: bp.productId,
+            productName: bp.product?.name || 'Номаълум махсулот',
+            productCode: bp.product?.barcode || 'N/A',
+            quantity: bp.quantity,
+            price: (bp.product?.price || 0) * usdToUzsRate,
+            totalValue: (bp.product?.price || 0) * bp.quantity * usdToUzsRate
+          }));
+
+          const bonusData = {
+            userId: soldByUserId,
+            branchId: branchIdForBonus,
+            amount: bonusAmount,
+            reason: 'SALES_BONUS',
+            description: `${productInfo?.name || item.productName} mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice} som, Kelish narxi: ${costInUzs} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${totalBonusProductsValue.toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
+            bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
+            transactionId: transaction.id,
+            bonusDate: new Date().toISOString()
+          };
+
+          console.log(' Bonus yaratilmoqda:', bonusData);
+          await this.bonusService.create(bonusData, createdById || soldByUserId);
+
+          console.log(` BONUS YARATILDI: ${bonusAmount} som`);
+          console.log(`   Mahsulot: ${productInfo?.name || item.productName}`);
+          console.log(`   Sotuvchi: ${seller.username} (ID: ${soldByUserId})`);
+          console.log(`   Yaratuvchi: Kassir (ID: ${createdById})`);
         }
       }
 
