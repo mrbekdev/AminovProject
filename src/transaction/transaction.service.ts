@@ -1755,8 +1755,7 @@ const updatedTransaction = await this.prisma.transaction.update({
         costInUzs: number;
         priceDifference: number;
       }> = [];
-      // Arzon sotilgan (zarar) mahsulotlar uchun alohida yig'uvchi
-      let totalNegativeLossForTransaction = 0;
+      // Arzon sotilgan mahsulotlar uchun batafsil ro'yxat va tranzaksiya darajasida umumiy yig'indilar
       const negativeItems: Array<{
         item: any;
         productInfo: any;
@@ -1765,6 +1764,8 @@ const updatedTransaction = await this.prisma.transaction.update({
         costInUzs: number;
         lossAmount: number;
       }> = [];
+      let totalSellingAll = 0;
+      let totalCostAll = 0;
 
       for (const item of transaction.items) {
         console.log('\n Mahsulot tekshirilmoqda (precompute):', item.productName);
@@ -1792,10 +1793,11 @@ const updatedTransaction = await this.prisma.transaction.update({
           ? (sellingPrice - costInUzs) * quantity
           : 0;
 
-        // Agar arzon sotilgan bo'lsa, zararni yig'amiz (bonus foizidan qat'i nazar)
+        // Tranzaksiya darajasida umumiy sotish va umumiy kelish yig'indilarini jamlash
+        totalSellingAll += sellingPrice * quantity;
+        totalCostAll += costInUzs * quantity;
         if (sellingPrice < costInUzs) {
           const loss = (costInUzs - sellingPrice) * quantity;
-          totalNegativeLossForTransaction += loss;
           negativeItems.push({ item, productInfo, sellingPrice, quantity, costInUzs, lossAmount: loss });
         }
 
@@ -1890,22 +1892,24 @@ const updatedTransaction = await this.prisma.transaction.update({
 
       console.log(' BONUS CALCULATION COMPLETED\n');
 
-      // 3-bosqich: Arzon sotilgan mahsulotlar bo'lsa, manfiy bonus (jarima) yozish
-      if (totalNegativeLossForTransaction > 0) {
+      // 3-bosqich: Agar tranzaksiya bo'yicha umumiy sotish summasi umumiy kelish summasidan kam bo'lsa, manfiy bonus (jarima) yozish
+      const netDeficit = Math.max(0, totalCostAll - totalSellingAll);
+      console.log(' Transaction totals: totalSellingAll=', totalSellingAll, ' totalCostAll=', totalCostAll, ' netDeficit=', netDeficit);
+      if (netDeficit > 0) {
         try {
           const penaltyData = {
             userId: soldByUserId,
             branchId: branchIdForBonus,
-            amount: -totalNegativeLossForTransaction, // manfiy summa
+            amount: -netDeficit, // manfiy summa
             reason: 'SALES_PENALTY',
-            description: `Arzon (kelish narxidan past) sotilgan mahsulotlar uchun jarima. Transaction ID: ${transaction.id}. Jami zarar: ${totalNegativeLossForTransaction.toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
+            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${totalSellingAll.toLocaleString()} som, Umumiy kelish: ${totalCostAll.toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
             bonusProducts: null,
             transactionId: transaction.id,
             bonusDate: new Date().toISOString()
           } as any;
           console.log(' PENALTY BONUS yaratilmoqda:', penaltyData);
           await this.bonusService.create(penaltyData, createdById || soldByUserId);
-          console.log(` PENALTY BONUS YARATILDI: ${-totalNegativeLossForTransaction} som (manfiy)`);
+          console.log(` PENALTY BONUS YARATILDI: ${-netDeficit} som (manfiy)`);
         } catch (e) {
           console.error(' Penalty bonus yaratishda xatolik:', e);
         }
