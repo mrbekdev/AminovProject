@@ -7,6 +7,22 @@ import { UpdateTransactionBonusProductDto } from './dto/update-transaction-bonus
 export class TransactionBonusProductService {
   constructor(private prisma: PrismaService) {}
 
+  private async getUsdToUzsRate(branchId?: number): Promise<number> {
+    // Read latest active USD->UZS rate. If branchId-specific rate exists, prefer it; otherwise fallback to global
+    const byBranch = await this.prisma.currencyExchangeRate.findMany({
+      where: { fromCurrency: 'USD', toCurrency: 'UZS', isActive: true, branchId: branchId ?? undefined },
+      orderBy: { updatedAt: 'desc' },
+      take: 1,
+    });
+    if (byBranch?.[0]?.rate) return byBranch[0].rate;
+    const global = await this.prisma.currencyExchangeRate.findMany({
+      where: { fromCurrency: 'USD', toCurrency: 'UZS', isActive: true, branchId: null },
+      orderBy: { updatedAt: 'desc' },
+      take: 1,
+    });
+    return global?.[0]?.rate ?? 1;
+  }
+
   async create(createTransactionBonusProductDto: CreateTransactionBonusProductDto) {
     const { transactionId, productId, quantity } = createTransactionBonusProductDto;
 
@@ -145,6 +161,9 @@ export class TransactionBonusProductService {
             quantity: true,
           },
         },
+        transaction: {
+          select: { id: true, fromBranchId: true },
+        },
       },
       orderBy: {
         createdAt: 'desc',
@@ -171,7 +190,14 @@ export class TransactionBonusProductService {
       console.log('⚠️ Service: No bonus products found for this transaction');
     }
 
-    return bonusProducts;
+    // Convert USD prices to UZS using latest rate for branch
+    const rate = await this.getUsdToUzsRate(bonusProducts[0]?.transaction?.fromBranchId ?? undefined);
+    return bonusProducts.map((bp) => ({
+      ...bp,
+      product: bp.product ? { ...bp.product, priceUZS: Math.round((bp.product.price || 0) * rate) } as any : null,
+      totalValueUZS: Math.round((bp.product?.price || 0) * rate * bp.quantity),
+      usdToUzsRate: rate,
+    }));
   }
 
   async checkTransactionExists(transactionId: number) {
@@ -275,6 +301,7 @@ export class TransactionBonusProductService {
             id: true,
             createdAt: true,
             soldByUserId: true,
+            fromBranchId: true,
           },
         },
       },
@@ -282,25 +309,31 @@ export class TransactionBonusProductService {
 
     console.log(`📊 Service: Found ${bonusProducts.length} bonus products for user ${userId}`);
 
-    // Calculate total value
-    const totalValue = bonusProducts.reduce((sum, bonusProduct) => {
-      const productValue = bonusProduct.product.price * bonusProduct.quantity;
+    // Determine rate (prefer branch-specific)
+    const rate = await this.getUsdToUzsRate(bonusProducts[0]?.transaction?.fromBranchId ?? undefined);
+
+    // Calculate total value in UZS
+    const totalValueUZS = bonusProducts.reduce((sum, bonusProduct) => {
+      const unitUZS = (bonusProduct.product?.price || 0) * rate;
+      const productValue = unitUZS * bonusProduct.quantity;
       return sum + productValue;
     }, 0);
 
-    console.log(`💰 Service: Total bonus products value for user ${userId}: ${totalValue}`);
+    console.log(`💰 Service: Total bonus products value (UZS) for user ${userId}: ${totalValueUZS}`);
 
     return {
-      totalValue,
+      totalValueUZS,
+      usdToUzsRate: rate,
       totalProducts: bonusProducts.length,
       bonusProducts: bonusProducts.map(bp => ({
         id: bp.id,
         transactionId: bp.transactionId,
         productId: bp.productId,
         quantity: bp.quantity,
-        productName: bp.product.name,
-        productPrice: bp.product.price,
-        totalProductValue: bp.product.price * bp.quantity,
+        productName: bp.product?.name,
+        productPriceUSD: bp.product?.price,
+        productPriceUZS: Math.round((bp.product?.price || 0) * rate),
+        totalProductValueUZS: Math.round((bp.product?.price || 0) * rate * bp.quantity),
         transactionDate: bp.transaction.createdAt,
       })),
     };
