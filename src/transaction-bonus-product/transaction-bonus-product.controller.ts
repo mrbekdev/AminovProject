@@ -125,7 +125,7 @@ export class TransactionBonusProductController {
     
     try {
       const result = await this.transactionBonusProductService.getTotalBonusProductsValueByUserId(userId, startDate, endDate);
-      console.log(`✅ Controller: Total bonus products value for user ${userId}: ${result.totalValue}`);
+      console.log(`✅ Controller: Total bonus products value (UZS) for user ${userId}: ${result.totalValueUZS}`);
       return result;
     } catch (error) {
       console.error(`❌ Controller: Error getting bonus products value for user ${userId}:`, error);
