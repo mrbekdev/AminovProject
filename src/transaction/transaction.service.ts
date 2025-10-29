@@ -1893,8 +1893,9 @@ const updatedTransaction = await this.prisma.transaction.update({
       console.log(' BONUS CALCULATION COMPLETED\n');
 
       // 3-bosqich: Agar tranzaksiya bo'yicha umumiy sotish summasi umumiy kelish summasidan kam bo'lsa, manfiy bonus (jarima) yozish
-      const netDeficit = Math.max(0, totalCostAll - totalSellingAll);
-      console.log(' Transaction totals: totalSellingAll=', totalSellingAll, ' totalCostAll=', totalCostAll, ' netDeficit=', netDeficit);
+      const rawDeficit = Math.max(0, totalCostAll - totalSellingAll);
+      const netDeficit = Math.round(rawDeficit); // somga yaxlitlash
+      console.log(' Transaction totals: totalSellingAll=', totalSellingAll, ' totalCostAll=', totalCostAll, ' netDeficit(raw)=', rawDeficit, ' netDeficit(rounded)=', netDeficit);
       if (netDeficit > 0) {
         try {
           const penaltyData = {
