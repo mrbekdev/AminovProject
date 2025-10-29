@@ -1788,7 +1788,14 @@ const updatedTransaction = await this.prisma.transaction.update({
           }
         }
 
-        const costInUzs = Number(productInfo?.price ? (Number(productInfo.price) * usdToUzsRate) : 0);
+        const costInUzs = productInfo?.price
+          ? await this.currencyExchangeRateService.convertCurrency(
+              Number(productInfo.price),
+              'USD',
+              'UZS',
+              branchIdForBonus
+            )
+          : 0;
         const priceDifference = (sellingPrice > costInUzs && bonusPercentage > 0)
           ? (sellingPrice - costInUzs) * quantity
           : 0;
@@ -1862,7 +1869,7 @@ const updatedTransaction = await this.prisma.transaction.update({
             branchId: branchIdForBonus,
             amount: bonusAmount,
             reason: 'SALES_BONUS',
-            description: `${productInfo?.name || item.productName} mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice} som, Kelish narxi: ${costInUzs} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${totalBonusProductsValue.toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
+            description: `${productInfo?.name || item.productName} mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice.toLocaleString()} som, Kelish narxi: ${Math.round(costInUzs).toLocaleString()} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${totalBonusProductsValue.toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
             bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
             transactionId: transaction.id,
             bonusDate: new Date().toISOString()
