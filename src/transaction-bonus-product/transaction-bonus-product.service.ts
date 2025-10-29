@@ -26,7 +26,7 @@ export class TransactionBonusProductService {
   async create(createTransactionBonusProductDto: CreateTransactionBonusProductDto) {
     const { transactionId, productId, quantity } = createTransactionBonusProductDto;
 
-    // Check if product exists and has enough quantity
+
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
     });
@@ -100,6 +100,7 @@ export class TransactionBonusProductService {
               select: {
                 id: true,
                 name: true,
+                model: true,
                 barcode: true,
                 price: true,
                 quantity: true,
@@ -156,6 +157,7 @@ export class TransactionBonusProductService {
           select: {
             id: true,
             name: true,
+            model: true,
             barcode: true,
             price: true,
             quantity: true,
@@ -293,6 +295,7 @@ export class TransactionBonusProductService {
           select: {
             id: true,
             name: true,
+            model: true,
             price: true,
           },
         },
@@ -473,7 +476,7 @@ export class TransactionBonusProductService {
       where: {
         quantity: { gt: 0 }
       },
-      select: { id: true, name: true, price: true, barcode: true },
+      select: { id: true, name: true, model: true, price: true, barcode: true },
       take: 10,
       orderBy: { price: 'asc' } // Start with cheaper products for bonuses
     });
