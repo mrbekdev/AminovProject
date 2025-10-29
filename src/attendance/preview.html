@@ -34,7 +34,7 @@
   async function loadData(){
     try{
       // Fetch from production backend
-      const res = await fetch('http://localhost:4000/attendance/last', { cache: 'no-store' });
+      const res = await fetch('https://alikafecrm.uz/attendance/last', { cache: 'no-store' });
       const data = await res.json();
       document.getElementById('time').textContent = 'Updated at: ' + (data.updatedAt || '');
       const jsonEl = document.getElementById('json');

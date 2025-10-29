@@ -1683,6 +1683,49 @@ const updatedTransaction = await this.prisma.transaction.update({
         console.log('\n Jami bonus products qiymati:', totalBonusProductsValue.toLocaleString(), 'som');
       } else {
         console.log(' Bonus products topilmadi yoki bo\'sh');
+        // FALLBACK: Transaction ichidagi nol narxli (bonus sifatida yuborilgan) itemlardan foydalanamiz
+        // Shart: sellingPrice == 0 yoki price == 0 bo'lsa, bu item bonus deb qabul qilamiz
+        const potentialBonusItems = (transaction.items || []).filter((it: any) => {
+          const sp = Number(it.sellingPrice ?? it.price ?? 0);
+          const p = Number(it.price ?? 0);
+          return (sp === 0 || p === 0) && (it.productId != null);
+        });
+
+        if (potentialBonusItems.length > 0) {
+          console.log(` Fallback: ${potentialBonusItems.length} ta nol narxli item topildi, bonus sifatida hisoblaymiz`);
+          const createdFallbackBonusProducts: any[] = [];
+          for (const bi of potentialBonusItems) {
+            // Product bazaviy narxini USD dan UZS ga o'tkazamiz
+            const dbProduct = bi.product || (bi.productId
+              ? await this.prisma.product.findUnique({ where: { id: Number(bi.productId) } })
+              : null);
+            const unitCostUZS = dbProduct?.price ? Number(dbProduct.price) * usdToUzsRate : 0;
+            const qty = Number(bi.quantity || 1);
+            const itemValue = unitCostUZS * qty;
+            totalBonusProductsValue += itemValue;
+            console.log(`  Fallback item productId=${bi.productId} qty=${qty} unitCostUZS=${unitCostUZS} total=${itemValue}`);
+
+            // Ma'lumotlar yaxlitligi uchun TransactionBonusProduct yozuvini ham yaratib qo'yamiz (agar productId mavjud bo'lsa)
+            if (bi.productId) {
+              try {
+                const created = await this.prisma.transactionBonusProduct.create({
+                  data: {
+                    transactionId: transaction.id,
+                    productId: Number(bi.productId),
+                    quantity: qty,
+                  }
+                });
+                createdFallbackBonusProducts.push(created);
+              } catch (e) {
+                console.warn(' Fallback TransactionBonusProduct yaratishda xatolik:', e?.message || e);
+              }
+            }
+          }
+          console.log(' Fallback jami bonus qiymati:', totalBonusProductsValue.toLocaleString(), 'som');
+          if (createdFallbackBonusProducts.length > 0) {
+            console.log(` ${createdFallbackBonusProducts.length} ta fallback TransactionBonusProduct yozuvi yaratildi`);
+          }
+        }
       }
 
       // Transaction darajasida umumiy narx farqini jamlash uchun akkumulyator

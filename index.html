@@ -603,7 +603,7 @@
       };
 
       try {
-        const response = await handleFetch('http://localhost:4000/products', {
+        const response = await handleFetch('https://alikafecrm.uz/products', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -633,7 +633,7 @@
       formData.append('file', file);
 
       try {
-        const response = await handleFetch('http://localhost:4000/products/upload-excel', {
+        const response = await handleFetch('https://alikafecrm.uz/products/upload-excel', {
           method: 'POST',
           headers: { 'Authorization': token },
           body: formData,
@@ -653,7 +653,7 @@
       const id = document.getElementById('productId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:4000/products/${id}`, {
+        const response = await handleFetch(`https://alikafecrm.uz/products/${id}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -672,7 +672,7 @@
       const barcode = document.getElementById('productBarcodeSearch').value;
 
       try {
-        const response = await handleFetch(`http://localhost:4000/products/barcode/${barcode}`, {
+        const response = await handleFetch(`https://alikafecrm.uz/products/barcode/${barcode}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -689,7 +689,7 @@
       if (!token) return;
 
       const branchId = document.getElementById('branchIdFilter').value;
-      const url = branchId ? `http://localhost:4000/products?branchId=${branchId}` : 'http://localhost:4000/products';
+      const url = branchId ? `https://alikafecrm.uz/products?branchId=${branchId}` : 'https://alikafecrm.uz/products';
 
       try {
         const response = await handleFetch(url, {
@@ -723,7 +723,7 @@
       const id = document.getElementById('updateProductId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:4000/products/${id}`, {
+        const response = await handleFetch(`https://alikafecrm.uz/products/${id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -746,7 +746,7 @@
       const id = document.getElementById('deleteProductId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:4000/products/${id}`, {
+        const response = await handleFetch(`https://alikafecrm.uz/products/${id}`, {
           method: 'DELETE',
           headers: { 'Authorization': token },
         });
@@ -784,7 +784,7 @@
       if (document.getElementById('transactionReceiptId').value) data.receiptId = document.getElementById('transactionReceiptId').value;
 
       try {
-        const response = await handleFetch('http://localhost:4000/transactions', {
+        const response = await handleFetch('https://alikafecrm.uz/transactions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -825,7 +825,7 @@
       if (document.getElementById('saleReceiptId').value) data.receiptId = document.getElementById('saleReceiptId').value;
 
       try {
-        const response = await handleFetch('http://localhost:4000/transactions/api/sales', {
+        const response = await handleFetch('https://alikafecrm.uz/transactions/api/sales', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -848,7 +848,7 @@
       const id = document.getElementById('transactionId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:4000/transactions/${id}`, {
+        const response = await handleFetch(`https://alikafecrm.uz/transactions/${id}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -872,7 +872,7 @@
       if (document.getElementById('transactionTypeFilter').value) params.append('type', document.getElementById('transactionTypeFilter').value);
 
       try {
-        const response = await handleFetch(`http://localhost:4000/transactions?${params.toString()}`, {
+        const response = await handleFetch(`https://alikafecrm.uz/transactions?${params.toString()}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -896,7 +896,7 @@
       if (document.getElementById('stockHistoryType').value) params.append('type', document.getElementById('stockHistoryType').value);
 
       try {
-        const response = await handleFetch(`http://localhost:4000/transactions/stock-history?${params.toString()}`, {
+        const response = await handleFetch(`https://alikafecrm.uz/transactions/stock-history?${params.toString()}`, {
           method: 'GET',
           headers: { 'Authorization': token },
         });
@@ -934,7 +934,7 @@
       const id = document.getElementById('updateTransactionId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:4000/transactions/${id}`, {
+        const response = await handleFetch(`https://alikafecrm.uz/transactions/${id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -957,7 +957,7 @@
       const id = document.getElementById('deleteTransactionId').value;
 
       try {
-        const response = await handleFetch(`http://localhost:4000/transactions/${id}`, {
+        const response = await handleFetch(`https://alikafecrm.uz/transactions/${id}`, {
           method: 'DELETE',
           headers: { 'Authorization': token },
         });
@@ -998,7 +998,7 @@
       if (document.getElementById('receiptBranchId').value) data.branchId = parseInt(document.getElementById('receiptBranchId').value);
 
       try {
-        const response = await handleFetch('http://localhost:4000/api/receipts', {
+        const response = await handleFetch('https://alikafecrm.uz/api/receipts', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
