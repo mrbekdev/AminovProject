@@ -1671,9 +1671,13 @@ const updatedTransaction = await this.prisma.transaction.update({
           console.log(`  - Product price (USD): ${bonusProduct.product?.price}`);
           console.log(`  - Quantity: ${bonusProduct.quantity}`);
           
-          // Frontend dan UZS da konvert qilingan narh keladi, shuning uchun USD * rate qilmaslik kerak
-          // Lekin agar frontend dan to'g'ri konvert qilinmagan bo'lsa, USD * rate qilamiz
-          const productPriceInUzs = (bonusProduct.product?.price || 0) * usdToUzsRate;
+          // Kurs xizmatidan foydalanib USD -> UZS ga aniq konvertatsiya (filial konteksti bilan)
+          const productPriceInUzs = await this.currencyExchangeRateService.convertCurrency(
+            Number(bonusProduct.product?.price || 0),
+            'USD',
+            'UZS',
+            branchIdForBonus
+          );
           const productTotalValue = productPriceInUzs * bonusProduct.quantity;
           totalBonusProductsValue += productTotalValue;
           
@@ -1699,7 +1703,14 @@ const updatedTransaction = await this.prisma.transaction.update({
             const dbProduct = bi.product || (bi.productId
               ? await this.prisma.product.findUnique({ where: { id: Number(bi.productId) } })
               : null);
-            const unitCostUZS = dbProduct?.price ? Number(dbProduct.price) * usdToUzsRate : 0;
+            const unitCostUZS = dbProduct?.price
+              ? await this.currencyExchangeRateService.convertCurrency(
+                  Number(dbProduct.price),
+                  'USD',
+                  'UZS',
+                  branchIdForBonus
+                )
+              : 0;
             const qty = Number(bi.quantity || 1);
             const itemValue = unitCostUZS * qty;
             totalBonusProductsValue += itemValue;
@@ -1800,14 +1811,24 @@ const updatedTransaction = await this.prisma.transaction.update({
         console.log('  - Bonus miqdori:', bonusAmount, 'som');
 
         if (bonusAmount > 0) {
-          const bonusProductsData = bonusProducts.map(bp => ({
-            productId: bp.productId,
-            productName: bp.product?.name || 'Номаълум махсулот',
-            productCode: bp.product?.barcode || 'N/A',
-            quantity: bp.quantity,
-            price: (bp.product?.price || 0) * usdToUzsRate,
-            totalValue: (bp.product?.price || 0) * bp.quantity * usdToUzsRate
-          }));
+          // Bonus products ma'lumotlarini kurs orqali UZS ga konvert qilib tayyorlaymiz
+          const bonusProductsData = [] as any[];
+          for (const bp of bonusProducts) {
+            const priceInUzs = await this.currencyExchangeRateService.convertCurrency(
+              Number(bp.product?.price || 0),
+              'USD',
+              'UZS',
+              branchIdForBonus
+            );
+            bonusProductsData.push({
+              productId: bp.productId,
+              productName: bp.product?.name || 'Номаълум махсулот',
+              productCode: bp.product?.barcode || 'N/A',
+              quantity: bp.quantity,
+              price: priceInUzs,
+              totalValue: priceInUzs * bp.quantity
+            });
+          }
 
           const bonusData = {
             userId: soldByUserId,
