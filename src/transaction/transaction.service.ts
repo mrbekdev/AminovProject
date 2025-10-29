@@ -1645,10 +1645,14 @@ const updatedTransaction = await this.prisma.transaction.update({
 
       console.log(' Sotuvchi topildi:', seller.username, 'Role:', seller.role, 'BranchId:', branchIdForBonus, 'Branch:', seller.branch?.name);
 
-      // USD to UZS exchange rate olish
-      const exchangeRate = await this.currencyExchangeRateService.getActiveRate('USD', 'UZS');
-      const usdToUzsRate = exchangeRate ? Number(exchangeRate.rate) : 12500; // Default rate
-      console.log(' USD/UZS kursi:', usdToUzsRate);
+      // USD to UZS exchange rate olish (branch konteksti bilan)
+      const usdToUzsRate = await this.currencyExchangeRateService.convertCurrency(
+        1,
+        'USD',
+        'UZS',
+        branchIdForBonus
+      );
+      console.log(' USD/UZS kursi (branch-scoped):', usdToUzsRate);
 
       // Bonus products qiymatini hisoblash - Frontend dan UZS da kelgan narhlarni ishlatish
       console.log('\n Bonus products qidirilmoqda, transaction ID:', transaction.id);
@@ -1680,7 +1684,6 @@ const updatedTransaction = await this.prisma.transaction.update({
           );
           const productTotalValue = productPriceInUzs * bonusProduct.quantity;
           totalBonusProductsValue += productTotalValue;
-          
           console.log(`  - Price in UZS (calculated): ${productPriceInUzs.toLocaleString()} som`);
           console.log(`  - Total value: ${productTotalValue.toLocaleString()} som`);
         }
@@ -1791,16 +1794,21 @@ const updatedTransaction = await this.prisma.transaction.update({
 
       console.log(`\n Jami narx farqi (transaction-level): ${totalPriceDifferenceForTransaction} som`);
 
-      // 2-bosqich: Bonus mahsulotlar qiymatini TRANZAKSIYA darajasida bir marta ayirib, ulushlab taqsimlash
+      // Transaction darajasida sof ortiqcha pool (bonus mahsulotlar qiymati ayirilganidan keyin)
+      const transactionNetExtraPool = Math.max(0, totalPriceDifferenceForTransaction - totalBonusProductsValue);
+      console.log(' Transaction net extra pool (after bonus products subtraction):', transactionNetExtraPool, 'som');
+
+      // 2-bosqich: Sof ortiqchani (pool) ulushlab taqsimlab, keyin foizni qo'llash
       for (const info of itemDiffs) {
         const { item, productInfo, sellingPrice, quantity, bonusPercentage, costInUzs, priceDifference } = info;
 
-        // Bonus products qiymatini proporsional taqsimlash (har bir item ulushi bo'yicha)
-        const allocatedBonusProductsValue = totalPriceDifferenceForTransaction > 0
-          ? (totalBonusProductsValue * (priceDifference / totalPriceDifferenceForTransaction))
+        // Har bir item ulushi (narx farqiga nisbatan)
+        const share = totalPriceDifferenceForTransaction > 0
+          ? (priceDifference / totalPriceDifferenceForTransaction)
           : 0;
-
-        const netExtraAmount = Math.max(0, priceDifference - allocatedBonusProductsValue);
+        const allocatedBonusProductsValue = totalBonusProductsValue * share;
+        // Endi sof pooldan shu item ulushini olamiz
+        const netExtraAmount = transactionNetExtraPool * share;
         const bonusAmount = netExtraAmount * (bonusPercentage / 100);
 
         console.log(' Bonus hisoblash (allocated):');
@@ -1852,7 +1860,7 @@ const updatedTransaction = await this.prisma.transaction.update({
       }
 
       // Transaction darajasida sof ortiqcha summani hisoblab, database ga saqlash
-      const transactionLevelNetExtra = Math.max(0, totalPriceDifferenceForTransaction - totalBonusProductsValue);
+      const transactionLevelNetExtra = transactionNetExtraPool;
       try {
         console.log(' Transaction-level extraProfit saqlanmoqda:', transactionLevelNetExtra, 'som');
         await this.prisma.transaction.update({
