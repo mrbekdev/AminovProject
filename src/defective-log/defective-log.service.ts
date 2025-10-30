@@ -298,7 +298,28 @@ export class DefectiveLogService {
                 });
               }
 
-              // Bonusni alohida reversal yozish o'rniga, to'liq qayta hisoblab, mavjud bonus(lar)ni yangilaymiz/yoki o'chiramiz
+              // BONUS REVERSAL: Return all bonus products given for this transaction and delete related bonus rows
+              if (actionType === 'RETURN') {
+                // Restock all transaction bonus products back to inventory once
+                const txBonusProducts = await prisma.transactionBonusProduct.findMany({ where: { transactionId: tx.id } });
+                if (txBonusProducts.length > 0) {
+                  for (const bp of txBonusProducts) {
+                    try {
+                      await prisma.product.update({
+                        where: { id: bp.productId },
+                        data: { quantity: { increment: Number(bp.quantity || 0) } }
+                      });
+                    } catch (_) { /* ignore single product failures to avoid blocking whole return */ }
+                  }
+                  // Remove TransactionBonusProduct rows to prevent double-restock on subsequent returns
+                  await prisma.transactionBonusProduct.deleteMany({ where: { transactionId: tx.id } });
+                }
+
+                // Delete all bonuses tied to this transaction (sales bonus, penalty, updates)
+                await (prisma as any).bonus.deleteMany({ where: { transactionId: tx.id } });
+                // Also reset any extraProfit stored on the transaction
+                await prisma.transaction.update({ where: { id: tx.id }, data: { extraProfit: 0 } });
+              }
             }
 
             if (actionType === 'EXCHANGE') {
@@ -364,61 +385,7 @@ export class DefectiveLogService {
               recalcForTxId = tx.id;
             }
 
-            // Recompute expected sales bonus for remaining items and update/delete existing bonuses
-            try {
-              const currentItems = await prisma.transactionItem.findMany({ where: { transactionId: tx.id } });
-              const productIds = currentItems.filter(ci => !!ci.productId).map(ci => ci.productId as number);
-              const products = productIds.length > 0 ? await prisma.product.findMany({ where: { id: { in: productIds } } }) : [];
-              const productMap = new Map<number, any>();
-              for (const p of products) productMap.set(p.id, p);
-
-              let expectedBonus = 0;
-              for (const it of currentItems) {
-                if (!it.productId) continue;
-                const p = productMap.get(it.productId);
-                const bonusPct = Number(p?.bonusPercentage || 0);
-                if (bonusPct <= 0) continue;
-                const perUnitSelling = Number(it.sellingPrice ?? it.price) || 0;
-                const perUnitCost = Number(it.originalPrice ?? it.price) || 0;
-                const perUnitProfit = Math.max(0, perUnitSelling - perUnitCost);
-                expectedBonus += perUnitProfit * Math.max(0, Number(it.quantity) || 0) * (bonusPct / 100);
-              }
-
-              const existingBonuses = await (prisma as any).bonus.findMany({ where: { transactionId: tx.id } });
-
-              if (expectedBonus <= 0) {
-                if (existingBonuses.length > 0) {
-                  await (prisma as any).bonus.deleteMany({ where: { transactionId: tx.id } });
-                }
-              } else {
-                if (existingBonuses.length === 1) {
-                  await (prisma as any).bonus.update({
-                    where: { id: existingBonuses[0].id },
-                    data: { amount: expectedBonus, reason: 'SALES_BONUS_UPDATED' }
-                  });
-                } else {
-                  // Consolidate to a single bonus row reflecting the current expected amount
-                  if (existingBonuses.length > 0) {
-                    await (prisma as any).bonus.deleteMany({ where: { transactionId: tx.id } });
-                  }
-                  const soldByUserId = (tx as any).soldByUserId;
-                  const branchIdForBonus = (tx as any).fromBranchId || product.branchId || null;
-                  if (soldByUserId && branchIdForBonus) {
-                    await (prisma as any).bonus.create({
-                      data: {
-                        userId: soldByUserId,
-                        branchId: branchIdForBonus,
-                        amount: expectedBonus,
-                        reason: 'SALES_BONUS_UPDATED',
-                        description: `Qayta hisoblangan bonus. TxID: ${tx.id}`,
-                        transactionId: tx.id,
-                        bonusDate: new Date()
-                      }
-                    });
-                  }
-                }
-              }
-            } catch (_) { /* ignore bonus recalculation errors */ }
+            // Skip recomputing bonuses on return: we already removed all bonuses above for this transaction
           }
         }
       }

@@ -281,13 +281,7 @@ export class TransactionService {
       const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
       const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
       
-      console.log('=== BACKEND DEBUG ===');
-      console.log('totalPrincipal:', totalPrincipal);
-      console.log('upfrontPayment:', upfrontPayment);
-      console.log('remainingPrincipal:', remainingPrincipal);
-      console.log('weightedPercentSum:', weightedPercentSum);
-      console.log('percentWeightBase:', percentWeightBase);
-      console.log('effectivePercent:', effectivePercent);
+
       
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
