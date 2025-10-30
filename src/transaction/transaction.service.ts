@@ -219,13 +219,7 @@ export class TransactionService {
       const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
       const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
       
-      console.log('=== BACKEND DEBUG (DAILY) ===');
-      console.log('totalPrincipal:', totalPrincipal);
-      console.log('upfrontPayment:', upfrontPayment);
-      console.log('remainingPrincipal:', remainingPrincipal);
-      console.log('weightedPercentSum:', weightedPercentSum);
-      console.log('percentWeightBase:', percentWeightBase);
-      console.log('effectivePercent:', effectivePercent);
+
       
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
@@ -1641,14 +1635,21 @@ const updatedTransaction = await this.prisma.transaction.update({
 
       console.log(' Sotuvchi topildi:', seller.username, 'Role:', seller.role, 'BranchContextId:', branchContextId, 'SellerBranch:', seller.branch?.name);
 
-      // USD to UZS exchange rate olish (branch konteksti bilan)
-      const usdToUzsRate = await this.currencyExchangeRateService.convertCurrency(
-        1,
-        'USD',
-        'UZS',
-        branchContextId || undefined
-      );
-      console.log(' USD/UZS kursi (branch-scoped):', usdToUzsRate);
+      // USD->UZS kursini aniqlash (branch bo'yicha, bo'lmasa global fallback)
+      let usdToUzsRateBranch = 0;
+      let usdToUzsRateGlobal = 0;
+      try {
+        usdToUzsRateBranch = await this.currencyExchangeRateService.convertCurrency(1, 'USD', 'UZS', branchContextId || undefined);
+      } catch {}
+      try {
+        usdToUzsRateGlobal = await this.currencyExchangeRateService.convertCurrency(1, 'USD', 'UZS', undefined);
+      } catch {}
+      const usdToSomRate = (usdToUzsRateBranch && usdToUzsRateBranch > 1)
+        ? usdToUzsRateBranch
+        : (usdToUzsRateGlobal && usdToUzsRateGlobal > 1)
+          ? usdToUzsRateGlobal
+          : (usdToUzsRateBranch || usdToUzsRateGlobal || 1);
+      console.log(' USD/UZS kursi tanlandi:', usdToSomRate, '(branch=', usdToUzsRateBranch, ', global=', usdToUzsRateGlobal, ')');
 
       // Bonus products qiymatini hisoblash - Frontend dan UZS da kelgan narhlarni ishlatish
       console.log('\n Bonus products qidirilmoqda, transaction ID:', transaction.id);
@@ -1672,13 +1673,7 @@ const updatedTransaction = await this.prisma.transaction.update({
           console.log(`  - Quantity: ${bonusProduct.quantity}`);
           
           // Kurs xizmatidan foydalanib USD -> UZS ga aniq konvertatsiya (filial konteksti bilan)
-          const productPriceInUzsRaw = await this.currencyExchangeRateService.convertCurrency(
-            Number(bonusProduct.product?.price || 0),
-            'USD',
-            'UZS',
-            branchContextId || undefined
-          );
-          const productPriceInUzs = Math.round(productPriceInUzsRaw);
+          const productPriceInUzs = Math.round(Number(bonusProduct.product?.price || 0) * usdToSomRate);
           const productTotalValue = productPriceInUzs * bonusProduct.quantity;
           totalBonusProductsValue += productTotalValue;
           console.log(`  - Price in UZS (calculated): ${productPriceInUzs.toLocaleString()} som`);
@@ -1704,14 +1699,7 @@ const updatedTransaction = await this.prisma.transaction.update({
               ? await this.prisma.product.findUnique({ where: { id: Number(bi.productId) } })
               : null);
             const unitCostUZS = dbProduct?.price
-              ? Math.round(
-                  await this.currencyExchangeRateService.convertCurrency(
-                    Number(dbProduct.price),
-                    'USD',
-                    'UZS',
-                    branchContextId || undefined
-                  )
-                )
+              ? Math.round(Number(dbProduct.price) * usdToSomRate)
               : 0;
             const qty = Number(bi.quantity || 1);
             const itemValue = unitCostUZS * qty;
@@ -1774,16 +1762,16 @@ const updatedTransaction = await this.prisma.transaction.update({
         // - Aks holda, item.price USD bo'lishi mumkin, shuning uchun USD -> UZS konvertatsiya qilamiz
         let sellingPrice = 0;
         if (item?.sellingPrice != null) {
-          sellingPrice = Math.round(Number(item.sellingPrice));
+          const rawSp = Number(item.sellingPrice);
+          // Agar sellingPrice juda kichik bo'lsa (USD ehtimoli), USD->UZS aylantiramiz
+          if (rawSp > 0 && rawSp < Math.max(usdToSomRate / 2, 10000)) {
+            sellingPrice = Math.round(rawSp * usdToSomRate);
+          } else {
+            sellingPrice = Math.round(rawSp);
+          }
         } else {
           const sellingPriceUsd = Number(item.price || 0);
-          const sellingPriceUzs = await this.currencyExchangeRateService.convertCurrency(
-            sellingPriceUsd,
-            'USD',
-            'UZS',
-            branchContextId || undefined
-          );
-          sellingPrice = Math.round(sellingPriceUzs);
+          sellingPrice = Math.round(sellingPriceUsd * usdToSomRate);
         }
         const quantity = Number(item.quantity || 1);
 
@@ -1802,15 +1790,9 @@ const updatedTransaction = await this.prisma.transaction.update({
           }
         }
 
-        const costInUzsRaw = productInfo?.price
-          ? await this.currencyExchangeRateService.convertCurrency(
-              Number(productInfo.price),
-              'USD',
-              'UZS',
-              branchContextId || undefined
-            )
+        const costInUzs = productInfo?.price
+          ? Math.round(Number(productInfo.price) * usdToSomRate)
           : 0;
-        const costInUzs = Math.round(costInUzsRaw);
         const priceDifference = (sellingPrice > costInUzs && bonusPercentage > 0)
           ? (sellingPrice - costInUzs) * quantity
           : 0;
@@ -1863,14 +1845,7 @@ const updatedTransaction = await this.prisma.transaction.update({
           // Bonus products ma'lumotlarini kurs orqali UZS ga konvert qilib tayyorlaymiz
           const bonusProductsData = [] as any[];
           for (const bp of bonusProducts) {
-            const priceInUzs = Math.round(
-              await this.currencyExchangeRateService.convertCurrency(
-                Number(bp.product?.price || 0),
-                'USD',
-                'UZS',
-                branchContextId || undefined
-              )
-            );
+            const priceInUzs = Math.round(Number(bp.product?.price || 0) * usdToSomRate);
             bonusProductsData.push({
               productId: bp.productId,
               productName: bp.product?.name || 'Номаълум махсулот',
