@@ -1636,21 +1636,17 @@ const updatedTransaction = await this.prisma.transaction.update({
         return;
       }
 
-      // Agar sotuvchida branch biriktirilmagan bo'lsa, tranzaksiyadagi filialdan foydalangan holda bonus yaratamiz
-      const branchIdForBonus = seller.branchId || transaction.fromBranchId || transaction.toBranchId || null;
-      if (!branchIdForBonus) {
-        console.log(' Bonus uchun filial aniqlanmadi (seller.branchId ham, transaction.fromBranchId ham yo\'q)');
-        return;
-      }
+      // Branch tekshiruvini majburiy qilmaymiz: avvalo tranzaksiya branchini ishlatamiz, yo'q bo'lsa sotuvchinikini, bo'lmasa branchsiz davom etamiz
+      const branchContextId = transaction.fromBranchId || transaction.toBranchId || seller.branchId || null;
 
-      console.log(' Sotuvchi topildi:', seller.username, 'Role:', seller.role, 'BranchId:', branchIdForBonus, 'Branch:', seller.branch?.name);
+      console.log(' Sotuvchi topildi:', seller.username, 'Role:', seller.role, 'BranchContextId:', branchContextId, 'SellerBranch:', seller.branch?.name);
 
       // USD to UZS exchange rate olish (branch konteksti bilan)
       const usdToUzsRate = await this.currencyExchangeRateService.convertCurrency(
         1,
         'USD',
         'UZS',
-        branchIdForBonus
+        branchContextId || undefined
       );
       console.log(' USD/UZS kursi (branch-scoped):', usdToUzsRate);
 
@@ -1676,18 +1672,19 @@ const updatedTransaction = await this.prisma.transaction.update({
           console.log(`  - Quantity: ${bonusProduct.quantity}`);
           
           // Kurs xizmatidan foydalanib USD -> UZS ga aniq konvertatsiya (filial konteksti bilan)
-          const productPriceInUzs = await this.currencyExchangeRateService.convertCurrency(
+          const productPriceInUzsRaw = await this.currencyExchangeRateService.convertCurrency(
             Number(bonusProduct.product?.price || 0),
             'USD',
             'UZS',
-            branchIdForBonus
+            branchContextId || undefined
           );
+          const productPriceInUzs = Math.round(productPriceInUzsRaw);
           const productTotalValue = productPriceInUzs * bonusProduct.quantity;
           totalBonusProductsValue += productTotalValue;
           console.log(`  - Price in UZS (calculated): ${productPriceInUzs.toLocaleString()} som`);
           console.log(`  - Total value: ${productTotalValue.toLocaleString()} som`);
         }
-        console.log('\n Jami bonus products qiymati:', totalBonusProductsValue.toLocaleString(), 'som');
+        console.log('\n Jami bonus products qiymati:', Math.round(totalBonusProductsValue).toLocaleString(), 'som');
       } else {
         console.log(' Bonus products topilmadi yoki bo\'sh');
         // FALLBACK: Transaction ichidagi nol narxli (bonus sifatida yuborilgan) itemlardan foydalanamiz
@@ -1707,11 +1704,13 @@ const updatedTransaction = await this.prisma.transaction.update({
               ? await this.prisma.product.findUnique({ where: { id: Number(bi.productId) } })
               : null);
             const unitCostUZS = dbProduct?.price
-              ? await this.currencyExchangeRateService.convertCurrency(
-                  Number(dbProduct.price),
-                  'USD',
-                  'UZS',
-                  branchIdForBonus
+              ? Math.round(
+                  await this.currencyExchangeRateService.convertCurrency(
+                    Number(dbProduct.price),
+                    'USD',
+                    'UZS',
+                    branchContextId || undefined
+                  )
                 )
               : 0;
             const qty = Number(bi.quantity || 1);
@@ -1735,7 +1734,7 @@ const updatedTransaction = await this.prisma.transaction.update({
               }
             }
           }
-          console.log(' Fallback jami bonus qiymati:', totalBonusProductsValue.toLocaleString(), 'som');
+          console.log(' Fallback jami bonus qiymati:', Math.round(totalBonusProductsValue).toLocaleString(), 'som');
           if (createdFallbackBonusProducts.length > 0) {
             console.log(` ${createdFallbackBonusProducts.length} ta fallback TransactionBonusProduct yozuvi yaratildi`);
           }
@@ -1770,7 +1769,22 @@ const updatedTransaction = await this.prisma.transaction.update({
       for (const item of transaction.items) {
         console.log('\n Mahsulot tekshirilmoqda (precompute):', item.productName);
 
-        const sellingPrice = Number(item.sellingPrice || item.price);
+        // Sotish narxini doim UZS da ishlatamiz:
+        // - Agar item.sellingPrice mavjud bo'lsa, u allaqachon UZS (frontenddan keladi)
+        // - Aks holda, item.price USD bo'lishi mumkin, shuning uchun USD -> UZS konvertatsiya qilamiz
+        let sellingPrice = 0;
+        if (item?.sellingPrice != null) {
+          sellingPrice = Math.round(Number(item.sellingPrice));
+        } else {
+          const sellingPriceUsd = Number(item.price || 0);
+          const sellingPriceUzs = await this.currencyExchangeRateService.convertCurrency(
+            sellingPriceUsd,
+            'USD',
+            'UZS',
+            branchContextId || undefined
+          );
+          sellingPrice = Math.round(sellingPriceUzs);
+        }
         const quantity = Number(item.quantity || 1);
 
         // Product ma'lumotlarini olish (agar item.product yo'q bo'lsa)
@@ -1788,14 +1802,15 @@ const updatedTransaction = await this.prisma.transaction.update({
           }
         }
 
-        const costInUzs = productInfo?.price
+        const costInUzsRaw = productInfo?.price
           ? await this.currencyExchangeRateService.convertCurrency(
               Number(productInfo.price),
               'USD',
               'UZS',
-              branchIdForBonus
+              branchContextId || undefined
             )
           : 0;
+        const costInUzs = Math.round(costInUzsRaw);
         const priceDifference = (sellingPrice > costInUzs && bonusPercentage > 0)
           ? (sellingPrice - costInUzs) * quantity
           : 0;
@@ -1821,7 +1836,7 @@ const updatedTransaction = await this.prisma.transaction.update({
       console.log(`\n Jami narx farqi (transaction-level): ${totalPriceDifferenceForTransaction} som`);
 
       // Transaction darajasida sof ortiqcha pool (bonus mahsulotlar qiymati ayirilganidan keyin)
-      const transactionNetExtraPool = Math.max(0, totalPriceDifferenceForTransaction - totalBonusProductsValue);
+      const transactionNetExtraPool = Math.max(0, Math.round(totalPriceDifferenceForTransaction) - Math.round(totalBonusProductsValue));
       console.log(' Transaction net extra pool (after bonus products subtraction):', transactionNetExtraPool, 'som');
 
       // 2-bosqich: Sof ortiqchani (pool) ulushlab taqsimlab, keyin foizni qo'llash
@@ -1832,10 +1847,10 @@ const updatedTransaction = await this.prisma.transaction.update({
         const share = totalPriceDifferenceForTransaction > 0
           ? (priceDifference / totalPriceDifferenceForTransaction)
           : 0;
-        const allocatedBonusProductsValue = totalBonusProductsValue * share;
+        const allocatedBonusProductsValue = Math.round(totalBonusProductsValue * share);
         // Endi sof pooldan shu item ulushini olamiz
-        const netExtraAmount = transactionNetExtraPool * share;
-        const bonusAmount = netExtraAmount * (bonusPercentage / 100);
+        const netExtraAmount = Math.round(transactionNetExtraPool * share);
+        const bonusAmount = Math.round(netExtraAmount * (bonusPercentage / 100));
 
         console.log(' Bonus hisoblash (allocated):');
         console.log('  - Narx farqi (selling - cost):', priceDifference, 'som');
@@ -1848,11 +1863,13 @@ const updatedTransaction = await this.prisma.transaction.update({
           // Bonus products ma'lumotlarini kurs orqali UZS ga konvert qilib tayyorlaymiz
           const bonusProductsData = [] as any[];
           for (const bp of bonusProducts) {
-            const priceInUzs = await this.currencyExchangeRateService.convertCurrency(
-              Number(bp.product?.price || 0),
-              'USD',
-              'UZS',
-              branchIdForBonus
+            const priceInUzs = Math.round(
+              await this.currencyExchangeRateService.convertCurrency(
+                Number(bp.product?.price || 0),
+                'USD',
+                'UZS',
+                branchContextId || undefined
+              )
             );
             bonusProductsData.push({
               productId: bp.productId,
@@ -1866,7 +1883,7 @@ const updatedTransaction = await this.prisma.transaction.update({
 
           const bonusData = {
             userId: soldByUserId,
-            branchId: branchIdForBonus,
+            branchId: branchContextId || undefined,
             amount: bonusAmount,
             reason: 'SALES_BONUS',
             description: `${productInfo?.name || item.productName} mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice.toLocaleString()} som, Kelish narxi: ${Math.round(costInUzs).toLocaleString()} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${totalBonusProductsValue.toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
@@ -1907,7 +1924,7 @@ const updatedTransaction = await this.prisma.transaction.update({
         try {
           const penaltyData = {
             userId: soldByUserId,
-            branchId: branchIdForBonus,
+            branchId: branchContextId || undefined,
             amount: -netDeficit, // manfiy summa
             reason: 'SALES_PENALTY',
             description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${totalSellingAll.toLocaleString()} som, Umumiy kelish: ${totalCostAll.toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
