@@ -177,9 +177,18 @@ export class TransactionService {
         try {
           await this.calculateAndCreateSalesBonuses(transaction, soldByUserId, cashierId);
         } catch (error) {
-          console.error('Delayed bonus calculation error:', error);
+          console.error('Delayed bonus calculation error (2s):', error);
         }
       }, 2000);
+
+      // Bonus products keyinroq qo'shilgan holatlar uchun 6 soniyadan keyin yana bir marta urinib ko'ramiz
+      setTimeout(async () => {
+        try {
+          await this.calculateAndCreateSalesBonuses(transaction, soldByUserId, cashierId);
+        } catch (error) {
+          console.error('Delayed bonus calculation error (6s):', error);
+        }
+      }, 6000);
     }
 
     return transaction;
@@ -1609,9 +1618,33 @@ const updatedTransaction = await this.prisma.transaction.update({
   private async calculateAndCreateSalesBonuses(transaction: any, soldByUserId: number, createdById?: number) {
     try {
       console.log(' BONUS CALCULATION STARTED');
-      console.log('Transaction ID:', transaction.id);
-      console.log('Sold by user ID:', soldByUserId);
+      console.log('Transaction ID (input):', transaction?.id);
+      console.log('Sold by user ID (input):', soldByUserId);
       console.log('Created by ID (cashier):', createdById);
+
+      // Har doim eng so'nggi ma'lumotlar bilan ishlash uchun tranzaksiyani qayta yuklaymiz
+      const freshTx = await this.prisma.transaction.findUnique({
+        where: { id: transaction.id },
+        include: {
+          items: { include: { product: true } },
+          customer: true,
+          soldBy: true,
+          user: true,
+        }
+      });
+      if (!freshTx) {
+        console.warn(' Transaction not found during bonus calculation');
+        return;
+      }
+      transaction = freshTx;
+
+      // sotuvchi ID ni aniqlash (parametr yo'q bo'lsa tranzaksiya ichidan olamiz)
+      const effectiveSoldByUserId = soldByUserId || transaction.soldByUserId || transaction.userId || null;
+      if (!effectiveSoldByUserId) {
+        console.log(' Sotuvchi aniqlanmadi, bonus/penalty hisoblanmaydi');
+        return;
+      }
+      soldByUserId = effectiveSoldByUserId;
 
       // Sotuvchining branch ma'lumotini olish
       const seller = await this.prisma.user.findUnique({
@@ -1894,6 +1927,22 @@ const updatedTransaction = await this.prisma.transaction.update({
       const grossDiffForPenalty = transactionGrossDiffAll; // allaqachon (selling + bonus - cost)
       console.log(' Penalty check: selling+bonus=', totalSellingAllIncludingBonus, ' cost=', totalCostAll, ' grossDiff=', grossDiffForPenalty);
       if (grossDiffForPenalty < 0) {
+        // Idempotency: shu tranzaksiya va foydalanuvchi uchun SALES_PENALTY allaqachon yaratilganmi?
+        try {
+          const existingPenalty = await (this.prisma as any).bonus.findFirst({
+            where: {
+              transactionId: transaction.id,
+              userId: soldByUserId,
+              reason: 'SALES_PENALTY'
+            }
+          });
+          if (existingPenalty) {
+            console.log(' SALES_PENALTY allaqachon mavjud, yangisini yaratmaymiz. ID=', existingPenalty.id);
+            return;
+          }
+        } catch (e) {
+          console.warn(' Penalty idempotency tekshiruvda xatolik, baribir yaratishga harakat qilamiz:', e?.message || e);
+        }
         try {
           const penaltyData = {
             userId: soldByUserId,
