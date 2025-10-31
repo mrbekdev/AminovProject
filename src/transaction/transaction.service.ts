@@ -177,18 +177,9 @@ export class TransactionService {
         try {
           await this.calculateAndCreateSalesBonuses(transaction, soldByUserId, cashierId);
         } catch (error) {
-          console.error('Delayed bonus calculation error (2s):', error);
+          console.error('Delayed bonus calculation error:', error);
         }
       }, 2000);
-
-      // Bonus products keyinroq qo'shilgan holatlar uchun 6 soniyadan keyin yana bir marta urinib ko'ramiz
-      setTimeout(async () => {
-        try {
-          await this.calculateAndCreateSalesBonuses(transaction, soldByUserId, cashierId);
-        } catch (error) {
-          console.error('Delayed bonus calculation error (6s):', error);
-        }
-      }, 6000);
     }
 
     return transaction;
@@ -1618,33 +1609,9 @@ const updatedTransaction = await this.prisma.transaction.update({
   private async calculateAndCreateSalesBonuses(transaction: any, soldByUserId: number, createdById?: number) {
     try {
       console.log(' BONUS CALCULATION STARTED');
-      console.log('Transaction ID (input):', transaction?.id);
-      console.log('Sold by user ID (input):', soldByUserId);
+      console.log('Transaction ID:', transaction.id);
+      console.log('Sold by user ID:', soldByUserId);
       console.log('Created by ID (cashier):', createdById);
-
-      // Har doim eng so'nggi ma'lumotlar bilan ishlash uchun tranzaksiyani qayta yuklaymiz
-      const freshTx = await this.prisma.transaction.findUnique({
-        where: { id: transaction.id },
-        include: {
-          items: { include: { product: true } },
-          customer: true,
-          soldBy: true,
-          user: true,
-        }
-      });
-      if (!freshTx) {
-        console.warn(' Transaction not found during bonus calculation');
-        return;
-      }
-      transaction = freshTx;
-
-      // sotuvchi ID ni aniqlash (parametr yo'q bo'lsa tranzaksiya ichidan olamiz)
-      const effectiveSoldByUserId = soldByUserId || transaction.soldByUserId || transaction.userId || null;
-      if (!effectiveSoldByUserId) {
-        console.log(' Sotuvchi aniqlanmadi, bonus/penalty hisoblanmaydi');
-        return;
-      }
-      soldByUserId = effectiveSoldByUserId;
 
       // Sotuvchining branch ma'lumotini olish
       const seller = await this.prisma.user.findUnique({
@@ -1847,12 +1814,6 @@ const updatedTransaction = await this.prisma.transaction.update({
       // Transaction darajasida sof ortiqcha pool (bonus mahsulotlar qiymati ayirilganidan keyin)
       const transactionNetExtraPool = Math.max(0, Math.round(totalPriceDifferenceForTransaction) - Math.round(totalBonusProductsValue));
       console.log(' Transaction net extra pool (after bonus products subtraction):', transactionNetExtraPool, 'som');
-      
-      // Umumiy sotish qiymati (bonus mahsulotlar qo'shilgan holda) va umumiy kelish narxi asosida
-      // tranzaksiya darajasidagi yalpi farq (foyda/zarar) ni hisoblaymiz
-      const totalSellingAllIncludingBonus = Math.round(totalSellingAll + totalBonusProductsValue);
-      const transactionGrossDiffAll = totalSellingAllIncludingBonus - Math.round(totalCostAll);
-      console.log(' Transaction gross diff (selling + bonus - cost):', transactionGrossDiffAll, 'som');
 
       // 2-bosqich: Sof ortiqchani (pool) ulushlab taqsimlab, keyin foizni qo'llash
       for (const info of itemDiffs) {
@@ -1910,12 +1871,13 @@ const updatedTransaction = await this.prisma.transaction.update({
         }
       }
 
-      // Transaction darajasida yalpi foyda/zararni (bonus mahsulotlar qo'shilgan holda) database ga saqlash
+      // Transaction darajasida sof ortiqcha summani hisoblab, database ga saqlash
+      const transactionLevelNetExtra = transactionNetExtraPool;
       try {
-        console.log(' Transaction-level extraProfit (gross, incl. bonus products) saqlanmoqda:', transactionGrossDiffAll, 'som');
+        console.log(' Transaction-level extraProfit saqlanmoqda:', transactionLevelNetExtra, 'som');
         await this.prisma.transaction.update({
           where: { id: transaction.id },
-          data: { extraProfit: transactionGrossDiffAll }
+          data: { extraProfit: transactionLevelNetExtra }
         });
       } catch (e) {
         console.error(' extraProfit ni saqlashda xatolik:', e);
@@ -1923,40 +1885,25 @@ const updatedTransaction = await this.prisma.transaction.update({
 
       console.log(' BONUS CALCULATION COMPLETED\n');
 
-      // 3-bosqich: Agar (sotish + bonus mahsulotlar) < kelish bo'lsa, manfiy bonus (jarima) yozish
-      const grossDiffForPenalty = transactionGrossDiffAll; // allaqachon (selling + bonus - cost)
-      console.log(' Penalty check: selling+bonus=', totalSellingAllIncludingBonus, ' cost=', totalCostAll, ' grossDiff=', grossDiffForPenalty);
-      if (grossDiffForPenalty < 0) {
-        // Idempotency: shu tranzaksiya va foydalanuvchi uchun SALES_PENALTY allaqachon yaratilganmi?
-        try {
-          const existingPenalty = await (this.prisma as any).bonus.findFirst({
-            where: {
-              transactionId: transaction.id,
-              userId: soldByUserId,
-              reason: 'SALES_PENALTY'
-            }
-          });
-          if (existingPenalty) {
-            console.log(' SALES_PENALTY allaqachon mavjud, yangisini yaratmaymiz. ID=', existingPenalty.id);
-            return;
-          }
-        } catch (e) {
-          console.warn(' Penalty idempotency tekshiruvda xatolik, baribir yaratishga harakat qilamiz:', e?.message || e);
-        }
+      // 3-bosqich: Agar tranzaksiya bo'yicha umumiy sotish summasi umumiy kelish summasidan kam bo'lsa, manfiy bonus (jarima) yozish
+      const rawDeficit = Math.max(0, totalCostAll - totalSellingAll);
+      const netDeficit = Math.round(rawDeficit); // somga yaxlitlash
+      console.log(' Transaction totals: totalSellingAll=', totalSellingAll, ' totalCostAll=', totalCostAll, ' netDeficit(raw)=', rawDeficit, ' netDeficit(rounded)=', netDeficit);
+      if (netDeficit > 0) {
         try {
           const penaltyData = {
             userId: soldByUserId,
             branchId: branchContextId || undefined,
-            amount: grossDiffForPenalty, // manfiy summa (zarar)
+            amount: -netDeficit, // manfiy summa
             reason: 'SALES_PENALTY',
-            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${totalSellingAll.toLocaleString()} som, Bonus mahsulotlar qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Jami sotish (sotish+bonus): ${totalSellingAllIncludingBonus.toLocaleString()} som, Umumiy kelish: ${Math.round(totalCostAll).toLocaleString()} som, Jami kamomad: ${Math.abs(grossDiffForPenalty).toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
+            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${totalSellingAll.toLocaleString()} som, Umumiy kelish: ${totalCostAll.toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
             bonusProducts: null,
             transactionId: transaction.id,
             bonusDate: new Date().toISOString()
           } as any;
           console.log(' PENALTY BONUS yaratilmoqda:', penaltyData);
           await this.bonusService.create(penaltyData, createdById || soldByUserId);
-          console.log(` PENALTY BONUS YARATILDI: ${grossDiffForPenalty} som (manfiy)`);
+          console.log(` PENALTY BONUS YARATILDI: ${-netDeficit} som (manfiy)`);
         } catch (e) {
           console.error(' Penalty bonus yaratishda xatolik:', e);
         }
