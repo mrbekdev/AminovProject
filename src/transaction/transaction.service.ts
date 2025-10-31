@@ -1912,12 +1912,21 @@ const updatedTransaction = await this.prisma.transaction.update({
               totalValue: priceInUzs * bp.quantity
             });
           }
+          // Bonus mahsulotlar nomi va modeli haqida qo'shimcha ma'lumot
+          const bonusProductsInfo = (bonusProducts && bonusProducts.length > 0)
+            ? ' Bonus mahsulotlar: ' + bonusProducts
+                .map(bp => `${bp.product?.name || 'Номаълум махсулот'} (${bp.product?.model || '-'}) qty=${bp.quantity}`)
+                .join(' | ')
+            : '';
+
           const penaltyData = {
             userId: soldByUserId,
             branchId: branchContextId || undefined,
             amount: -netDeficit, // manfiy summa
             reason: 'SALES_PENALTY',
-            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${sellingTotal.toLocaleString()} som, Bonus mahsulotlar qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Umumiy kelish: ${Math.round(totalCostAll).toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} (${n.productInfo?.model || '-'}) qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
+            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${sellingTotal.toLocaleString()} som, Bonus mahsulotlar qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Umumiy kelish: ${Math.round(totalCostAll).toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: `
+              + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} (${n.productInfo?.model || '-'}) qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | ')
+              + bonusProductsInfo,
             bonusProducts: penaltyBonusProductsData.length > 0 ? penaltyBonusProductsData : null,
             transactionId: transaction.id,
             bonusDate: new Date().toISOString()
