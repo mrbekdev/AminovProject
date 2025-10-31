@@ -45,7 +45,7 @@ export class CustomerController {
   @ApiQuery({ name: 'fullName', required: false })
   async findAll(
     @Query('skip') skip = '0',
-    @Query('take') take = '10',
+    @Query('take') take = '1000',
     @Query('phone') phone?: string,
     @Query('email') email?: string,
     @Query('fullName') fullName?: string,

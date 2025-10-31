@@ -1843,6 +1843,7 @@ const updatedTransaction = await this.prisma.transaction.update({
             bonusProductsData.push({
               productId: bp.productId,
               productName: bp.product?.name || 'Номаълум махсулот',
+              productModel: bp.product?.model || null,
               productCode: bp.product?.barcode || 'N/A',
               quantity: bp.quantity,
               price: priceInUzs,
@@ -1855,7 +1856,7 @@ const updatedTransaction = await this.prisma.transaction.update({
             branchId: branchContextId || undefined,
             amount: bonusAmount,
             reason: 'SALES_BONUS',
-            description: `${productInfo?.name || item.productName} mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice.toLocaleString()} som, Kelish narxi: ${Math.round(costInUzs).toLocaleString()} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${totalBonusProductsValue.toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
+            description: `${productInfo?.name || item.productName} (${productInfo?.model || '-'}) mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice.toLocaleString()} som, Kelish narxi: ${Math.round(costInUzs).toLocaleString()} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${totalBonusProductsValue.toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
             bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
             transactionId: transaction.id,
             bonusDate: new Date().toISOString()
@@ -1871,13 +1872,19 @@ const updatedTransaction = await this.prisma.transaction.update({
         }
       }
 
-      // Transaction darajasida sof ortiqcha summani hisoblab, database ga saqlash
-      const transactionLevelNetExtra = transactionNetExtraPool;
+      // Transaction darajasida jami (foyda yoki kamomad) ni hisoblab, database ga saqlash
+      // Formulalar:
+      //   sellingTotal = totalSellingAll
+      //   costPlusBonus = totalCostAll + totalBonusProductsValue
+      //   grossDiffAfterBonusCost = sellingTotal - costPlusBonus
+      const sellingTotal = Math.round(totalSellingAll);
+      const costPlusBonus = Math.round(totalCostAll) + Math.round(totalBonusProductsValue);
+      const grossDiffAfterBonusCost = sellingTotal - costPlusBonus; // manfiy bo'lishi ham mumkin
       try {
-        console.log(' Transaction-level extraProfit saqlanmoqda:', transactionLevelNetExtra, 'som');
+        console.log(' Transaction-level extraProfit saqlanmoqda (gross diff, bonus cost bilan):', grossDiffAfterBonusCost, 'som');
         await this.prisma.transaction.update({
           where: { id: transaction.id },
-          data: { extraProfit: transactionLevelNetExtra }
+          data: { extraProfit: grossDiffAfterBonusCost }
         });
       } catch (e) {
         console.error(' extraProfit ni saqlashda xatolik:', e);
@@ -1885,19 +1892,33 @@ const updatedTransaction = await this.prisma.transaction.update({
 
       console.log(' BONUS CALCULATION COMPLETED\n');
 
-      // 3-bosqich: Agar tranzaksiya bo'yicha umumiy sotish summasi umumiy kelish summasidan kam bo'lsa, manfiy bonus (jarima) yozish
-      const rawDeficit = Math.max(0, totalCostAll - totalSellingAll);
-      const netDeficit = Math.round(rawDeficit); // somga yaxlitlash
-      console.log(' Transaction totals: totalSellingAll=', totalSellingAll, ' totalCostAll=', totalCostAll, ' netDeficit(raw)=', rawDeficit, ' netDeficit(rounded)=', netDeficit);
-      if (netDeficit > 0) {
+      // 3-bosqich: Bonus mahsulotlar qiymatini ham hisobga olgan holda jarimani aniqlash
+      // Penalty faqat grossDiffAfterBonusCost manfiy bo'lsa yaratiladi
+      console.log(' Penalty check (with bonus cost): selling=', sellingTotal, ' cost+bonus=', costPlusBonus, ' grossDiff=', grossDiffAfterBonusCost);
+      if (grossDiffAfterBonusCost < 0) {
+        const netDeficit = Math.abs(grossDiffAfterBonusCost);
         try {
+          // Build bonusProducts payload once for penalties as well
+          const penaltyBonusProductsData = [] as any[];
+          for (const bp of bonusProducts) {
+            const priceInUzs = Math.round(Number(bp.product?.price || 0) * usdToSomRate);
+            penaltyBonusProductsData.push({
+              productId: bp.productId,
+              productName: bp.product?.name || 'Номаълум махсулот',
+              productModel: bp.product?.model || null,
+              productCode: bp.product?.barcode || 'N/A',
+              quantity: bp.quantity,
+              price: priceInUzs,
+              totalValue: priceInUzs * bp.quantity
+            });
+          }
           const penaltyData = {
             userId: soldByUserId,
             branchId: branchContextId || undefined,
             amount: -netDeficit, // manfiy summa
             reason: 'SALES_PENALTY',
-            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${totalSellingAll.toLocaleString()} som, Umumiy kelish: ${totalCostAll.toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
-            bonusProducts: null,
+            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${sellingTotal.toLocaleString()} som, Bonus mahsulotlar qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Umumiy kelish: ${Math.round(totalCostAll).toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} (${n.productInfo?.model || '-'}) qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
+            bonusProducts: penaltyBonusProductsData.length > 0 ? penaltyBonusProductsData : null,
             transactionId: transaction.id,
             bonusDate: new Date().toISOString()
           } as any;
