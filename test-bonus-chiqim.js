@@ -18,7 +18,7 @@ const testData = {
 
 async function testBonusInChiqim() {
   try {
-    console.log('🧪 Testing Bonus System in Chiqim.jsx...\n');
+
 
     // Create a test transaction similar to Chiqim.jsx
     const transactionData = {
@@ -46,8 +46,6 @@ async function testBonusInChiqim() {
       }]
     };
 
-    console.log('📤 Sending transaction data:');
-    console.log(JSON.stringify(transactionData, null, 2));
 
     // Send transaction to backend
     const response = await axios.post(`${API_URL}/transactions`, transactionData, {
@@ -57,11 +55,8 @@ async function testBonusInChiqim() {
       }
     });
 
-    console.log('\n✅ Transaction created successfully!');
-    console.log('Transaction ID:', response.data.id);
 
-    // Check if bonus was created
-    console.log('\n🔍 Checking bonuses for salesperson...');
+
     
     const bonusResponse = await axios.get(`${API_URL}/bonuses/user/${testData.selectedUserId}`, {
       headers: {
@@ -69,26 +64,17 @@ async function testBonusInChiqim() {
       }
     });
 
-    console.log('📊 Bonuses found:', bonusResponse.data.length);
+
     
     if (bonusResponse.data.length > 0) {
       const latestBonus = bonusResponse.data[0];
-      console.log('💰 Latest bonus details:');
-      console.log(`   Amount: ${latestBonus.amount} som`);
-      console.log(`   Reason: ${latestBonus.reason}`);
-      console.log(`   Description: ${latestBonus.description}`);
-      console.log(`   Created by: User ID ${latestBonus.createdById}`);
-      console.log(`   For salesperson: User ID ${latestBonus.userId}`);
+
       
       // Calculate expected bonus
       const priceDifference = (testData.sellingPrice - testData.productData.marketPrice) * testData.productData.quantity;
       const expectedBonus = priceDifference * (testData.productData.bonusPercentage / 100);
       
-      console.log(`\n📈 Bonus calculation verification:`);
-      console.log(`   Price difference: (${testData.sellingPrice} - ${testData.productData.marketPrice}) × ${testData.productData.quantity} = ${priceDifference} som`);
-      console.log(`   Expected bonus: ${priceDifference} × ${testData.productData.bonusPercentage}% = ${expectedBonus} som`);
-      console.log(`   Actual bonus: ${latestBonus.amount} som`);
-      console.log(`   ✅ Match: ${expectedBonus === latestBonus.amount ? 'YES' : 'NO'}`);
+
     } else {
       console.log('❌ No bonuses found! Bonus system may not be working.');
     }

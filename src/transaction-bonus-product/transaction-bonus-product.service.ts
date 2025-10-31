@@ -346,9 +346,18 @@ export class TransactionBonusProductService {
     console.log(`🔄 Service: Parsing bonus description for transaction ${transactionId}`);
     console.log('Description:', bonusDescription);
 
-    // Check if transaction exists
-    const transaction = await this.checkTransactionExists(transactionId);
+    // Check if transaction exists with retries (to handle async creation / replica lag)
+    const maxRetries = 5;
+    const delayMs = 400;
+    let transaction: any = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      transaction = await this.checkTransactionExists(transactionId);
+      if (transaction) break;
+      console.warn(`⏳ Service: Transaction ${transactionId} not found (attempt ${attempt}/${maxRetries}), retrying in ${delayMs}ms...`);
+      await new Promise((res) => setTimeout(res, delayMs));
+    }
     if (!transaction) {
+      console.error(`❌ Service: Transaction ${transactionId} not found after ${maxRetries} attempts`);
       throw new Error(`Transaction ${transactionId} not found`);
     }
 

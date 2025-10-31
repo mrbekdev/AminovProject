@@ -13,8 +13,7 @@ export class AuthService {
     ) { }
 
     async login(username: string, password: string) {
-        console.log(username)
-        console.log(password)
+
         const user = await this.prisma.user.findUnique({ where: { username } });
         if (!user) {
             throw new UnauthorizedException('Invalid credentials');
@@ -62,7 +61,7 @@ export class AuthService {
             }
         }
 
-        console.log(user);
+
         if (!user.password) {
             throw new UnauthorizedException('User does not have a password set');
             
