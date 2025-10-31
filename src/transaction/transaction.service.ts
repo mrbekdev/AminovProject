@@ -1814,6 +1814,12 @@ const updatedTransaction = await this.prisma.transaction.update({
       // Transaction darajasida sof ortiqcha pool (bonus mahsulotlar qiymati ayirilganidan keyin)
       const transactionNetExtraPool = Math.max(0, Math.round(totalPriceDifferenceForTransaction) - Math.round(totalBonusProductsValue));
       console.log(' Transaction net extra pool (after bonus products subtraction):', transactionNetExtraPool, 'som');
+      
+      // Umumiy sotish qiymati (bonus mahsulotlar qo'shilgan holda) va umumiy kelish narxi asosida
+      // tranzaksiya darajasidagi yalpi farq (foyda/zarar) ni hisoblaymiz
+      const totalSellingAllIncludingBonus = Math.round(totalSellingAll + totalBonusProductsValue);
+      const transactionGrossDiffAll = totalSellingAllIncludingBonus - Math.round(totalCostAll);
+      console.log(' Transaction gross diff (selling + bonus - cost):', transactionGrossDiffAll, 'som');
 
       // 2-bosqich: Sof ortiqchani (pool) ulushlab taqsimlab, keyin foizni qo'llash
       for (const info of itemDiffs) {
@@ -1871,13 +1877,12 @@ const updatedTransaction = await this.prisma.transaction.update({
         }
       }
 
-      // Transaction darajasida sof ortiqcha summani hisoblab, database ga saqlash
-      const transactionLevelNetExtra = transactionNetExtraPool;
+      // Transaction darajasida yalpi foyda/zararni (bonus mahsulotlar qo'shilgan holda) database ga saqlash
       try {
-        console.log(' Transaction-level extraProfit saqlanmoqda:', transactionLevelNetExtra, 'som');
+        console.log(' Transaction-level extraProfit (gross, incl. bonus products) saqlanmoqda:', transactionGrossDiffAll, 'som');
         await this.prisma.transaction.update({
           where: { id: transaction.id },
-          data: { extraProfit: transactionLevelNetExtra }
+          data: { extraProfit: transactionGrossDiffAll }
         });
       } catch (e) {
         console.error(' extraProfit ni saqlashda xatolik:', e);
@@ -1885,25 +1890,24 @@ const updatedTransaction = await this.prisma.transaction.update({
 
       console.log(' BONUS CALCULATION COMPLETED\n');
 
-      // 3-bosqich: Agar tranzaksiya bo'yicha umumiy sotish summasi umumiy kelish summasidan kam bo'lsa, manfiy bonus (jarima) yozish
-      const rawDeficit = Math.max(0, totalCostAll - totalSellingAll);
-      const netDeficit = Math.round(rawDeficit); // somga yaxlitlash
-      console.log(' Transaction totals: totalSellingAll=', totalSellingAll, ' totalCostAll=', totalCostAll, ' netDeficit(raw)=', rawDeficit, ' netDeficit(rounded)=', netDeficit);
-      if (netDeficit > 0) {
+      // 3-bosqich: Agar (sotish + bonus mahsulotlar) < kelish bo'lsa, manfiy bonus (jarima) yozish
+      const grossDiffForPenalty = transactionGrossDiffAll; // allaqachon (selling + bonus - cost)
+      console.log(' Penalty check: selling+bonus=', totalSellingAllIncludingBonus, ' cost=', totalCostAll, ' grossDiff=', grossDiffForPenalty);
+      if (grossDiffForPenalty < 0) {
         try {
           const penaltyData = {
             userId: soldByUserId,
             branchId: branchContextId || undefined,
-            amount: -netDeficit, // manfiy summa
+            amount: grossDiffForPenalty, // manfiy summa (zarar)
             reason: 'SALES_PENALTY',
-            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${totalSellingAll.toLocaleString()} som, Umumiy kelish: ${totalCostAll.toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
+            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${totalSellingAll.toLocaleString()} som, Bonus mahsulotlar qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Jami sotish (sotish+bonus): ${totalSellingAllIncludingBonus.toLocaleString()} som, Umumiy kelish: ${Math.round(totalCostAll).toLocaleString()} som, Jami kamomad: ${Math.abs(grossDiffForPenalty).toLocaleString()} som. Tafsilotlar: ` + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | '),
             bonusProducts: null,
             transactionId: transaction.id,
             bonusDate: new Date().toISOString()
           } as any;
           console.log(' PENALTY BONUS yaratilmoqda:', penaltyData);
           await this.bonusService.create(penaltyData, createdById || soldByUserId);
-          console.log(` PENALTY BONUS YARATILDI: ${-netDeficit} som (manfiy)`);
+          console.log(` PENALTY BONUS YARATILDI: ${grossDiffForPenalty} som (manfiy)`);
         } catch (e) {
           console.error(' Penalty bonus yaratishda xatolik:', e);
         }
