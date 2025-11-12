@@ -5,6 +5,7 @@ import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { TransactionType, TransactionStatus, PaymentType } from '@prisma/client';
 import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
 import { BonusService } from '../bonus/bonus.service';
+import { TaskService } from '../task/task.service';
 
 @Injectable()
 export class TransactionService {
@@ -12,6 +13,7 @@ export class TransactionService {
     private prisma: PrismaService,
     private currencyExchangeRateService: CurrencyExchangeRateService,
     private bonusService: BonusService,
+    private taskService: TaskService,
   ) {}
 
   async create(createTransactionDto: CreateTransactionDto, userId?: number) {
@@ -180,6 +182,21 @@ export class TransactionService {
           console.error('Delayed bonus calculation error:', error);
         }
       }, 2000);
+    }
+
+    // DELIVERY bo'lsa, avtomatik audit task yaratish
+    try {
+      const t: any = transaction as any;
+      const method = String(t.deliveryMethod || '').toUpperCase();
+      const dType = String(t.deliveryType || '').toUpperCase();
+      const boolFlag = typeof t.delivery === 'boolean' ? t.delivery : false;
+      const hasAddress = typeof t.deliveryAddress === 'string' && t.deliveryAddress.trim().length > 0;
+      const isDelivery = method === 'DELIVERY' || dType === 'DELIVERY' || boolFlag === true || hasAddress === true;
+      if (transaction.type === TransactionType.SALE && isDelivery) {
+        await this.taskService.create({ transactionId: transaction.id });
+      }
+    } catch (taskErr) {
+      console.error('Delivery task yaratishda xatolik:', taskErr);
     }
 
     return transaction;

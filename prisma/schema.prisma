@@ -190,6 +190,7 @@ model User {
   attendanceEvents    AttendanceEvent[]
   faceTemplates       FaceTemplate[]
   Transaction         Transaction[]
+  auditTasks          Task[]                @relation("TaskAuditor")
 
   @@index([phone])
   @@index([branchId])
@@ -371,6 +372,7 @@ model Transaction {
   creditRepayments CreditRepayment[]
   bonusProducts    TransactionBonusProduct[]
   bonuses          Bonus[]
+  tasks            Task[]
 
   @@index([customerId])
   @@index([userId])
@@ -625,6 +627,29 @@ model TransactionBonusProduct {
   @@index([productId])
 }
 
+// Delivery Task workflow
+enum TaskStatus {
+  PENDING
+  ACCEPTED
+  DELIVERED
+}
+
+model Task {
+  id            Int        @id @default(autoincrement())
+  auditorId     Int?
+  transactionId Int
+  status        TaskStatus @default(PENDING)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  auditor     User?        @relation("TaskAuditor", fields: [auditorId], references: [id], onDelete: SetNull)
+  transaction Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([auditorId])
+  @@index([transactionId])
+  @@index([status])
+}
+
 model WorkSchedule {
   id            Int      @id @default(autoincrement())
   workStartTime String   @db.VarChar(5) // Format: "HH:MM"
@@ -654,7 +679,15 @@ model FaceTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// Single numeric value store
+model GlobalRate {
+  id        Int      @id @default(autoincrement())
+  value     Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

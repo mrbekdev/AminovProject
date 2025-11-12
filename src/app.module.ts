@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { GlobalRateModule } from './global-rate/global-rate.module';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -21,10 +22,11 @@ import { TransactionBonusProductModule } from './transaction-bonus-product/trans
 import { WorkScheduleModule } from './work-schedule/work-schedule.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { UserBranchAccessModule } from './user-branch-access/user-branch-access.module';
-
+import { TaskModule } from './task/task.module';
 
 @Module({
   imports: [
+    GlobalRateModule,
     ConfigModule.forRoot({ isGlobal: true }),
     BranchModule, 
     UserModule, 
@@ -43,7 +45,8 @@ import { UserBranchAccessModule } from './user-branch-access/user-branch-access.
     TransactionBonusProductModule, 
     WorkScheduleModule, 
     AttendanceModule,
-    UserBranchAccessModule
+    UserBranchAccessModule,
+    TaskModule
   ],
   controllers: [AppController],
   providers: [AppService],
