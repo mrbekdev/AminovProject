@@ -44,4 +44,8 @@ export class CreateProductDto {
   @Min(0)
   @IsOptional()
   bonusPercentage?: number;
+
+  @IsString()
+  @IsOptional()
+  months?: string;
 }

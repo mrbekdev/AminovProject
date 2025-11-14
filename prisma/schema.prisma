@@ -2,6 +2,14 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model DailyExpense {
+  id          Int       @id @default(autoincrement())
+  amount      Float
+  reason      String
+  description String?
+  createdAt   DateTime  @default(now())
+}
+
 // ===== Attendance Tracking =====
 enum AttendanceEventType {
   CHECK_IN
@@ -264,6 +272,7 @@ model Product {
   categoryId        Int
   marketPrice       Float?
   bonusPercentage   Float?                    @default(0) // Bonus foizi
+  months            String?                   // Oylar soni (masalan: 001, 002, 012)
   isDeleted         Boolean                   @default(false) // Soft delete uchun
   deletedAt         DateTime?
   createdAt         DateTime?                 @default(now())

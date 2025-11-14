@@ -13,7 +13,7 @@ export class DefectiveLogController {
   create(@Body() createDefectiveLogDto: CreateDefectiveLogDto, @Request() req) {
     return this.defectiveLogService.create({
       ...createDefectiveLogDto,
-      userId: req.user?.userId
+      userId: req.user?.id
     });
   }
 
@@ -79,7 +79,7 @@ export class DefectiveLogController {
     return this.defectiveLogService.markAsFixed(
       +productId,
       body.quantity,
-      req.user?.userId,
+      req.user?.id,
       body.branchId
     );
   }
@@ -94,7 +94,7 @@ export class DefectiveLogController {
       +productId,
       body.quantity,
       body.description,
-      req.user?.userId,
+      req.user?.id,
       body.branchId
     );
   }
@@ -109,7 +109,7 @@ export class DefectiveLogController {
       +productId,
       body.quantity,
       body.description,
-      req.user?.userId,
+      req.user?.id,
       body.branchId
     );
   }

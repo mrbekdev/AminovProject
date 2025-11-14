@@ -58,4 +58,9 @@ export class UpdateProductDto {
   @IsNumber()
   @IsOptional()
   bonusPercentage?: number;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  months?: string;
 }

@@ -23,6 +23,7 @@ import { WorkScheduleModule } from './work-schedule/work-schedule.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { UserBranchAccessModule } from './user-branch-access/user-branch-access.module';
 import { TaskModule } from './task/task.module';
+import { DailyExpenseModule } from './daily-expense/daily-expense.module';
 
 @Module({
   imports: [
@@ -46,7 +47,8 @@ import { TaskModule } from './task/task.module';
     WorkScheduleModule, 
     AttendanceModule,
     UserBranchAccessModule,
-    TaskModule
+    TaskModule,
+    DailyExpenseModule
   ],
   controllers: [AppController],
   providers: [AppService],
