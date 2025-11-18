@@ -55,6 +55,23 @@ export class DefectiveLogController {
     );
   }
 
+  // Kassir bo'yicha qaytarishlar (plus/minus) va ro'yxat
+  @Get('cashier/:id')
+  async getByCashier(
+    @Param('id') id: string,
+    @Query('branchId') branchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('actionType') actionType?: string,
+  ) {
+    return this.defectiveLogService.getByCashier(+id, {
+      branchId,
+      startDate,
+      endDate,
+      actionType,
+    });
+  }
+
   @Get('product/:productId')
   findByProduct(@Param('productId') productId: string) {
     return this.defectiveLogService.findByProduct(+productId);

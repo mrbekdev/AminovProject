@@ -130,7 +130,7 @@ export class DefectiveLogService {
   }
 
   async create(createDefectiveLogDto: CreateDefectiveLogDto) {
-    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE', isFromSale, transactionId, customerId, cashAdjustmentDirection, cashAmount: cashAmountInput, exchangeWithProductId, replacementQuantity, replacementUnitPrice } = createDefectiveLogDto;
+    const { productId, quantity, description, userId, branchId, actionType = 'DEFECTIVE', isFromSale, transactionId, customerId, cashAdjustmentDirection, cashAmount: cashAmountInput, exchangeWithProductId, replacementQuantity, replacementUnitPrice, createdAt, handledByUserId } = createDefectiveLogDto;
 
     // Check if product exists
     const product = await this.prisma.product.findUnique({
@@ -192,12 +192,22 @@ export class DefectiveLogService {
         break;
 
       case 'RETURN':
-        // Respect explicit cashier override for cash direction/amount when provided
-        if (typeof cashAmountInput === 'number' && cashAdjustmentDirection) {
+        // Respect explicit cashier override ONLY when a positive amount is provided
+        if (typeof cashAmountInput === 'number' && Math.abs(Number(cashAmountInput)) > 0 && cashAdjustmentDirection) {
           cashAmount = (cashAdjustmentDirection === 'PLUS' ? 1 : -1) * Math.abs(Number(cashAmountInput) || 0);
         } else {
-          // Default behavior: money leaves cashbox (negative)
-          cashAmount = -(product.price * quantity);
+          // Compute refund from original sale line if available, else fallback to product price
+          if (isFromSale && transactionId) {
+            const tx = await this.prisma.transaction.findUnique({
+              where: { id: Number(transactionId) },
+              include: { items: true }
+            });
+            const line = tx?.items?.find((it: any) => Number(it.productId) === Number(productId));
+            const unit = Number((line?.sellingPrice ?? line?.price ?? product.price) || 0);
+            cashAmount = -(unit * quantity);
+          } else {
+            cashAmount = -(product.price * quantity);
+          }
         }
         newReturnedQuantity = product.returnedQuantity + quantity;
         newStatus = ProductStatus.RETURNED;
@@ -238,7 +248,13 @@ export class DefectiveLogService {
           userId,
           branchId,
           cashAmount,
-          actionType
+          actionType,
+          // persist optional linkage and audit fields
+          transactionId: transactionId ? Number(transactionId) : undefined,
+          handledByUserId: handledByUserId ? Number(handledByUserId) : undefined,
+          cashAdjustmentDirection: cashAdjustmentDirection || undefined,
+          // allow overriding createdAt to align with selected day
+          ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
         },
         include: {
           product: true,
@@ -413,6 +429,74 @@ export class DefectiveLogService {
     }
 
     return result;
+  }
+
+  async getByCashier(cashierId: number, query: { startDate?: string; endDate?: string; branchId?: string; actionType?: string }) {
+    const where: any = {
+      OR: [
+        { handledByUserId: Number(cashierId) },
+        { userId: Number(cashierId) }
+      ]
+    };
+    if (query?.branchId) {
+      where.branchId = Number(query.branchId);
+    }
+    if (query?.actionType) {
+      where.actionType = query.actionType;
+    }
+    if (query?.startDate || query?.endDate) {
+      where.createdAt = {} as any;
+      if (query.startDate) (where.createdAt as any).gte = new Date(query.startDate);
+      if (query.endDate) (where.createdAt as any).lte = new Date(query.endDate);
+    }
+
+    const logs = await this.prisma.defectiveLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' }
+    });
+
+    let plus = 0;
+    let minus = 0;
+    const items: any[] = [];
+    for (const log of logs) {
+      const raw = Number((log as any).cashAmount ?? 0) || 0;
+      const dir = String((log as any).cashAdjustmentDirection || '').toUpperCase();
+      let signed = dir === 'MINUS' ? -Math.abs(raw) : dir === 'PLUS' ? Math.abs(raw) : raw;
+      const isReturn = String((log as any).actionType || '').toUpperCase() === 'RETURN';
+      if ((Number.isNaN(signed) ? 0 : signed) === 0 && isReturn) {
+        const txId = (log as any).transactionId ? Number((log as any).transactionId) : null;
+        if (txId) {
+          const tx = await this.prisma.transaction.findUnique({ where: { id: txId }, include: { items: true, customer: true, soldBy: true } });
+          if (tx && Array.isArray(tx.items)) {
+            const it = tx.items.find((ii: any) => Number(ii.productId) === Number((log as any).productId));
+            const unit = Number((it?.sellingPrice ?? it?.price) || 0);
+            const qty = Number((log as any).quantity || 0);
+            if (unit > 0 && qty > 0) signed = -Math.abs(unit * qty);
+          }
+        }
+      }
+      if ((Number.isNaN(signed) ? 0 : signed) === 0) continue;
+      if (signed > 0) plus += signed; else minus += Math.abs(signed);
+      if (isReturn && signed < 0) {
+        let tx: any = null;
+        const txId = (log as any).transactionId ? Number((log as any).transactionId) : null;
+        if (txId) {
+          tx = await this.prisma.transaction.findUnique({ where: { id: txId }, include: { customer: true, soldBy: true } });
+        }
+        items.push({
+          id: (log as any).id,
+          createdAt: (log as any).createdAt,
+          amount: Math.abs(signed),
+          transactionId: txId,
+          productId: (log as any).productId,
+          quantity: (log as any).quantity,
+          customer: tx?.customer || null,
+          soldBy: tx?.soldBy || null,
+        });
+      }
+    }
+
+    return { plus, minus, items };
   }
 
   async findAll(query: any = {}) {

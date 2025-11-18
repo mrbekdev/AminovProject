@@ -47,6 +47,16 @@ export class CreateDefectiveLogDto {
   @IsNumber()
   cashAmount?: number;
 
+  // Optional explicit createdAt to align cash reports with selected day
+  @IsOptional()
+  @IsString()
+  createdAt?: string;
+
+  // Optional explicit actor handling the operation (can differ from creator)
+  @IsOptional()
+  @IsNumber()
+  handledByUserId?: number;
+
   // Optional exchange info
   @IsOptional()
   @IsNumber()

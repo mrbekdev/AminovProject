@@ -10,7 +10,7 @@ model DailyExpense {
   createdAt   DateTime  @default(now())
 }
 
-// ===== Attendance Tracking =====
+
 enum AttendanceEventType {
   CHECK_IN
   CHECK_OUT
@@ -28,7 +28,7 @@ model AttendanceDay {
   id           Int               @id @default(autoincrement())
   userId       Int
   branchId     Int?
-  date         DateTime // store date (00:00 time) in UTC
+  date         DateTime 
   checkInAt    DateTime?
   checkOutAt   DateTime?
   totalMinutes Int?              @default(0)
@@ -185,7 +185,9 @@ model User {
   initiatedTransfers  ProductTransfer[]      @relation("InitiatedTransfers")
   approvedTransfers   ProductTransfer[]      @relation("ApprovedTransfers")
   userLocations       UserLocation[]
-  defectiveLogs       DefectiveLog[]
+  // Defective logs relations
+  createdDefectiveLogs DefectiveLog[] @relation("DefectiveLogCreatedBy")
+  handledDefectiveLogs DefectiveLog[] @relation("DefectiveLogHandledBy")
   PaymentSchedule     PaymentSchedule[]
   PaymentRepayment    PaymentRepayment[]
   dailyRepayments     DailyRepayment[]
@@ -297,17 +299,25 @@ model DefectiveLog {
   userId      Int?
   branchId    Int?
   cashAmount  Float    @default(0)
+  // Optional explicit direction for cashier cash adjustment (PLUS/MINUS)
+  cashAdjustmentDirection String?
   actionType  String   @default("DEFECTIVE") // DEFECTIVE, FIXED, RETURN, EXCHANGE
   createdAt   DateTime @default(now())
 
-  // Exchange-specific fields
+  // Optional linkage to original sale
+  transactionId Int?
+
+  // Optional actor for who handled the operation (may differ from creator)
+  handledByUserId Int?
   exchangeWithProductId    Int? // ID of the product being exchanged with
   replacementQuantity      Int? // Quantity of replacement product
   replacementUnitPrice     Float? // Unit price of replacement product
   replacementTransactionId Int? // ID of the new transaction created for replacement product
+  transaction            Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  handledBy              User?      @relation("DefectiveLogHandledBy", fields: [handledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user    User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User?   @relation("DefectiveLogCreatedBy", fields: [userId], references: [id], onDelete: Cascade)
   branch  Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@map("defective_logs")
@@ -382,6 +392,8 @@ model Transaction {
   bonusProducts    TransactionBonusProduct[]
   bonuses          Bonus[]
   tasks            Task[]
+  // Back relation to defective logs linked to this transaction
+  defectiveLogs    DefectiveLog[]
 
   @@index([customerId])
   @@index([userId])
