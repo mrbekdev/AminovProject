@@ -81,7 +81,15 @@ export class CashierReportService {
   }
 
   async getCashierReport(cashierId: number, branchId: number, startDate: Date, endDate: Date) {
-    // Try to find existing report
+    const hasBranch = typeof branchId === 'number' && !Number.isNaN(branchId);
+
+    // Agar branchId yo'q bo'lsa, bazadagi cashierReport jadvaliga tayanmasdan,
+    // faqat kassir va sana bo'yicha dinamik hisoblaymiz.
+    if (!hasBranch) {
+      return this.generateCashierReport(cashierId, null, startDate, endDate);
+    }
+
+    // Try to find existing report for this cashier + branch + date
     let report = await this.prisma.cashierReport.findUnique({
       where: {
         cashierId_branchId_reportDate: {
@@ -93,19 +101,28 @@ export class CashierReportService {
     });
 
     if (!report) {
-      // Generate new report
+      // Generate new report and persist it
       report = await this.generateCashierReport(cashierId, branchId, startDate, endDate);
     }
 
     return report;
   }
 
-  private async generateCashierReport(cashierId: number, branchId: number, startDate: Date, endDate: Date) {
+  private async generateCashierReport(
+    cashierId: number,
+    branchId: number | null,
+    startDate: Date,
+    endDate: Date,
+  ) {
+    const branchFilter = branchId != null
+      ? { fromBranchId: branchId }
+      : {};
+
     // Get all transactions for the cashier in the date range
     const transactions = await this.prisma.transaction.findMany({
       where: {
         soldByUserId: cashierId,
-        fromBranchId: branchId,
+        ...branchFilter,
         type: 'SALE',
         createdAt: {
           gte: startDate,
@@ -125,7 +142,7 @@ export class CashierReportService {
       where: {
         paidByUserId: cashierId,
         transaction: {
-          fromBranchId: branchId,
+          ...(branchId != null ? { fromBranchId: branchId } : {}),
         },
         paidAt: {
           gte: startDate,
@@ -139,7 +156,7 @@ export class CashierReportService {
       where: {
         paidByUserId: cashierId,
         transaction: {
-          fromBranchId: branchId,
+          ...(branchId != null ? { fromBranchId: branchId } : {}),
         },
         paidAt: {
           gte: startDate,
@@ -152,7 +169,7 @@ export class CashierReportService {
     const defectiveLogs = await this.prisma.defectiveLog.findMany({
       where: {
         userId: cashierId,
-        branchId,
+        ...(branchId != null ? { branchId } : {}),
         createdAt: {
           gte: startDate,
           lte: endDate,
@@ -257,10 +274,9 @@ export class CashierReportService {
       }
     }
 
-    // Create or update report
-    const reportData = {
+    // Create or update report only when branchId mavjud
+    const reportData: any = {
       cashierId,
-      branchId,
       reportDate: startDate,
       cashTotal,
       cardTotal,
@@ -276,20 +292,32 @@ export class CashierReportService {
       defectiveMinus,
     };
 
-    return this.prisma.cashierReport.upsert({
-      where: {
-        cashierId_branchId_reportDate: {
-          cashierId,
-          branchId,
-          reportDate: startDate,
+    if (branchId != null) {
+      reportData.branchId = branchId;
+
+      return this.prisma.cashierReport.upsert({
+        where: {
+          cashierId_branchId_reportDate: {
+            cashierId,
+            branchId,
+            reportDate: startDate,
+          },
         },
-      },
-      update: reportData,
-      create: reportData,
-      include: {
-        cashier: true,
-        branch: true,
-      },
-    });
+        update: reportData,
+        create: reportData,
+        include: {
+          cashier: true,
+          branch: true,
+        },
+      });
+    }
+
+    // Agar branchId bo'lmasa, keshga saqlamasdan faqat hisoblangan ma'lumotni qaytaramiz
+    return {
+      id: 0,
+      ...reportData,
+      cashier: null,
+      branch: null,
+    } as any;
   }
 }
