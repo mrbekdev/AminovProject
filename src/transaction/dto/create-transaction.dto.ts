@@ -79,7 +79,7 @@ export class TransactionItemDto {
 
 export class PaymentBreakdownDto {
   @IsString()
-  method: 'CASH' | 'CARD' | 'TERMINAL';
+  method: 'CASH' | 'CARD' | 'TERMINAL' | 'TOVAR' | 'UYDAN';
 
   @IsNumber()
   @Min(0)

@@ -113,7 +113,7 @@ export class TransactionService {
           method: String(p.method || '').toUpperCase(),
           amount: Number(p.amount || 0) || 0,
         }))
-        .filter((p) => p.amount > 0 && ['CASH', 'CARD', 'TERMINAL', 'TOVAR'].includes(p.method));
+        .filter((p) => p.amount > 0 && ['CASH', 'CARD', 'TERMINAL', 'TOVAR', 'UYDAN'].includes(p.method));
 
       const totalPayments = paymentsData.reduce((sum, p) => sum + p.amount, 0);
       const roundedTotal = Math.round(computedTotal);
@@ -195,6 +195,30 @@ export class TransactionService {
       } else {
         // Oylik bo'lib to'lash uchun har oy uchun alohida schedule
         await this.createPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0);
+      }
+    } else {
+      // Oddiy sotuv (CASH / CARD / TERMINAL) bo'lsa ham, agar payments ichida UYDAT bo'lsa,
+      // uni qarz sifatida bitta paymentSchedule ga o'tkazamiz, shunda Mijozlar sahifasida
+      // kreditga o'xshab ko'rinadi va qisman/to'liq to'lash mumkin bo'ladi.
+      const totalUydan = paymentsData
+        .filter((p) => p.method === 'UYDAN')
+        .reduce((sum, p) => sum + p.amount, 0);
+
+      if (totalUydan > 0) {
+        await this.prisma.paymentSchedule.create({
+          data: {
+            transactionId: transaction.id,
+            month: 1,
+            payment: totalUydan,
+            paidAmount: 0,
+            remainingBalance: totalUydan,
+            isPaid: false,
+            // Uydan uchun oddiy oylik jadval sifatida saqlaymiz
+            isDailyInstallment: false,
+            daysCount: null,
+            installmentType: 'UYDAN',
+          } as any,
+        });
       }
     }
 
