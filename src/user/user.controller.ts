@@ -27,16 +27,39 @@ export class UserController {
     }
   }
 
+  @Get(':id/dashboard-stats')
+  @ApiOperation({ summary: 'Foydalanuvchi dashboard statistikasini olish' })
+  @ApiQuery({ name: 'startDate', required: true })
+  @ApiQuery({ name: 'endDate', required: true })
+  @ApiQuery({ name: 'branchId', required: false })
+  async getDashboardStats(
+    @Param('id') id: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('branchId') branchId?: string,
+    @Req() req?: any
+  ) {
+    const userRole = req?.user?.role || 'ADMIN';
+    try {
+      return await this.userService.getUserDashboardStats(
+        +id, 
+        startDate, 
+        endDate, 
+        userRole, 
+        branchId ? +branchId : undefined
+      );
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Foydalanuvchi maʼlumotini olish' })
   @ApiResponse({ status: 200, description: 'Foydalanuvchi topildi' })
   @ApiResponse({ status: 404, description: 'Topilmadi' })
   async findOne(@Param('id') id: string) {
-    console.log('Finding user with ID:', id);
     const user = await this.userService.findOne(+id);
-    console.log('User found:', user);
     if (!user) {
-      console.log('User not found or deleted for ID:', id);
       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
     return user;

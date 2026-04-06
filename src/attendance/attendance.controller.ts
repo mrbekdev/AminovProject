@@ -31,43 +31,32 @@ export class AttendanceController {
     const raw = (req as any).rawBody;
     const rawType = raw === undefined ? 'undefined' : (raw === null ? 'null' : typeof raw);
     try {
-      console.log('FaceID check-in headers content-type:', ct);
-      console.log('FaceID check-in body type:', bodyType, 'isArray:', isArray, 'ctor:', ctor);
-      console.log('FaceID check-in body preview:', bodyType === 'string' ? (body as any).slice(0, 200) : JSON.stringify(body)?.slice(0, 500));
-      console.log('FaceID check-in rawBody type:', rawType, 'preview:', rawType === 'string' ? String(raw).slice(0, 200) : rawType === 'object' ? JSON.stringify(raw)?.slice(0, 200) : rawType);
 
       // Log multipart fields
       const isMultipart = ct && String(ct).includes('multipart/form-data');
       if (isMultipart) {
         const fieldKeys = body && typeof body === 'object' ? Object.keys(body) : [];
-        console.log('FaceID check-in multipart fields:', fieldKeys);
         for (const key of fieldKeys) {
           const val = body[key];
           const valType = val === null ? 'null' : typeof val;
           const looksLikeXml = valType === 'string' && /^\s*</.test(val);
           if (looksLikeXml) {
             const parsed = this.tryParseXml(val);
-            console.log(`Field ${key} appears XML. Parsed JSON preview:`, JSON.stringify(parsed).slice(0, 800));
           } else {
-            console.log(`Field ${key} (${valType}) preview:`, valType === 'string' ? String(val).slice(0, 200) : JSON.stringify(val)?.slice(0, 200));
           }
         }
 
         // Log files and parse XML files
         const f = Array.isArray(files) ? files : [];
-        console.log('FaceID check-in files count:', f.length);
         for (const file of f) {
           const name = file.originalname;
           const mime = file.mimetype;
-          console.log('File:', { name, mime, size: file.size });
           const isXml = (mime && (mime.includes('xml') || mime === 'text/plain')) || (name && name.toLowerCase().endsWith('.xml'));
           if (isXml) {
             try {
               const xmlText = file.buffer?.toString('utf8') ?? (file.path ? fs.readFileSync(file.path, 'utf8') : undefined);
               const parsed = this.tryParseXml(xmlText);
-              console.log('XML file parsed to JSON preview:', JSON.stringify(parsed).slice(0, 1200));
             } catch (e) {
-              console.log('Failed to parse XML file:', e);
             }
           }
         }
@@ -128,11 +117,9 @@ export class AttendanceController {
           res.setHeader('Content-Type', 'text/html; charset=utf-8');
           return res.status(200).send(html);
         } catch (e) {
-          console.log('HTML preview build error:', e);
         }
       }
     } catch (e) {
-      console.log('FaceID check-in log error:', e);
     }
 
     return this.attendanceService.checkIn({
@@ -160,41 +147,30 @@ export class AttendanceController {
     const raw = (req as any).rawBody;
     const rawType = raw === undefined ? 'undefined' : (raw === null ? 'null' : typeof raw);
     try {
-      console.log('FaceID check-out headers content-type:', ct);
-      console.log('FaceID check-out body type:', bodyType, 'isArray:', isArray, 'ctor:', ctor);
-      console.log('FaceID check-out body preview:', bodyType === 'string' ? (body as any).slice(0, 200) : JSON.stringify(body)?.slice(0, 500));
-      console.log('FaceID check-out rawBody type:', rawType, 'preview:', rawType === 'string' ? String(raw).slice(0, 200) : rawType === 'object' ? JSON.stringify(raw)?.slice(0, 200) : rawType);
 
       const isMultipart = ct && String(ct).includes('multipart/form-data');
       if (isMultipart) {
         const fieldKeys = body && typeof body === 'object' ? Object.keys(body) : [];
-        console.log('FaceID check-out multipart fields:', fieldKeys);
         for (const key of fieldKeys) {
           const val = body[key];
           const valType = val === null ? 'null' : typeof val;
           const looksLikeXml = valType === 'string' && /^\s*</.test(val);
           if (looksLikeXml) {
             const parsed = this.tryParseXml(val);
-            console.log(`Field ${key} appears XML. Parsed JSON preview:`, JSON.stringify(parsed).slice(0, 800));
           } else {
-            console.log(`Field ${key} (${valType}) preview:`, valType === 'string' ? String(val).slice(0, 200) : JSON.stringify(val)?.slice(0, 200));
           }
         }
 
         const f = Array.isArray(files) ? files : [];
-        console.log('FaceID check-out files count:', f.length);
         for (const file of f) {
           const name = file.originalname;
           const mime = file.mimetype;
-          console.log('File:', { name, mime, size: file.size });
           const isXml = (mime && (mime.includes('xml') || mime === 'text/plain')) || (name && name.toLowerCase().endsWith('.xml'));
           if (isXml) {
             try {
               const xmlText = file.buffer?.toString('utf8') ?? (file.path ? fs.readFileSync(file.path, 'utf8') : undefined);
               const parsed = this.tryParseXml(xmlText);
-              console.log('XML file parsed to JSON preview:', JSON.stringify(parsed).slice(0, 1200));
             } catch (e) {
-              console.log('Failed to parse XML file:', e);
             }
           }
         }
@@ -248,11 +224,9 @@ export class AttendanceController {
           res.setHeader('Content-Type', 'text/html; charset=utf-8');
           return res.status(200).send(html);
         } catch (e) {
-          console.log('HTML preview build error (checkout):', e);
         }
       }
     } catch (e) {
-      console.log('FaceID check-out log error:', e);
     }
     const b: any = body || {};
     return this.attendanceService.checkOut({

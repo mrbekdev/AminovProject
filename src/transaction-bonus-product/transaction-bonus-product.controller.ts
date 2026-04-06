@@ -24,15 +24,11 @@ export class TransactionBonusProductController {
     @Param('transactionId', ParseIntPipe) transactionId: number,
     @Body() bonusProducts: { productId: number; quantity: number }[]
   ) {
-    console.log(`🎁 Controller: Creating ${bonusProducts.length} bonus products for transaction ${transactionId}`);
-    console.log('Bonus products data:', JSON.stringify(bonusProducts, null, 2));
     
     try {
       const result = await this.transactionBonusProductService.createMultiple(transactionId, bonusProducts);
-      console.log(`✅ Controller: Successfully created ${result.length} bonus products`);
       return result;
     } catch (error) {
-      console.error(`❌ Controller: Error creating bonus products:`, error);
       throw error;
     }
   }
@@ -47,28 +43,21 @@ export class TransactionBonusProductController {
   @ApiResponse({ status: 200, description: 'Bonus products found' })
   @ApiResponse({ status: 404, description: 'No bonus products found for this transaction' })
   async findByTransactionId(@Param('transactionId', ParseIntPipe) transactionId: number) {
-    console.log(`🔍 Controller: Searching for bonus products for transaction ID: ${transactionId}`);
     
     try {
       // First check if transaction exists
       const transaction = await this.transactionBonusProductService.checkTransactionExists(transactionId);
       if (!transaction) {
-        console.log(`❌ Transaction ${transactionId} does not exist`);
         return [];
       }
       
       const result = await this.transactionBonusProductService.findByTransactionId(transactionId);
-      console.log(`✅ Controller: Found ${result.length} bonus products for transaction ${transactionId}`);
       
       if (result.length === 0) {
-        console.log(`⚠️ Controller: No bonus products found for transaction ${transactionId}, but transaction exists`);
-        console.log('💡 This means bonus products were not created during the sale process');
-        console.log('💡 Check if SalesManagement component is calling the bonus products API after creating transaction');
       }
       
       return result;
     } catch (error) {
-      console.error(`❌ Controller: Error fetching bonus products for transaction ${transactionId}:`, error);
       throw error;
     }
   }
@@ -98,15 +87,11 @@ export class TransactionBonusProductController {
     @Param('transactionId', ParseIntPipe) transactionId: number,
     @Body() data: { bonusDescription: string }
   ) {
-    console.log(`🔄 Controller: Creating bonus products from description for transaction ${transactionId}`);
-    console.log('Bonus description:', data.bonusDescription);
     
     try {
       const result = await this.transactionBonusProductService.createFromDescription(transactionId, data.bonusDescription);
-      console.log(`✅ Controller: Successfully created ${result.length} bonus products from description`);
       return result;
     } catch (error) {
-      console.error(`❌ Controller: Error creating bonus products from description:`, error);
       throw error;
     }
   }
@@ -119,16 +104,13 @@ export class TransactionBonusProductController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string
   ) {
-    console.log(`🔍 Controller: Getting total bonus products value for user ${userId}`);
-    if (startDate) console.log(`📅 Start date: ${startDate}`);
-    if (endDate) console.log(`📅 End date: ${endDate}`);
+    if (startDate) 
+    if (endDate) 
     
     try {
       const result = await this.transactionBonusProductService.getTotalBonusProductsValueByUserId(userId, startDate, endDate);
-      console.log(`✅ Controller: Total bonus products value (UZS) for user ${userId}: ${result.totalValueUZS}`);
       return result;
     } catch (error) {
-      console.error(`❌ Controller: Error getting bonus products value for user ${userId}:`, error);
       throw error;
     }
   }

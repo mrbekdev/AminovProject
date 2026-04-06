@@ -79,12 +79,10 @@ export class TransactionBonusProductService {
         });
 
         if (!product) {
-          console.error(`❌ Service: Product ${bonusProduct.productId} not found`);
           throw new Error(`Product with ID ${bonusProduct.productId} not found`);
         }
 
         if (product.quantity < bonusProduct.quantity) {
-          console.error(`❌ Service: Insufficient quantity for product ${product.name}. Available: ${product.quantity}, Requested: ${bonusProduct.quantity}`);
           throw new Error(`Insufficient quantity for product ${product.name}`);
         }
 
@@ -109,13 +107,6 @@ export class TransactionBonusProductService {
           },
         });
 
-        console.log(`✅ Service: Created bonus product:`, {
-          id: createdBonusProduct.id,
-          transactionId: createdBonusProduct.transactionId,
-          productId: createdBonusProduct.productId,
-          quantity: createdBonusProduct.quantity,
-          productName: createdBonusProduct.product.name
-        });
 
         // Deduct quantity from product inventory
         const updatedProduct = await prisma.product.update({
@@ -128,12 +119,10 @@ export class TransactionBonusProductService {
           select: { id: true, name: true, quantity: true }
         });
 
-        console.log(`📉 Service: Updated product inventory - ${updatedProduct.name}: ${updatedProduct.quantity + bonusProduct.quantity} → ${updatedProduct.quantity}`);
 
         createdBonusProducts.push(createdBonusProduct);
       }
 
-      console.log(`🎉 Service: Successfully created ${createdBonusProducts.length} bonus products for transaction ${transactionId}`);
       return createdBonusProducts;
     });
   }
@@ -148,7 +137,6 @@ export class TransactionBonusProductService {
   }
 
   async findByTransactionId(transactionId: number) {
-    console.log(`🔍 Service: Searching for bonus products with transactionId: ${transactionId}`);
     
     const bonusProducts = await this.prisma.transactionBonusProduct.findMany({
       where: { transactionId },
@@ -172,24 +160,10 @@ export class TransactionBonusProductService {
       },
     });
 
-    console.log(`📊 Service: Found ${bonusProducts.length} bonus products`);
     if (bonusProducts.length > 0) {
       bonusProducts.forEach((bp, index) => {
-        console.log(`  Bonus Product ${index + 1}:`, {
-          id: bp.id,
-          transactionId: bp.transactionId,
-          productId: bp.productId,
-          quantity: bp.quantity,
-          product: bp.product ? {
-            id: bp.product.id,
-            name: bp.product.name,
-            barcode: bp.product.barcode,
-            price: bp.product.price,
-          } : null,
-        });
       });
     } else {
-      console.log('⚠️ Service: No bonus products found for this transaction');
     }
 
     // Convert USD prices to UZS using latest rate for branch
@@ -203,16 +177,13 @@ export class TransactionBonusProductService {
   }
 
   async checkTransactionExists(transactionId: number) {
-    console.log(`🔍 Service: Checking if transaction ${transactionId} exists`);
     const transaction = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       select: { id: true, type: true, createdAt: true },
     });
     
     if (transaction) {
-      console.log(`✅ Service: Transaction ${transactionId} exists:`, transaction);
     } else {
-      console.log(`❌ Service: Transaction ${transactionId} not found`);
     }
     
     return transaction;
@@ -268,7 +239,6 @@ export class TransactionBonusProductService {
   }
 
   async getTotalBonusProductsValueByUserId(userId: number, startDate?: string, endDate?: string) {
-    console.log(`🔍 Service: Getting total bonus products value for user ${userId}`);
     
     // Build where clause for filtering
     const whereClause: any = {
@@ -310,7 +280,6 @@ export class TransactionBonusProductService {
       },
     });
 
-    console.log(`📊 Service: Found ${bonusProducts.length} bonus products for user ${userId}`);
 
     // Determine rate (prefer branch-specific)
     const rate = await this.getUsdToUzsRate(bonusProducts[0]?.transaction?.fromBranchId ?? undefined);
@@ -322,7 +291,6 @@ export class TransactionBonusProductService {
       return sum + productValue;
     }, 0);
 
-    console.log(`💰 Service: Total bonus products value (UZS) for user ${userId}: ${totalValueUZS}`);
 
     return {
       totalValueUZS,
@@ -343,8 +311,6 @@ export class TransactionBonusProductService {
   }
 
   async createFromDescription(transactionId: number, bonusDescription: string) {
-    console.log(`🔄 Service: Parsing bonus description for transaction ${transactionId}`);
-    console.log('Description:', bonusDescription);
 
     // Check if transaction exists with retries (to handle async creation / replica lag)
     const maxRetries = 5;
@@ -353,18 +319,15 @@ export class TransactionBonusProductService {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       transaction = await this.checkTransactionExists(transactionId);
       if (transaction) break;
-      console.warn(`⏳ Service: Transaction ${transactionId} not found (attempt ${attempt}/${maxRetries}), retrying in ${delayMs}ms...`);
       await new Promise((res) => setTimeout(res, delayMs));
     }
     if (!transaction) {
-      console.error(`❌ Service: Transaction ${transactionId} not found after ${maxRetries} attempts`);
       throw new Error(`Transaction ${transactionId} not found`);
     }
 
     // Check if bonus products already exist for this transaction
     const existingBonusProducts = await this.findByTransactionId(transactionId);
     if (existingBonusProducts.length > 0) {
-      console.log(`⚠️ Service: Bonus products already exist for transaction ${transactionId}, skipping creation`);
       return existingBonusProducts;
     }
 
@@ -372,21 +335,16 @@ export class TransactionBonusProductService {
     const bonusProductsData = this.parseBonusProductsFromDescription(bonusDescription);
     
     if (bonusProductsData.length === 0) {
-      console.log(`⚠️ Service: No bonus products found in description`);
       return [];
     }
 
-    console.log(`📦 Service: Found ${bonusProductsData.length} bonus products in description:`, bonusProductsData);
 
     // Create bonus products using existing createMultiple method
     try {
       const createdBonusProducts = await this.createMultiple(transactionId, bonusProductsData);
-      console.log(`✅ Service: Successfully created ${createdBonusProducts.length} bonus products from description`);
       return createdBonusProducts;
     } catch (error) {
-      console.error(`❌ Service: Error creating bonus products from description:`, error);
       // If creation fails due to inventory issues, create a generic bonus product entry
-      console.log(`🔄 Service: Attempting to create generic bonus products without inventory deduction`);
       return this.createGenericBonusProducts(transactionId, bonusProductsData);
     }
   }
@@ -394,22 +352,18 @@ export class TransactionBonusProductService {
   private parseBonusProductsFromDescription(description: string): { productId: number; quantity: number }[] {
     const bonusProducts: { productId: number; quantity: number }[] = [];
     
-    console.log('🔍 Service: Parsing bonus description:', description);
     
     // Parse different formats of bonus product descriptions
     // Format 1: "Bonus mahsulotlar: Product1 x2, Product2 x1"
     const bonusProductsMatch = description.match(/Bonus mahsulotlar:\s*([^.]+)/);
     if (bonusProductsMatch) {
-      console.log('📦 Service: Found bonus products section:', bonusProductsMatch[1]);
       const productsText = bonusProductsMatch[1];
       const productMatches = productsText.match(/([^,]+)\s*x(\d+)/g);
       
       if (productMatches) {
-        console.log('🔍 Service: Found product matches:', productMatches);
         productMatches.forEach((match, index) => {
           const [, productName, quantityStr] = match.match(/([^,]+)\s*x(\d+)/) || [];
           if (productName && quantityStr) {
-            console.log(`📦 Service: Parsed product ${index + 1}: ${productName.trim()} x${quantityStr}`);
             bonusProducts.push({
               productId: 1, // Using generic product ID for now
               quantity: parseInt(quantityStr)
@@ -423,7 +377,6 @@ export class TransactionBonusProductService {
     const valueMatch = description.match(/Bonus mahsulotlar qiymati:\s*([\d,]+)/);
     if (valueMatch && bonusProducts.length === 0) {
       const totalValue = parseInt(valueMatch[1].replace(/,/g, ''));
-      console.log('💰 Service: Found bonus products value:', totalValue);
       
       // Create multiple bonus products based on value ranges
       if (totalValue > 0) {
@@ -447,7 +400,6 @@ export class TransactionBonusProductService {
           // Very low value: create 1 product
           bonusProducts.push({ productId: 1, quantity: 1 });
         }
-        console.log(`📦 Service: Creating ${bonusProducts.length} bonus products based on value ${totalValue}`);
       }
     }
 
@@ -456,7 +408,6 @@ export class TransactionBonusProductService {
       const somMatch = description.match(/([\d,]+)\s*so[ʻ']m/i);
       if (somMatch) {
         const value = parseInt(somMatch[1].replace(/,/g, ''));
-        console.log('💰 Service: Found som value in description:', value);
         if (value > 10000) { // Only if value is significant
           if (value >= 200000) {
             bonusProducts.push(
@@ -468,17 +419,14 @@ export class TransactionBonusProductService {
           } else {
             bonusProducts.push({ productId: 1, quantity: 1 });
           }
-          console.log(`📦 Service: Creating ${bonusProducts.length} bonus products based on som value ${value}`);
         }
       }
     }
 
-    console.log(`✅ Service: Parsed ${bonusProducts.length} bonus products from description`);
     return bonusProducts;
   }
 
   private async createGenericBonusProducts(transactionId: number, bonusProductsData: { productId: number; quantity: number }[]): Promise<any[]> {
-    console.log(`🔄 Service: Creating generic bonus products without inventory deduction`);
     
     // Find any available products to use as bonus products
     const availableProducts = await this.prisma.product.findMany({
@@ -491,7 +439,6 @@ export class TransactionBonusProductService {
     });
 
     if (availableProducts.length === 0) {
-      console.log(`⚠️ Service: No products available for bonus products`);
       return [];
     }
 
@@ -522,14 +469,6 @@ export class TransactionBonusProductService {
       });
 
       createdBonusProducts.push(bonusProduct);
-      console.log(`✅ Service: Created bonus product record:`, {
-        id: bonusProduct.id,
-        transactionId: bonusProduct.transactionId,
-        productId: bonusProduct.productId,
-        quantity: bonusProduct.quantity,
-        productName: bonusProduct.product.name,
-        productPrice: bonusProduct.product.price
-      });
     }
 
     return createdBonusProducts;

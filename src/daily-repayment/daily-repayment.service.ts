@@ -96,12 +96,6 @@ export class DailyRepaymentService {
     startDate?: string,
     endDate?: string,
   ) {
-    console.log('DailyRepaymentService.findByCashier called with:', {
-      cashierId,
-      branchId,
-      startDate,
-      endDate
-    });
     
     const where: any = {
       paidByUserId: cashierId,
@@ -111,9 +105,7 @@ export class DailyRepaymentService {
       const branchIdNum = typeof branchId === 'string' ? parseInt(branchId) : branchId;
       if (!isNaN(branchIdNum)) {
         where.branchId = branchIdNum;
-        console.log('Filtering by branchId:', branchIdNum);
       } else {
-        console.log('Invalid branchId:', branchId);
       }
     }
     
@@ -121,15 +113,12 @@ export class DailyRepaymentService {
       where.paidAt = {};
       if (startDate) {
         where.paidAt.gte = new Date(startDate);
-        console.log('Filtering by startDate:', startDate);
       }
       if (endDate) {
         where.paidAt.lte = new Date(endDate);
-        console.log('Filtering by endDate:', endDate);
       }
     }
 
-    console.log('Final where clause:', where);
 
     const result = await this.prisma.dailyRepayment.findMany({
       where,
@@ -147,7 +136,6 @@ export class DailyRepaymentService {
       },
     });
 
-    console.log(`Found ${result.length} daily repayments for cashier ${cashierId}`);
     return result;
   }
 

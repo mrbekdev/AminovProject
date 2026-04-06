@@ -80,22 +80,12 @@ export class DefectiveLogService {
       const remainingPrincipal = Math.max(0, remainingTotalPrincipal - proportionalUpfront);
       const effectivePercent = remainingPercentWeightBase > 0 ? (remainingWeightedPercentSum / remainingPercentWeightBase) : 0;
       
-      console.log('=== RECALCULATING PAYMENT SCHEDULE ===');
-      console.log('originalTotalPrincipal:', originalTotalPrincipal);
-      console.log('remainingTotalPrincipal:', remainingTotalPrincipal);
-      console.log('originalUpfrontPayment:', originalUpfrontPayment);
-      console.log('proportionalUpfront:', proportionalUpfront);
-      console.log('remainingPrincipal:', remainingPrincipal);
-      console.log('effectivePercent:', effectivePercent);
       
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
       const monthlyPayment = remainingWithInterest / totalMonths;
       let remainingBalance = remainingWithInterest;
       
-      console.log('interestAmount:', interestAmount);
-      console.log('remainingWithInterest:', remainingWithInterest);
-      console.log('monthlyPayment:', monthlyPayment);
 
       const schedules: { transactionId: number; month: number; payment: number; remainingBalance: number; isPaid: boolean; paidAmount: number; }[] = [];
       for (let month = 1; month <= totalMonths; month++) {

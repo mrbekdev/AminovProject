@@ -24,8 +24,6 @@ async function bootstrap() {
   });
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port, '0.0.0.0');
-
-  // Log accessible URLs
   try {
     const nets = networkInterfaces();
     const addresses: string[] = [];
@@ -41,12 +39,9 @@ async function bootstrap() {
     const ip = addresses[0];
     const networkUrl = ip ? `http://${ip}:${port}/` : null;
     // eslint-disable-next-line no-console
-    console.log('');
     // eslint-disable-next-line no-console
-    console.log(`  ➜  Local:   ${localUrl}`);
     if (networkUrl) {
       // eslint-disable-next-line no-console
-      console.log(`  ➜  Network: ${networkUrl}`);
     }
   } catch {}
 }

@@ -35,9 +35,7 @@ export class PaymentScheduleService {
   }
 
   async update(id: number, updateData: any) {
-    console.log('Payment schedule update received:', { id, updateData });
     const { paidAmount, isPaid, paidAt, paidChannel, paidByUserId, amountDelta, rating, note, ...rest } = updateData;
-    console.log('Extracted paidChannel:', { paidChannel, type: typeof paidChannel, isNull: paidChannel === null, isUndefined: paidChannel === undefined });
     
     // Filter out any undefined or null values and invalid fields
     const validUpdateData = Object.entries(rest).reduce((acc, [key, value]) => {
@@ -90,21 +88,13 @@ export class PaymentScheduleService {
       const newRemaining = Math.max(0, currentRemaining - deltaPaid);
       data.remainingBalance = newRemaining;
       
-      console.log('Daily installment schedule - updating remaining balance:', {
-        scheduleId: id,
-        currentRemaining,
-        deltaPaid,
-        newRemaining
-      });
       
       // Mark as paid if remaining balance is zero or less
       if (newRemaining <= 0) {
         data.isPaid = true;
-        console.log('Daily installment fully paid, marking as paid');
       }
     }
 
-    console.log('Final update data being saved:', data);
 
     // Execute as a single DB transaction to keep ledger consistent
     const result = await this.prisma.$transaction(async (tx) => {
@@ -146,7 +136,6 @@ export class PaymentScheduleService {
 
               // Append a repayment history row and update branch cash if there is a positive delta
         if (deltaPaid > 0 && effectivePaidAt) {
-          console.log('Creating PaymentRepayment with channel:', { paidChannel, type: typeof paidChannel, isNull: paidChannel === null, isUndefined: paidChannel === undefined });
           await tx.paymentRepayment.create({
             data: {
               transactionId: updatedSchedule.transactionId,
@@ -183,12 +172,6 @@ export class PaymentScheduleService {
           const currentRemaining = existing.remainingBalance || 0;
           const newRemaining = Math.max(0, currentRemaining - deltaPaid);
           
-          console.log('Daily installment payment - updating remaining balance:', {
-            scheduleId: id,
-            currentRemaining,
-            deltaPaid,
-            newRemaining
-          });
           
           await tx.transaction.update({
             where: { id: existing.transactionId },
@@ -207,7 +190,6 @@ export class PaymentScheduleService {
                 status: 'COMPLETED' as any // To'lov to'liq amalga oshirilganda status ni yangilash
               }
             });
-            console.log('Daily installment transaction completed');
           }
         } else {
           await tx.transaction.update({

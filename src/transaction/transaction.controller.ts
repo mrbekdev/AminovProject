@@ -56,11 +56,9 @@ export class TransactionController {
     @Param('productId') productId: string,
     @Query('month') month?: string
   ) {
-    console.log(`Controller: Finding transactions for productId: ${productId}, month: ${month}`);
     const parsedProductId = parseInt(productId);
     
     if (isNaN(parsedProductId) || parsedProductId <= 0) {
-      console.log(`Invalid productId: ${productId}`);
       return {
         transactions: [],
         statusCounts: { PENDING: 0, COMPLETED: 0, CANCELLED: 0, total: 0 },
@@ -69,7 +67,6 @@ export class TransactionController {
     }
     
     const result = await this.transactionService.findByProductId(parsedProductId, month);
-    console.log(`Controller: Returning ${result.transactions.length} transactions`);
     return result;
   }
 

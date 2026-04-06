@@ -287,4 +287,170 @@ export class UserService {
     
     return true;
   }
+
+  async getUserDashboardStats(userId: number, startDate: string, endDate: string, userRole: string, branchId?: number) {
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    const mappedBonuses = await this.prisma.bonus.findMany({
+      where: {
+        userId: userId,
+        createdAt: { gte: start, lte: end }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const transactionWhere: any = {
+      AND: [
+        {
+          OR: [
+            { soldByUserId: userId },
+            { userId: userId }
+          ]
+        }
+      ],
+      createdAt: { gte: start, lte: end }
+    };
+
+    if (userRole !== 'ADMIN' && branchId) {
+      transactionWhere.AND.push({
+        OR: [
+          { fromBranchId: Number(branchId) },
+          { toBranchId: Number(branchId) }
+        ]
+      });
+    }
+
+    const userTransactions = await this.prisma.transaction.findMany({
+      where: transactionWhere,
+      include: {
+        customer: true,
+        items: true,
+        bonuses: true
+      }
+    });
+
+    const totalSales = userTransactions.reduce((sum, tx) => sum + (tx.finalTotal || 0), 0);
+    const transactionBonuses = userTransactions.reduce((sum, tx) => sum + (tx.bonuses ? tx.bonuses.reduce((s, b) => s + b.amount, 0) : 0), 0);
+    
+    const rawExtraProfit = userTransactions.reduce((sum, tx) => {
+      const ep = tx.extraProfit || 0;
+      const maxAllowed = Math.abs(tx.finalTotal || 0);
+      const safeEp = maxAllowed > 0 && Math.abs(ep) > maxAllowed * 10 ? 0 : ep;
+      return sum + safeEp;
+    }, 0);
+
+    const totalMonthlyBonuses = mappedBonuses.reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalSofOrtiqcha = mappedBonuses.reduce((sum, b) => {
+      if (b.reason === 'SALES_BONUS' && b.description) {
+        const match = b.description.match(/Sof ortiqcha:\s*([\d,]+)/);
+        return match ? sum + parseInt(match[1].replace(/,/g, ''), 10) : sum;
+      }
+      return sum;
+    }, 0);
+
+    const totalNetBonuses = mappedBonuses.reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalPositiveBonuses = mappedBonuses.filter(b => (b.amount || 0) > 0).reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalPenalties = mappedBonuses.filter(b => (b.amount || 0) < 0).reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalProfit = rawExtraProfit;
+
+    const bonusProducts = await this.prisma.transactionBonusProduct.findMany({
+      where: {
+        transaction: transactionWhere
+      },
+      include: {
+        transaction: {
+          select: {
+            id: true,
+            createdAt: true,
+            total: true
+          }
+        },
+        product: true
+      },
+      orderBy: {
+        transaction: {
+          createdAt: 'desc'
+        }
+      }
+    });
+
+    const bonusProductsValue = bonusProducts.reduce((sum, bp) => {
+      const price = Number((bp as any).price || (bp as any).product?.price || 0);
+      const quantity = Number(bp.quantity || 1);
+      return sum + (price * quantity);
+    }, 0);
+
+    const totalBonuses = totalMonthlyBonuses + bonusProductsValue;
+
+    const exchangeRateRecord = await this.prisma.currencyExchangeRate.findFirst({
+      orderBy: { createdAt: 'desc' }
+    });
+    const exchangeRate = exchangeRateRecord ? exchangeRateRecord.rate : 12500;
+
+    const salesData = userTransactions.map(tx => ({
+      id: tx.id,
+      userId: tx.soldByUserId || tx.userId,
+      branchId: tx.fromBranchId || tx.toBranchId || branchId,
+      customerName: tx.customer ? (tx.customer.fullName || "Noma'lum") : "Noma'lum",
+      totalInSom: tx.finalTotal,
+      total: tx.finalTotal / exchangeRate,
+      paymentType: tx.paymentType,
+      createdAt: tx.createdAt,
+      items: tx.items || []
+    }));
+
+    const summary: any = {
+      [userId]: {
+        totalSales: 0,
+        totalSalesInSom: 0,
+        transactionCount: 0,
+        cashSales: 0,
+        cardSales: 0,
+        creditSales: 0,
+        branches: new Set<number>()
+      }
+    };
+
+    salesData.forEach(sale => {
+      const uid = String(sale.userId || userId);
+      if (!summary[uid]) {
+        summary[uid] = { totalSales: 0, totalSalesInSom: 0, transactionCount: 0, cashSales: 0, cardSales: 0, creditSales: 0, branches: new Set() };
+      }
+      summary[uid].totalSales += sale.total || 0;
+      summary[uid].totalSalesInSom += sale.totalInSom || 0;
+      summary[uid].transactionCount += 1;
+      if (sale.branchId) summary[uid].branches.add(sale.branchId as number);
+      if (sale.paymentType === 'CASH') summary[uid].cashSales += sale.total || 0;
+      else if (sale.paymentType === 'CARD') summary[uid].cardSales += sale.total || 0;
+      else if (['CREDIT', 'INSTALLMENT'].includes(sale.paymentType as string)) summary[uid].creditSales += sale.total || 0;
+    });
+
+    const earningsSummary: any = {};
+    Object.keys(summary).forEach(uid => {
+      earningsSummary[uid] = { ...summary[uid], branches: Array.from(summary[uid].branches) };
+    });
+
+    return {
+      monthlyStats: {
+        totalSales,
+        transactionBonuses,
+        bonusProductsValue,
+        totalBonuses,
+        totalNetBonuses,
+        totalPositiveBonuses,
+        totalPenalties,
+        totalMonthlyBonuses,
+        totalExtraProfit: rawExtraProfit,
+        totalSofOrtiqcha,
+        totalProfit
+      },
+      salesData,
+      userBonusProducts: bonusProducts,
+      earningsSummary,
+      bonuses: mappedBonuses
+    };
+  }
 }

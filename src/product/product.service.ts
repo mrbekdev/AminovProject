@@ -24,7 +24,7 @@ private async generateUniqueBarcode(tx: any): Promise<string> {
     counterRecord = await tx.barcodeCounter.update({
       where: { id: counterRecord.id },
       data: {
-        counter: { increment: 1 }, // ✅ Prisma o'zi +1 qiladi
+        counter: { increment: 1 }, 
       },
     });
   }
