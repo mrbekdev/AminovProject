@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { networkInterfaces } from 'os';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,6 +16,9 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
+
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   app.enableCors({ 
     origin: true, 
@@ -35,13 +39,9 @@ async function bootstrap() {
       }
     }
     const localUrl = `http://localhost:${port}/`;
-    // Prefer the first non-internal IPv4
     const ip = addresses[0];
     const networkUrl = ip ? `http://${ip}:${port}/` : null;
-    // eslint-disable-next-line no-console
-    // eslint-disable-next-line no-console
     if (networkUrl) {
-      // eslint-disable-next-line no-console
     }
   } catch {}
 }

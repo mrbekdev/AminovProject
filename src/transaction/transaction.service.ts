@@ -14,7 +14,7 @@ export class TransactionService {
     private currencyExchangeRateService: CurrencyExchangeRateService,
     private bonusService: BonusService,
     private taskService: TaskService,
-  ) {}
+  ) { }
 
   async create(createTransactionDto: CreateTransactionDto, userId?: number) {
     const { items, customer, payments, ...transactionData } = createTransactionDto;
@@ -24,7 +24,7 @@ export class TransactionService {
       const user = await this.prisma.user.findUnique({
         where: { id: userId }
       });
-      
+
       if (!user) {
         throw new BadRequestException('User topilmadi');
       }
@@ -36,7 +36,7 @@ export class TransactionService {
       const existingCustomer = await this.prisma.customer.findFirst({
         where: { phone: customer.phone }
       });
-      
+
       if (existingCustomer) {
         customerId = existingCustomer.id;
         // Agar yangi ma'lumotlar kelgan bo'lsa, ularni yangilaymiz
@@ -160,15 +160,15 @@ export class TransactionService {
         },
         ...(paymentsData.length > 0
           ? {
-              payments: {
-                createMany: {
-                  data: paymentsData.map((p) => ({
-                    method: p.method,
-                    amount: p.amount,
-                  })),
-                },
+            payments: {
+              createMany: {
+                data: paymentsData.map((p) => ({
+                  method: p.method,
+                  amount: p.amount,
+                })),
               },
-            }
+            },
+          }
           : {}),
       },
       include: {
@@ -229,7 +229,7 @@ export class TransactionService {
     // MUHIM: Bonus products avval qo'shilishi kerak, keyin bonus hisoblash
     if (soldByUserId && transactionData.type === TransactionType.SALE) {
       const cashierId = (transactionData as any).cashierId || userId;
-      
+
       // Bonus hisoblashni 2 soniya kechiktirish - bonus products qo'shilishini kutish uchun
       setTimeout(async () => {
         try {
@@ -258,7 +258,7 @@ export class TransactionService {
 
   private calculateMonthlyPayment(item: any): number {
     if (!item.creditMonth || !item.creditPercent) return 0;
-    
+
     const totalWithInterest = item.price * item.quantity * (1 + item.creditPercent);
     return totalWithInterest / item.creditMonth;
   }
@@ -289,12 +289,12 @@ export class TransactionService {
       const upfrontPayment = downPayment || 0;
       const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
       const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
-      
 
-      
+
+
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
-      
+
 
       // Kunlik bo'lib to'lash uchun faqat 1 ta payment schedule yaratish
       // Mijoz bu kunlar ichida qolgan summani to'lab ketishi kerak
@@ -348,14 +348,14 @@ export class TransactionService {
       const upfrontPayment = downPayment || 0;
       const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
       const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
-      
 
-      
+
+
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
       const monthlyPayment = remainingWithInterest / totalMonths;
       let remainingBalance = remainingWithInterest;
-      
+
 
       for (let month = 1; month <= totalMonths; month++) {
         // For the last month, use the exact remaining balance to avoid floating point errors
@@ -441,10 +441,10 @@ export class TransactionService {
     // Parse and validate page and limit
     const parsedPage = parseInt(page) || 1;
     const parsedLimit = limit && limit !== 'all' ? parseInt(limit) : undefined;
-  
-  
+
+
     const where: any = {};
-    
+
     if (type) where.type = type;
     if (status) where.status = status;
     if (branchId) {
@@ -475,7 +475,7 @@ export class TransactionService {
         }
       };
     }
-    
+
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
@@ -517,12 +517,12 @@ export class TransactionService {
   }
 
   async findByProductId(productId: number, month?: string) {
-    
+
     // First, let's check if the product exists
     const product = await this.prisma.product.findUnique({
       where: { id: productId }
     });
-    
+
     if (!product) {
       return {
         transactions: [],
@@ -546,12 +546,12 @@ export class TransactionService {
       const [year, monthNum] = month.split('-');
       const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
       const endDate = new Date(parseInt(year), parseInt(monthNum), 0, 23, 59, 59);
-      
+
       whereClause.createdAt = {
         gte: startDate,
         lte: endDate
       };
-      
+
     }
 
     const transactions = await this.prisma.transaction.findMany({
@@ -577,14 +577,14 @@ export class TransactionService {
     // Calculate totalAmount for each transaction if it's missing
     const transactionsWithAmounts = transactions.map(transaction => {
       let calculatedTotal = (transaction as any).totalAmount;
-      
+
       // If totalAmount is 0 or null, calculate from items
       if (!calculatedTotal || calculatedTotal === 0) {
         calculatedTotal = transaction.items.reduce((sum, item) => {
           return sum + (item.total || (item.quantity * item.price));
         }, 0);
       }
-      
+
       return {
         ...transaction,
         totalAmount: calculatedTotal
@@ -658,9 +658,9 @@ export class TransactionService {
     return hydrated[0];
   }
 
-    async findByType(type: string) {
+  async findByType(type: string) {
     return this.prisma.transaction.findMany({
-      where: { 
+      where: {
         type: type as TransactionType,
         status: { not: 'CANCELLED' }
       },
@@ -716,22 +716,22 @@ export class TransactionService {
     }
 
     // Update the transaction status
-const updatedTransaction = await this.prisma.transaction.update({
-  where: { id },
-  data: {
-    status: status as TransactionStatus,
-    updatedAt: new Date(),
-    updatedBy: { connect: { id: +userId } }
-  },
-  include: {
-    customer: true,
-    items: {
+    const updatedTransaction = await this.prisma.transaction.update({
+      where: { id },
+      data: {
+        status: status as TransactionStatus,
+        updatedAt: new Date(),
+        updatedBy: { connect: { id: +userId } }
+      },
       include: {
-        product: true
+        customer: true,
+        items: {
+          include: {
+            product: true
+          }
+        }
       }
-    }
-  }
-});
+    });
 
 
     // If this is a delivery being marked as completed, update inventory
@@ -742,7 +742,7 @@ const updatedTransaction = await this.prisma.transaction.update({
     return updatedTransaction;
   }
 
-    private async processDeliveryCompletion(transaction: any) {
+  private async processDeliveryCompletion(transaction: any) {
     // Update inventory for each item in the delivery
     for (const item of transaction.items) {
       await this.prisma.product.update({
@@ -801,7 +801,7 @@ const updatedTransaction = await this.prisma.transaction.update({
     }
 
     const transaction = await this.findOne(id);
-    
+
     if (transaction.status === TransactionStatus.COMPLETED) {
       throw new BadRequestException('Completed transactions cannot be modified');
     }
@@ -834,7 +834,7 @@ const updatedTransaction = await this.prisma.transaction.update({
     }
 
     const transaction = await this.findOne(id);
-    
+
     if (transaction.status === TransactionStatus.COMPLETED) {
       // Faqat ADMIN foydalanuvchiga ruxsat beramiz
       const role = currentUser?.role || currentUser?.userRole;
@@ -860,8 +860,8 @@ const updatedTransaction = await this.prisma.transaction.update({
 
       // Bog'liq to'lov yozuvlarini o'chirish (agar mavjud bo'lsa)
       // Baʼzi installlarda jadvallar nomi boshqacha bo‘lishi mumkin; mavjud bo‘lsa o‘chadi
-      try { await tx.creditRepayment.deleteMany({ where: { transactionId: id } }); } catch {}
-      try { await tx.dailyRepayment.deleteMany({ where: { transactionId: id } }); } catch {}
+      try { await tx.creditRepayment.deleteMany({ where: { transactionId: id } }); } catch { }
+      try { await tx.dailyRepayment.deleteMany({ where: { transactionId: id } }); } catch { }
 
       // Bog'liq payment schedule va itemlarni o'chirish
       await tx.paymentSchedule.deleteMany({ where: { transactionId: id } });
@@ -919,10 +919,10 @@ const updatedTransaction = await this.prisma.transaction.update({
           transactionId: t.id,
           customer: t.customer
             ? {
-                id: t.customer.id,
-                fullName: t.customer.fullName,
-                phone: t.customer.phone
-              }
+              id: t.customer.id,
+              fullName: t.customer.fullName,
+              phone: t.customer.phone
+            }
             : null,
           createdAt: t.createdAt,
           paymentType: t.paymentType,
@@ -932,10 +932,10 @@ const updatedTransaction = await this.prisma.transaction.update({
           monthlyPayment,
           nextDue: nextDue
             ? {
-                month: nextDue.month,
-                amountDue: Math.max(0, (nextDue.payment || 0) - (nextDue.paidAmount || 0)),
-                remainingBalance: nextDue.remainingBalance
-              }
+              month: nextDue.month,
+              amountDue: Math.max(0, (nextDue.payment || 0) - (nextDue.paidAmount || 0)),
+              remainingBalance: nextDue.remainingBalance
+            }
             : null,
           items: (t.items || []).map((it) => ({
             id: it.id,
@@ -1119,12 +1119,12 @@ const updatedTransaction = await this.prisma.transaction.update({
     // PaymentSchedule modelida paid field yo'q, shuning uchun boshqa yechim ishlatamiz
     return this.prisma.paymentSchedule.update({
       where: { id: schedule.id },
-      data: { 
+      data: {
         // paid field yo'q, shuning uchun boshqa field bilan belgilaymiz
         remainingBalance: paid ? 0 : schedule.remainingBalance
-        }
-      });
-    }
+      }
+    });
+  }
 
   // Filiallar orasida o'tkazma
   async createTransfer(transferData: any) {
@@ -1254,8 +1254,8 @@ const updatedTransaction = await this.prisma.transaction.update({
   }
 
   private async updateProductQuantitiesForTransfer(transfer: any) {
-    for (const item of transfer.items) {
-      if (!item.productId) continue;
+    const processTransferItem = async (item: any) => {
+      if (!item.productId) return;
 
       // Manba filialdan mahsulotni topish (ID bo'yicha). Branch bilan cheklamaymiz, chunki ayrim hollarda transfer.fromBranchId mos kelmasligi mumkin
       const sourceProduct = await this.prisma.product.findUnique({
@@ -1263,7 +1263,7 @@ const updatedTransaction = await this.prisma.transaction.update({
       });
 
       if (!sourceProduct) {
-        continue;
+        return;
       }
 
       // Agar manba mahsulot branchi transfer.fromBranchId dan farq qilsa, ogohlantiramiz va davom etamiz
@@ -1275,12 +1275,9 @@ const updatedTransaction = await this.prisma.transaction.update({
       const availableQty = Number(sourceProduct.quantity) || 0;
       const transferQty = Math.min(Math.max(0, requestedQty), availableQty);
 
-
       if (transferQty <= 0) {
-        continue;
+        return;
       }
-
-      // Manba filialdan kamaytirish
       const newSourceQty = Math.max(0, availableQty - transferQty);
       await this.prisma.product.update({
         where: { id: sourceProduct.id },
@@ -1299,8 +1296,6 @@ const updatedTransaction = await this.prisma.transaction.update({
         targetProduct = await this.prisma.product.findFirst({
           where: { barcode, branchId: transfer.toBranchId }
         });
-        if (targetProduct) {
-        }
       }
 
       if (!targetProduct) {
@@ -1347,7 +1342,7 @@ const updatedTransaction = await this.prisma.transaction.update({
         // Create new product at target
         const safeBarcode = barcode || `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         try {
-          const newProduct = await this.prisma.product.create({
+          await this.prisma.product.create({
             data: {
               name: (item as any).product?.name || sourceProduct.name,
               barcode: safeBarcode,
@@ -1364,7 +1359,7 @@ const updatedTransaction = await this.prisma.transaction.update({
         } catch (error: any) {
           if (error?.code === 'P2002') {
             const uniqueBarcode = `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            const newProduct = await this.prisma.product.create({
+            await this.prisma.product.create({
               data: {
                 name: (item as any).product?.name || sourceProduct.name,
                 barcode: uniqueBarcode,
@@ -1389,8 +1384,15 @@ const updatedTransaction = await this.prisma.transaction.update({
         await this.prisma.transactionItem.update({
           where: { id: item.id },
           data: { quantity: transferQty, total: (item.price || 0) * transferQty }
-        }).catch(() => {});
+        }).catch(() => { });
       }
+    };
+
+    // Parallelize processing in chunks of 15 to avoid exhausting Prisma connection pool while vastly improving speed
+    const CHUNK_SIZE = 15;
+    for (let i = 0; i < transfer.items.length; i += CHUNK_SIZE) {
+      const chunk = transfer.items.slice(i, i + CHUNK_SIZE);
+      await Promise.all(chunk.map((item: any) => processTransferItem(item)));
     }
   }
 
@@ -1401,7 +1403,7 @@ const updatedTransaction = await this.prisma.transaction.update({
     }
 
     const transaction = await this.findOne(id);
-    
+
     if (transaction.type !== TransactionType.TRANSFER) {
       throw new BadRequestException('Only transfer transactions can be approved');
     }
@@ -1427,7 +1429,7 @@ const updatedTransaction = await this.prisma.transaction.update({
     }
 
     const transaction = await this.findOne(id);
-    
+
     if (transaction.type !== TransactionType.TRANSFER) {
       throw new BadRequestException('Only transfer transactions can be rejected');
     }
@@ -1442,12 +1444,12 @@ const updatedTransaction = await this.prisma.transaction.update({
   async getStatistics(branchId?: number, startDate?: string, endDate?: string) {
     const where: any = {};
     const whereOr: any = [];
-    
+
     if (branchId) {
       whereOr.push({ fromBranchId: branchId });
       whereOr.push({ toBranchId: branchId });
     }
-    
+
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
@@ -1608,7 +1610,7 @@ const updatedTransaction = await this.prisma.transaction.update({
   async getTransactionsWithCurrencyConversion(branchId?: number, startDate?: string, endDate?: string) {
     const result = await this.findAll({ branchId, startDate, endDate });
     const transactions = result.transactions;
-    
+
     // Convert all transaction totals to som
     const transactionsWithCurrency = await Promise.all(
       transactions.map(async (transaction) => {
@@ -1670,10 +1672,10 @@ const updatedTransaction = await this.prisma.transaction.update({
       let usdToUzsRateGlobal = 0;
       try {
         usdToUzsRateBranch = await this.currencyExchangeRateService.convertCurrency(1, 'USD', 'UZS', branchContextId || undefined);
-      } catch {}
+      } catch { }
       try {
         usdToUzsRateGlobal = await this.currencyExchangeRateService.convertCurrency(1, 'USD', 'UZS', undefined);
-      } catch {}
+      } catch { }
       const usdToSomRate = (usdToUzsRateBranch && usdToUzsRateBranch > 1)
         ? usdToUzsRateBranch
         : (usdToUzsRateGlobal && usdToUzsRateGlobal > 1)
@@ -1681,7 +1683,7 @@ const updatedTransaction = await this.prisma.transaction.update({
           : (usdToUzsRateBranch || usdToUzsRateGlobal || 1);
 
       // Bonus products qiymatini hisoblash - Frontend dan UZS da kelgan narhlarni ishlatish
-      
+
       const bonusProducts = await this.prisma.transactionBonusProduct.findMany({
         where: { transactionId: transaction.id },
         include: { product: true }
@@ -1691,7 +1693,7 @@ const updatedTransaction = await this.prisma.transaction.update({
       let totalBonusProductsValue = 0;
       if (bonusProducts.length > 0) {
         for (const bonusProduct of bonusProducts) {
-          
+
           // Kurs xizmatidan foydalanib USD -> UZS ga aniq konvertatsiya (filial konteksti bilan)
           const productPriceInUzs = Math.round(Number(bonusProduct.product?.price || 0) * usdToSomRate);
           const productTotalValue = productPriceInUzs * bonusProduct.quantity;
@@ -1909,8 +1911,8 @@ const updatedTransaction = await this.prisma.transaction.update({
           // Bonus mahsulotlar nomi va modeli haqida qo'shimcha ma'lumot
           const bonusProductsInfo = (bonusProducts && bonusProducts.length > 0)
             ? ' Bonus mahsulotlar: ' + bonusProducts
-                .map(bp => `${bp.product?.name || 'Номаълум махсулот'} (${bp.product?.model || '-'}) qty=${bp.quantity}`)
-                .join(' | ')
+              .map(bp => `${bp.product?.name || 'Номаълум махсулот'} (${bp.product?.model || '-'}) qty=${bp.quantity}`)
+              .join(' | ')
             : '';
 
           const penaltyData = {

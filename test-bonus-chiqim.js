@@ -57,7 +57,7 @@ async function testBonusInChiqim() {
 
 
 
-    
+
     const bonusResponse = await axios.get(`${API_URL}/bonuses/user/${testData.selectedUserId}`, {
       headers: {
         'Authorization': 'Bearer test-token'
@@ -65,15 +65,15 @@ async function testBonusInChiqim() {
     });
 
 
-    
+
     if (bonusResponse.data.length > 0) {
       const latestBonus = bonusResponse.data[0];
 
-      
+
       // Calculate expected bonus
       const priceDifference = (testData.sellingPrice - testData.productData.marketPrice) * testData.productData.quantity;
       const expectedBonus = priceDifference * (testData.productData.bonusPercentage / 100);
-      
+
 
     } else {
       console.log('❌ No bonuses found! Bonus system may not be working.');
@@ -81,14 +81,14 @@ async function testBonusInChiqim() {
 
   } catch (error) {
     console.error('❌ Test failed:', error.response?.data || error.message);
-    
+
     if (error.response?.status === 404) {
       console.log('\n💡 Possible issues:');
       console.log('   - Backend server not running on port 3000');
       console.log('   - API endpoints not available');
       console.log('   - Database connection issues');
     }
-    
+
     if (error.response?.status === 400) {
       console.log('\n💡 Possible issues:');
       console.log('   - Invalid transaction data structure');
