@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { TransactionType, TransactionStatus, PaymentType } from '@prisma/client';
+import { Prisma, TransactionType, TransactionStatus, PaymentType } from '@prisma/client';
 import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
 import { BonusService } from '../bonus/bonus.service';
 import { TaskService } from '../task/task.service';
@@ -1133,56 +1133,61 @@ export class TransactionService {
     // Umumiy summani hisoblash
     const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-    // O'tkazma yaratish
-    const transfer = await this.prisma.transaction.create({
-      data: {
-        ...data,
-        type: TransactionType.TRANSFER,
-        fromBranchId: fromBranchId,
-        toBranchId: toBranchId,
-        status: TransactionStatus.PENDING,
-        total: total,
-        finalTotal: total, // Transfer uchun total va finalTotal bir xil
-        items: {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            price: item.price,
-            sellingPrice: item.sellingPrice || item.price,
-            originalPrice: item.originalPrice || item.price,
-            total: item.price * item.quantity
-          }))
-        }
-      },
-      include: {
-        customer: true,
-        user: true,
-        soldBy: true,
-        items: {
-          include: {
-            product: true
+    return this.prisma.$transaction(async (tx) => {
+      // O'tkazma yaratish
+      const transfer = await tx.transaction.create({
+        data: {
+          ...data,
+          type: TransactionType.TRANSFER,
+          fromBranchId: fromBranchId,
+          toBranchId: toBranchId,
+          status: TransactionStatus.PENDING,
+          total: total,
+          finalTotal: total, // Transfer uchun total va finalTotal bir xil
+          items: {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              price: item.price,
+              sellingPrice: item.sellingPrice || item.price,
+              originalPrice: item.originalPrice || item.price,
+              total: item.price * item.quantity
+            }))
           }
         },
-        paymentSchedules: true
-      }
+        include: {
+          customer: true,
+          user: true,
+          soldBy: true,
+          items: {
+            include: {
+              product: true
+            }
+          },
+          paymentSchedules: true
+        }
+      });
+
+      // Mahsulot miqdorlarini darhol yangilash - manba filialdan kamaytirish va maqsad filialga qo'shish
+      await this.updateProductQuantitiesForTransfer(transfer, tx);
+
+      // Inventar yangilangach, yangilangan tranzaksiyani qayta yuklaymiz (item miqdorlari moslashtirilgan bo'lishi mumkin)
+      const refreshed = await tx.transaction.findUnique({
+        where: { id: transfer.id },
+        include: {
+          customer: true,
+          user: true,
+          soldBy: true,
+          items: { include: { product: true } },
+          paymentSchedules: true
+        }
+      });
+
+      return { success: true, data: refreshed } as any;
+    }, {
+      maxWait: 5000, 
+      timeout: 10000 
     });
-
-    // Mahsulot miqdorlarini darhol yangilash - manba filialdan kamaytirish va maqsad filialga qo'shish
-    await this.updateProductQuantitiesForTransfer(transfer);
-
-    // Inventar yangilangach, yangilangan tranzaksiyani qayta yuklaymiz (item miqdorlari moslashtirilgan bo'lishi mumkin)
-    const refreshed = await this.prisma.transaction.findUnique({
-      where: { id: transfer.id },
-      include: {
-        customer: true,
-        user: true,
-        soldBy: true,
-        items: { include: { product: true } },
-        paymentSchedules: true
-      }
-    });
-
-    return { success: true, data: refreshed } as any;
   }
 
 
@@ -1253,12 +1258,12 @@ export class TransactionService {
     return tx;
   }
 
-  private async updateProductQuantitiesForTransfer(transfer: any) {
+  private async updateProductQuantitiesForTransfer(transfer: any, tx: Prisma.TransactionClient) {
     const processTransferItem = async (item: any) => {
       if (!item.productId) return;
 
       // Manba filialdan mahsulotni topish (ID bo'yicha). Branch bilan cheklamaymiz, chunki ayrim hollarda transfer.fromBranchId mos kelmasligi mumkin
-      const sourceProduct = await this.prisma.product.findUnique({
+      const sourceProduct = await tx.product.findUnique({
         where: { id: item.productId }
       });
 
@@ -1279,7 +1284,7 @@ export class TransactionService {
         return;
       }
       const newSourceQty = Math.max(0, availableQty - transferQty);
-      await this.prisma.product.update({
+      await tx.product.update({
         where: { id: sourceProduct.id },
         data: {
           quantity: newSourceQty,
@@ -1293,7 +1298,7 @@ export class TransactionService {
       // Prefer barcode if available on source product or item.product
       const barcode = (item as any).product?.barcode || sourceProduct.barcode;
       if (barcode) {
-        targetProduct = await this.prisma.product.findFirst({
+        targetProduct = await tx.product.findFirst({
           where: { barcode, branchId: transfer.toBranchId }
         });
       }
@@ -1325,12 +1330,12 @@ export class TransactionService {
         } else {
           searchConditions.AND.push({ OR: [{ model: null }, { model: '' }, { model: { equals: '', mode: 'insensitive' } }] });
         }
-        targetProduct = await this.prisma.product.findFirst({ where: searchConditions });
+        targetProduct = await tx.product.findFirst({ where: searchConditions });
       }
 
       if (targetProduct) {
         const newQuantity = (Number(targetProduct.quantity) || 0) + transferQty;
-        await this.prisma.product.update({
+        await tx.product.update({
           where: { id: targetProduct.id },
           data: {
             quantity: newQuantity,
@@ -1342,7 +1347,7 @@ export class TransactionService {
         // Create new product at target
         const safeBarcode = barcode || `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         try {
-          await this.prisma.product.create({
+          await tx.product.create({
             data: {
               name: (item as any).product?.name || sourceProduct.name,
               barcode: safeBarcode,
@@ -1359,7 +1364,7 @@ export class TransactionService {
         } catch (error: any) {
           if (error?.code === 'P2002') {
             const uniqueBarcode = `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            await this.prisma.product.create({
+            await tx.product.create({
               data: {
                 name: (item as any).product?.name || sourceProduct.name,
                 barcode: uniqueBarcode,
@@ -1381,7 +1386,7 @@ export class TransactionService {
 
       // Agar transfer cheklangan bo'lsa, transactionItem miqdorini ham moslashtiramiz
       if (transferQty !== requestedQty) {
-        await this.prisma.transactionItem.update({
+        await tx.transactionItem.update({
           where: { id: item.id },
           data: { quantity: transferQty, total: (item.price || 0) * transferQty }
         }).catch(() => { });
