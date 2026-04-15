@@ -1185,8 +1185,8 @@ export class TransactionService {
 
       return { success: true, data: refreshed } as any;
     }, {
-      maxWait: 5000, 
-      timeout: 10000 
+      maxWait: 300000, 
+      timeout: 1200000 
     });
   }
 
@@ -1259,30 +1259,45 @@ export class TransactionService {
   }
 
   private async updateProductQuantitiesForTransfer(transfer: any, tx: Prisma.TransactionClient) {
-    const processTransferItem = async (item: any) => {
-      if (!item.productId) return;
+    // ============================================================================
+    // MUHIM: Barcha itemlarni KETMA-KET (sequential) qayta ishlaymiz.
+    // Parallel processing race condition yaratadi: bir xil target productga
+    // bir nechta item yozganda, oxirgi yozish g'olib bo'ladi va boshqalar yo'qoladi.
+    // ============================================================================
 
-      // Manba filialdan mahsulotni topish (ID bo'yicha). Branch bilan cheklamaymiz, chunki ayrim hollarda transfer.fromBranchId mos kelmasligi mumkin
+    for (const item of transfer.items) {
+      if (!item.productId) continue;
+
+      // 1. Manba filialdan mahsulotni topish
       const sourceProduct = await tx.product.findUnique({
         where: { id: item.productId }
       });
 
       if (!sourceProduct) {
-        return;
+        console.warn(`[Transfer] Source product not found: productId=${item.productId}`);
+        continue;
       }
 
-      // Agar manba mahsulot branchi transfer.fromBranchId dan farq qilsa, ogohlantiramiz va davom etamiz
+      // Agar manba mahsulot branchi transfer.fromBranchId dan farq qilsa, ogohlantiramiz
       if (sourceProduct.branchId !== transfer.fromBranchId) {
+        console.warn(`[Transfer] Source product branchId mismatch: product.branchId=${sourceProduct.branchId}, transfer.fromBranchId=${transfer.fromBranchId}`);
       }
 
-      // Haqiqiy ko'chiriladigan miqdor: mavjud qolgan son bilan cheklaymiz
+      // 2. Haqiqiy ko'chiriladigan miqdor
       const requestedQty = Number(item.quantity) || 0;
-      const availableQty = Number(sourceProduct.quantity) || 0;
-      const transferQty = Math.min(Math.max(0, requestedQty), availableQty);
+      if (requestedQty <= 0) continue;
+
+      // Eng yangi holatni o'qish (oldingi iteratsiyalar o'zgartirgan bo'lishi mumkin)
+      const freshSource = await tx.product.findUnique({ where: { id: sourceProduct.id } });
+      const availableQty = Number(freshSource?.quantity) || 0;
+      const transferQty = Math.min(requestedQty, availableQty);
 
       if (transferQty <= 0) {
-        return;
+        console.warn(`[Transfer] No available quantity for productId=${item.productId}, requested=${requestedQty}, available=${availableQty}`);
+        continue;
       }
+
+      // 3. Manba filialdan kamaytirish (atomic decrement)
       const newSourceQty = Math.max(0, availableQty - transferQty);
       await tx.product.update({
         where: { id: sourceProduct.id },
@@ -1292,10 +1307,10 @@ export class TransactionService {
         }
       });
 
-      // Maqsad filialda mahsulotni topish yoki yaratish
+      // 4. Maqsad filialda mahsulotni topish
       let targetProduct: any = null;
 
-      // Prefer barcode if available on source product or item.product
+      // Barcodeni olish
       const barcode = (item as any).product?.barcode || sourceProduct.barcode;
       if (barcode) {
         targetProduct = await tx.product.findFirst({
@@ -1304,7 +1319,7 @@ export class TransactionService {
       }
 
       if (!targetProduct) {
-        // Fallback to name+model match
+        // Fallback: name + model bo'yicha topish
         const name = (item as any).product?.name || sourceProduct.name;
         const model = (item as any).product?.model || sourceProduct.model || '';
         const searchConditions: any = {
@@ -1333,8 +1348,13 @@ export class TransactionService {
         targetProduct = await tx.product.findFirst({ where: searchConditions });
       }
 
+      // 5. Maqsad filialga qo'shish yoki yangi yaratish
       if (targetProduct) {
-        const newQuantity = (Number(targetProduct.quantity) || 0) + transferQty;
+        // MUHIM: Eng yangi holatni o'qib, unga qo'shamiz (race condition oldini olish)
+        const freshTarget = await tx.product.findUnique({ where: { id: targetProduct.id } });
+        const currentTargetQty = Number(freshTarget?.quantity) || 0;
+        const newQuantity = currentTargetQty + transferQty;
+
         await tx.product.update({
           where: { id: targetProduct.id },
           data: {
@@ -1344,7 +1364,7 @@ export class TransactionService {
           }
         });
       } else {
-        // Create new product at target
+        // Yangi mahsulot yaratish
         const safeBarcode = barcode || `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         try {
           await tx.product.create({
@@ -1363,6 +1383,7 @@ export class TransactionService {
           });
         } catch (error: any) {
           if (error?.code === 'P2002') {
+            // Barcode duplicate — unique barcode bilan qayta yaratish
             const uniqueBarcode = `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             await tx.product.create({
               data: {
@@ -1384,20 +1405,13 @@ export class TransactionService {
         }
       }
 
-      // Agar transfer cheklangan bo'lsa, transactionItem miqdorini ham moslashtiramiz
+      // 6. Agar transfer cheklangan bo'lsa, transactionItem miqdorini moslash
       if (transferQty !== requestedQty) {
         await tx.transactionItem.update({
           where: { id: item.id },
           data: { quantity: transferQty, total: (item.price || 0) * transferQty }
         }).catch(() => { });
       }
-    };
-
-    // Parallelize processing in chunks of 15 to avoid exhausting Prisma connection pool while vastly improving speed
-    const CHUNK_SIZE = 15;
-    for (let i = 0; i < transfer.items.length; i += CHUNK_SIZE) {
-      const chunk = transfer.items.slice(i, i + CHUNK_SIZE);
-      await Promise.all(chunk.map((item: any) => processTransferItem(item)));
     }
   }
 
