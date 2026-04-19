@@ -31,7 +31,16 @@ export class TaskService {
         ...(status ? { status } : {}),
         ...(auditorId != null ? { auditorId: Number(auditorId) } : {}),
       },
-      include: { transaction: { include: { customer: true, items: true } }, auditor: true },
+      include: { 
+        transaction: { 
+          include: { 
+            customer: true, 
+            items: { include: { product: true } },
+            soldBy: true 
+          } 
+        }, 
+        auditor: true 
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -39,13 +48,34 @@ export class TaskService {
   async findByAuditor(auditorId: number, status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED') {
     return (this.prisma as any).task.findMany({
       where: { auditorId: Number(auditorId), ...(status ? { status } : {}) },
-      include: { transaction: { include: { customer: true, items: true } }, auditor: true },
+      include: { 
+        transaction: { 
+          include: { 
+            customer: true, 
+            items: { include: { product: true } },
+            soldBy: true 
+          } 
+        }, 
+        auditor: true 
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: number) {
-    const task = await (this.prisma as any).task.findUnique({ where: { id: Number(id) }, include: { transaction: { include: { customer: true, items: true } }, auditor: true } });
+    const task = await (this.prisma as any).task.findUnique({ 
+      where: { id: Number(id) }, 
+      include: { 
+        transaction: { 
+          include: { 
+            customer: true, 
+            items: { include: { product: true } },
+            soldBy: true 
+          } 
+        }, 
+        auditor: true 
+      } 
+    });
     if (!task) throw new NotFoundException('Task not found');
     return task;
   }

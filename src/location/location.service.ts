@@ -50,8 +50,8 @@ export class LocationService {
     }
 
     if (
-      (Math.abs(data.latitude - 41.3111) < 0.01 && Math.abs(data.longitude - 69.2797) < 0.01) ||
-      (Math.abs(data.latitude - 41.2995) < 0.01 && Math.abs(data.longitude - 69.2401) < 0.01)
+      (Math.abs(data.latitude - 41.3111) < 0.0001 && Math.abs(data.longitude - 69.2797) < 0.0001) ||
+      (Math.abs(data.latitude - 41.2995) < 0.0001 && Math.abs(data.longitude - 69.2401) < 0.0001)
     ) {
       this.logger.warn(`Default Tashkent coordinates for user ${userId}, rejecting update`);
       throw new Error('Default Tashkent coordinates are not allowed');
@@ -132,8 +132,8 @@ export class LocationService {
       }
 
       if (
-        (Math.abs(location.latitude - 41.3111) < 0.01 && Math.abs(location.longitude - 69.2797) < 0.01) ||
-        (Math.abs(location.latitude - 41.2995) < 0.01 && Math.abs(location.longitude - 69.2401) < 0.01)
+        (Math.abs(location.latitude - 41.3111) < 0.0001 && Math.abs(location.longitude - 69.2797) < 0.0001) ||
+        (Math.abs(location.latitude - 41.2995) < 0.0001 && Math.abs(location.longitude - 69.2401) < 0.0001)
       ) {
         this.logger.warn(`User ${userId} has default Tashkent coordinates`);
         throw new NotFoundException(`User ${userId} has default Tashkent coordinates`);
@@ -185,8 +185,8 @@ export class LocationService {
       const validUsers = users.filter(
         (user) => 
           !(
-            (Math.abs(user.latitude - 41.3111) < 0.01 && Math.abs(user.longitude - 69.2797) < 0.01) ||
-            (Math.abs(user.latitude - 41.2995) < 0.01 && Math.abs(user.longitude - 69.2401) < 0.01)
+            (Math.abs(user.latitude - 41.3111) < 0.0001 && Math.abs(user.longitude - 69.2797) < 0.0001) ||
+            (Math.abs(user.latitude - 41.2995) < 0.0001 && Math.abs(user.longitude - 69.2401) < 0.0001)
           )
       );
 
@@ -226,8 +226,8 @@ export class LocationService {
       const nearbyUsers = allLocations
         .map((loc) => {
           if (
-            (Math.abs(loc.latitude - 41.3111) < 0.01 && Math.abs(loc.longitude - 69.2797) < 0.01) ||
-            (Math.abs(loc.latitude - 41.2995) < 0.01 && Math.abs(loc.longitude - 69.2401) < 0.01)
+            (Math.abs(loc.latitude - 41.3111) < 0.0001 && Math.abs(loc.longitude - 69.2797) < 0.0001) ||
+            (Math.abs(loc.latitude - 41.2995) < 0.0001 && Math.abs(loc.longitude - 69.2401) < 0.0001)
           ) {
             return null;
           }

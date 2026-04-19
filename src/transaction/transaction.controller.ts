@@ -37,6 +37,11 @@ export class TransactionController {
     return this.transactionService.findAll(query);
   }
 
+  @Get('filter-options')
+  getFilterOptions(@Query() query: any) {
+    return this.transactionService.getFilterOptions(query);
+  }
+
   @Get('delivery')
   async findDeliveryOrders() {
     return this.transactionService.findByType('DELIVERY');

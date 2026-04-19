@@ -435,38 +435,69 @@ export class TransactionService {
       endDate,
       paymentType,
       upfrontPaymentType,
-      productId
+      productId,
+      // ═══════════ YANGI FILTERLAR ═══════════
+      search,
+      sellerUserId,
+      cashierUserId,
+      deliveryType,
+      deliveryStatus,
     } = query;
 
     // Parse and validate page and limit
     const parsedPage = parseInt(page) || 1;
     const parsedLimit = limit && limit !== 'all' ? parseInt(limit) : undefined;
 
-
     const where: any = {};
+    // AND shartlarini to'plash uchun massiv
+    const andConditions: any[] = [];
 
     if (type) where.type = type;
     if (status) where.status = status;
     if (branchId) {
       // BranchId orqali filtrlash - bu filialdan chiqgan yoki kirgan transactionlarni olish
-      where.OR = [
-        { fromBranchId: parseInt(branchId) },
-        { toBranchId: parseInt(branchId) }
-      ];
+      andConditions.push({
+        OR: [
+          { fromBranchId: parseInt(branchId) },
+          { toBranchId: parseInt(branchId) }
+        ]
+      });
     }
     if (customerId) where.customerId = parseInt(customerId);
     if (userId) {
       // Filter by soldByUserId or userId (who created or sold the transaction)
-      where.OR = where.OR ? [
-        ...where.OR,
-        { soldByUserId: parseInt(userId) },
-        { userId: parseInt(userId) }
-      ] : [
-        { soldByUserId: parseInt(userId) },
-        { userId: parseInt(userId) }
-      ];
+      andConditions.push({
+        OR: [
+          { soldByUserId: parseInt(userId) },
+          { userId: parseInt(userId) }
+        ]
+      });
     }
-    if (paymentType) where.paymentType = paymentType;
+
+    // ═══════════ PAYMENT TYPE FILTER ═══════════
+    // paymentType bo'yicha filterlash — asosiy paymentType YOKI payments jadvalidagi method
+    if (paymentType) {
+      // UYDAN backendda PaymentType enumda yo'q, shuning uchun payments.method orqali qidirish kerak
+      const normalizedType = String(paymentType).toUpperCase();
+      const paymentTypeMapping: Record<string, string[]> = {
+        'CASH': ['CASH', 'NAQD', 'NAL'],
+        'CARD': ['CARD', 'ICAN', 'PLASTIC', 'PLASTIK'],
+        'TERMINAL': ['TERMINAL', 'POS', 'TRANSFER', 'BANK', 'CLICK', 'PAYME'],
+        'CREDIT': ['CREDIT', 'DEBT'],
+        'INSTALLMENT': ['INSTALLMENT', 'BOLOB', "BO'LIB"],
+        'UYDAN': ['UYDAN', 'HOME'],
+      };
+      const matchedKey = Object.keys(paymentTypeMapping).find(k => paymentTypeMapping[k].includes(normalizedType)) || normalizedType;
+
+      andConditions.push({
+        OR: [
+          { paymentType: matchedKey as any },
+          { payments: { some: { method: matchedKey } } },
+          // UYDAN — maxsus holat, faqat payments.method orqali keladi
+          ...(matchedKey === 'UYDAN' ? [{ payments: { some: { method: 'UYDAN' } } }] : []),
+        ]
+      });
+    }
     if (upfrontPaymentType) where.upfrontPaymentType = upfrontPaymentType;
     if (productId) {
       where.items = {
@@ -476,11 +507,107 @@ export class TransactionService {
       };
     }
 
+    // ═══════════ SEARCH FILTER ═══════════
+    if (search && String(search).trim()) {
+      const term = String(search).trim();
+      const searchConditions: any[] = [
+        { customer: { fullName: { contains: term, mode: 'insensitive' } } },
+        { customer: { phone: { contains: term, mode: 'insensitive' } } },
+        { items: { some: { product: { name: { contains: term, mode: 'insensitive' } } } } },
+        { items: { some: { product: { barcode: { contains: term, mode: 'insensitive' } } } } },
+      ];
+      // Agar raqam bo'lsa, ID bo'yicha ham qidirish
+      const numericId = parseInt(term);
+      if (!isNaN(numericId) && numericId > 0) {
+        searchConditions.push({ id: numericId });
+      }
+      andConditions.push({ OR: searchConditions });
+    }
+
+    // ═══════════ SELLER (SOTUVCHI) FILTER ═══════════
+    if (sellerUserId) {
+      where.soldByUserId = parseInt(sellerUserId);
+    }
+
+    // ═══════════ CASHIER (KASSIR) FILTER ═══════════
+    if (cashierUserId) {
+      where.userId = parseInt(cashierUserId);
+    }
+
+    // ═══════════ DELIVERY TYPE FILTER ═══════════
+    if (deliveryType) {
+      const dType = String(deliveryType).toUpperCase();
+      if (dType === 'DELIVERY') {
+        andConditions.push({
+          OR: [
+            { deliveryType: { contains: 'DELIVERY', mode: 'insensitive' } },
+            { deliveryType: { contains: 'COURIER', mode: 'insensitive' } },
+            { deliveryType: { contains: 'DOSTAVKA', mode: 'insensitive' } },
+            { deliveryType: { contains: 'SHIP', mode: 'insensitive' } },
+            { deliveryMethod: { contains: 'DELIVERY', mode: 'insensitive' } },
+            { deliveryMethod: { contains: 'COURIER', mode: 'insensitive' } },
+            { deliveryMethod: { contains: 'DOSTAVKA', mode: 'insensitive' } },
+            { deliveryMethod: { contains: 'SHIP', mode: 'insensitive' } },
+            { AND: [{ deliveryAddress: { not: null } }, { deliveryAddress: { not: '' } }, { deliveryAddress: { not: ' ' } }] }
+          ]
+        });
+      } else if (dType === 'PICKUP') {
+        // Prisma NOT bilan OR ni nullable ustunlarda aralashtirganda xato beradi (crash/500 code).
+        // Shuning uchun PICKUP shartini bevosita (explicitly) kiritamiz.
+        andConditions.push({
+          AND: [
+            { OR: [{ deliveryType: null }, { NOT: { deliveryType: { contains: 'DELIVERY', mode: 'insensitive' } } }] },
+            { OR: [{ deliveryType: null }, { NOT: { deliveryType: { contains: 'COURIER', mode: 'insensitive' } } }] },
+            { OR: [{ deliveryType: null }, { NOT: { deliveryType: { contains: 'DOSTAVKA', mode: 'insensitive' } } }] },
+            { OR: [{ deliveryType: null }, { NOT: { deliveryType: { contains: 'SHIP', mode: 'insensitive' } } }] },
+
+            { OR: [{ deliveryMethod: null }, { NOT: { deliveryMethod: { contains: 'DELIVERY', mode: 'insensitive' } } }] },
+            { OR: [{ deliveryMethod: null }, { NOT: { deliveryMethod: { contains: 'COURIER', mode: 'insensitive' } } }] },
+            { OR: [{ deliveryMethod: null }, { NOT: { deliveryMethod: { contains: 'DOSTAVKA', mode: 'insensitive' } } }] },
+            { OR: [{ deliveryMethod: null }, { NOT: { deliveryMethod: { contains: 'SHIP', mode: 'insensitive' } } }] },
+
+            { OR: [{ deliveryAddress: null }, { deliveryAddress: '' }, { deliveryAddress: ' ' }] }
+          ]
+        });
+      }
+    }
+
+    // ═══════════ DELIVERY STATUS FILTER ═══════════
+    if (deliveryStatus) {
+      const dStatus = String(deliveryStatus).toUpperCase();
+      if (dStatus === 'PENDING') {
+        // PENDING = delivery bo'lib, task yo'q yoki task statusi PENDING
+        andConditions.push({
+          OR: [
+            { tasks: { none: {} } },
+            { tasks: { some: { status: 'PENDING' } } },
+          ]
+        });
+      } else if (dStatus === 'IN_CAR') {
+        andConditions.push({
+          tasks: { some: { status: 'ACCEPTED' } }
+        });
+      } else if (dStatus === 'DELIVERED') {
+        andConditions.push({
+          tasks: { some: { status: 'DELIVERED' } }
+        });
+      } else if (dStatus === 'CANCELLED') {
+        // Cancelled tasklar — backend da task statusi reset qilinadi PENDING ga, shuning uchun maxsus flag yo'q
+        // Ammo hozir CANCELLED filterni backendda qo'llab bo'lmaydi chunki TaskStatus enumda CANCELLED yo'q
+        // Shuning uchun bo'sh natija qaytaramiz
+        andConditions.push({ id: -1 }); // hech narsa qaytarmasin
+      }
+    }
+
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
-
       if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+
+    // AND shartlarini qo'shish
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
     }
 
     const transactions = await this.prisma.transaction.findMany({
@@ -497,6 +624,11 @@ export class TransactionService {
           },
         },
         payments: true,
+        tasks: {
+          include: {
+            auditor: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       skip: parsedLimit ? (parsedPage - 1) * parsedLimit : 0,
@@ -513,6 +645,56 @@ export class TransactionService {
         total,
         pages: parsedLimit ? Math.ceil(total / parsedLimit) : 1
       }
+    };
+  }
+
+  // ═══════════ FILTER OPTIONS — Sotuvchi va Kassir ro'yxati ═══════════
+  async getFilterOptions(query: any = {}) {
+    const { branchId, startDate, endDate } = query;
+
+    const where: any = { type: 'SALE' as any };
+    if (branchId) {
+      where.OR = [
+        { fromBranchId: parseInt(branchId) },
+        { toBranchId: parseInt(branchId) },
+      ];
+    }
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+
+    // Uniq soldByUserId va userId larni olish
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      select: {
+        soldByUserId: true,
+        userId: true,
+        soldBy: { select: { id: true, firstName: true, lastName: true, username: true, role: true } },
+        user: { select: { id: true, firstName: true, lastName: true, username: true, role: true } },
+      },
+    });
+
+    const sellersMap = new Map<number, any>();
+    const cashiersMap = new Map<number, any>();
+
+    for (const t of transactions) {
+      // Sotuvchi — soldBy yoki MARKETING rolidagi user
+      if (t.soldByUserId && t.soldBy) {
+        const name = [t.soldBy.firstName, t.soldBy.lastName].filter(Boolean).join(' ').trim() || t.soldBy.username || `User ${t.soldBy.id}`;
+        sellersMap.set(t.soldBy.id, { id: t.soldBy.id, name, role: t.soldBy.role });
+      }
+      // Kassir — userId bilan bog'langan user
+      if (t.userId && t.user) {
+        const name = [t.user.firstName, t.user.lastName].filter(Boolean).join(' ').trim() || t.user.username || `User ${t.user.id}`;
+        cashiersMap.set(t.user.id, { id: t.user.id, name, role: t.user.role });
+      }
+    }
+
+    return {
+      sellers: Array.from(sellersMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      cashiers: Array.from(cashiersMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
     };
   }
 

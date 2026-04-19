@@ -37,7 +37,7 @@ export class LocationController {
   ) {}
 
   private isTashkentLocation(latitude: number, longitude: number): boolean {
-    return Math.abs(latitude - 41.3111) < 0.01 && Math.abs(longitude - 69.2797) < 0.01;
+    return Math.abs(latitude - 41.3111) < 0.0001 && Math.abs(longitude - 69.2797) < 0.0001;
   }
 
   @Post('update')
@@ -55,7 +55,7 @@ export class LocationController {
     message: string;
   }> {
     try {
-      const userId = req.user.sub;
+      const userId = req.user.userId || req.user.sub;
 
       const latitude = typeof updateLocationDto.latitude === 'number' ? updateLocationDto.latitude : 0;
       const longitude = typeof updateLocationDto.longitude === 'number' ? updateLocationDto.longitude : 0;
@@ -107,7 +107,7 @@ export class LocationController {
     message: string;
   }> {
     try {
-      const userId = req.user.sub;
+      const userId = req.user.userId || req.user.sub;
       const location = await this.locationService.getUserLocation(userId);
 
       this.logger.log(`Retrieved location for user ${userId}`);
@@ -143,9 +143,11 @@ export class LocationController {
     message: string;
   }> {
     try {
-      const role = String(req.user.role || '').toUpperCase();
-      const allowedRoles = ['ADMIN', 'OPERATOR', 'OPERATORCALL', 'MANAGER'];
+      this.logger.debug(`User info in request: ${JSON.stringify(req.user)}`);
+      const role = String(req.user.role || req.user.userRole || '').toUpperCase();
+      const allowedRoles = ['ADMIN', 'OPERATOR', 'OPERATORCALL', 'MANAGER', 'AUDITOR', 'MARKETING', 'CASHIER'];
       if (!allowedRoles.includes(role)) {
+        this.logger.warn(`User ${req.user.userId || req.user.sub} with role ${role} denied access to getUserLocation`);
         throw new ForbiddenException("Only authorized staff can view other users' locations");
       }
 
@@ -156,7 +158,7 @@ export class LocationController {
 
       const location = await this.locationService.getUserLocation(targetUserId);
 
-      this.logger.log(`Admin ${req.user.sub} retrieved location for user ${targetUserId}`);
+      this.logger.log(`Admin ${req.user.userId || req.user.sub} retrieved location for user ${targetUserId}`);
 
       return {
         success: true,
@@ -193,7 +195,8 @@ export class LocationController {
     message: string;
   }> {
     try {
-      if (req.user.role !== 'ADMIN') {
+      const role = String(req.user.role || '').toUpperCase();
+      if (role !== 'ADMIN') {
         throw new ForbiddenException('Only admins can view all online users');
       }
 
@@ -241,7 +244,7 @@ export class LocationController {
     message: string;
   }> {
     try {
-      const userId = req.user.sub;
+      const userId = req.user.userId || req.user.sub;
 
       let radiusKm = 5;
       if (radius) {
@@ -285,7 +288,7 @@ export class LocationController {
     message: string;
   }> {
     try {
-      const userId = req.user.sub;
+      const userId = req.user.userId || req.user.sub;
       await this.locationService.deleteUserLocation(userId);
 
       this.logger.log(`Deleted location for user ${userId}`);
@@ -315,7 +318,7 @@ export class LocationController {
     message: string;
   }> {
     try {
-      const userId = req.user.sub;
+      const userId = req.user.userId || req.user.sub;
       await this.locationService.setUserOffline(userId);
 
       this.logger.log(`Set user ${userId} offline`);
@@ -346,7 +349,8 @@ export class LocationController {
     message: string;
   }> {
     try {
-      if (req.user.role !== 'ADMIN') {
+      const role = String(req.user.role || '').toUpperCase();
+      if (role !== 'ADMIN') {
         throw new ForbiddenException('Only admins can view location statistics');
       }
 
@@ -383,7 +387,8 @@ export class LocationController {
     message: string;
   }> {
     try {
-      if (req.user.role !== 'ADMIN') {
+      const role = String(req.user.role || '').toUpperCase();
+      if (role !== 'ADMIN') {
         throw new ForbiddenException('Only admins can cleanup offline locations');
       }
 
