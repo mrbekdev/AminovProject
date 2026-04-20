@@ -650,45 +650,39 @@ export class TransactionService {
 
   // ═══════════ FILTER OPTIONS — Sotuvchi va Kassir ro'yxati ═══════════
   async getFilterOptions(query: any = {}) {
-    const { branchId, startDate, endDate } = query;
+    // Endi branchId va sana bo'yicha millionlab tranzaksiyalarni qidirmaymiz.
+    // Shunchaki tizimdagi faol foydalanuvchilar (sotuvchilar/kassirlar) ro'yxatini qaytaramiz.
+    // Bu backend timeout va xotira tolib ketishini oldini oladi.
 
-    const where: any = { type: 'SALE' as any };
-    if (branchId) {
-      where.OR = [
-        { fromBranchId: parseInt(branchId) },
-        { toBranchId: parseInt(branchId) },
-      ];
-    }
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
-    }
-
-    // Uniq soldByUserId va userId larni olish
-    const transactions = await this.prisma.transaction.findMany({
-      where,
-      select: {
-        soldByUserId: true,
-        userId: true,
-        soldBy: { select: { id: true, firstName: true, lastName: true, username: true, role: true } },
-        user: { select: { id: true, firstName: true, lastName: true, username: true, role: true } },
+    const users = await this.prisma.user.findMany({
+      where: {
+        role: {
+          in: ['ADMIN', 'MANAGER', 'CASHIER', 'MARKETING']
+        }
       },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        role: true,
+      }
     });
 
     const sellersMap = new Map<number, any>();
     const cashiersMap = new Map<number, any>();
 
-    for (const t of transactions) {
-      // Sotuvchi — soldBy yoki MARKETING rolidagi user
-      if (t.soldByUserId && t.soldBy) {
-        const name = [t.soldBy.firstName, t.soldBy.lastName].filter(Boolean).join(' ').trim() || t.soldBy.username || `User ${t.soldBy.id}`;
-        sellersMap.set(t.soldBy.id, { id: t.soldBy.id, name, role: t.soldBy.role });
+    for (const u of users) {
+      const name = [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.username || `User ${u.id}`;
+      
+      // Marketing xodimlari barcha ro'llar uchun asosan "Sotuvchi" vazifasini bajaradi
+      if (['MARKETING', 'ADMIN', 'MANAGER'].includes(u.role)) {
+        sellersMap.set(u.id, { id: u.id, name, role: u.role });
       }
-      // Kassir — userId bilan bog'langan user
-      if (t.userId && t.user) {
-        const name = [t.user.firstName, t.user.lastName].filter(Boolean).join(' ').trim() || t.user.username || `User ${t.user.id}`;
-        cashiersMap.set(t.user.id, { id: t.user.id, name, role: t.user.role });
+
+      // Cashier vazifasini bajaruvchilar yoki hamma "Kassir" bo'lishi mumkin
+      if (['CASHIER', 'ADMIN', 'MANAGER', 'MARKETING'].includes(u.role)) {
+        cashiersMap.set(u.id, { id: u.id, name, role: u.role });
       }
     }
 
