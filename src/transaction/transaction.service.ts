@@ -106,14 +106,20 @@ export class TransactionService {
 
     // For simple sales (CASH/CARD/TERMINAL), validate optional payments breakdown
     const simplePaymentTypes: PaymentType[] = [PaymentType.CASH, PaymentType.CARD, PaymentType.TERMINAL];
-    let paymentsData: { method: string; amount: number }[] = [];
+    let paymentsData: { method: string; amount: number; termUnit?: string; months?: number; days?: number }[] = [];
+    console.log('Raw payments from frontend:', JSON.stringify(payments, null, 2));
     if (Array.isArray(payments) && payments.length > 0) {
       paymentsData = payments
         .map((p) => ({
           method: String(p.method || '').toUpperCase(),
           amount: Number(p.amount || 0) || 0,
+          // Bo'lib to'lash uchun qo'shimcha maydonlarni saqlash
+          termUnit: (p as any).termUnit || 'MONTHS',
+          months: Number((p as any).months) > 0 ? Number((p as any).months) : undefined,
+          days: Number((p as any).days) > 0 ? Number((p as any).days) : undefined,
         }))
-        .filter((p) => p.amount > 0 && ['CASH', 'CARD', 'TERMINAL', 'TOVAR', 'UYDAN'].includes(p.method));
+        .filter((p) => p.amount > 0 && ['CASH', 'CARD', 'TERMINAL', 'TOVAR', 'UYDAN', 'INSTALLMENT'].includes(p.method));
+      console.log('Processed paymentsData:', JSON.stringify(paymentsData, null, 2));
 
       const totalPayments = paymentsData.reduce((sum, p) => sum + p.amount, 0);
       const roundedTotal = Math.round(computedTotal);
@@ -219,6 +225,55 @@ export class TransactionService {
             installmentType: 'UYDAN',
           } as any,
         });
+      }
+
+      // Bo'lib to'lash ham aralash to'lovlar qatorida kelganda jadval yaratish
+      const installmentPayments = paymentsData.filter((p) => p.method === 'INSTALLMENT');
+      console.log('Installment payments found:', installmentPayments.length);
+      for (const ip of installmentPayments) {
+        const amount = ip.amount;
+        const isDays = ip.termUnit === 'DAYS';
+        const rawTermCount = isDays ? ip.days : ip.months;
+        const termCount = Number(rawTermCount) > 0 ? Number(rawTermCount) : 1;
+        console.log('Creating installment schedule:', { amount, isDays, rawTermCount, termCount, months: ip.months, days: ip.days, termUnit: ip.termUnit });
+        
+        if (isDays) {
+          await this.prisma.paymentSchedule.create({
+            data: {
+              transactionId: transaction.id,
+              month: 1,
+              payment: amount,
+              paidAmount: 0,
+              remainingBalance: amount,
+              isPaid: false,
+              isDailyInstallment: true,
+              daysCount: termCount,
+              dueDate: new Date(Date.now() + termCount * 24 * 60 * 60 * 1000),
+              installmentType: 'DAILY',
+            } as any,
+          });
+        } else {
+          let remainingBalTotal = amount;
+          const monthlyPayment = amount / termCount;
+          for (let m = 1; m <= termCount; m++) {
+            const currentPayment = m === termCount ? remainingBalTotal : monthlyPayment;
+            remainingBalTotal -= currentPayment;
+            await this.prisma.paymentSchedule.create({
+              data: {
+                transactionId: transaction.id,
+                month: m,
+                payment: currentPayment,
+                paidAmount: 0,
+                remainingBalance: Math.max(0, remainingBalTotal),
+                isPaid: false,
+                isDailyInstallment: false,
+                installmentType: 'MONTHLY',
+                totalMonths: termCount,
+                remainingMonths: termCount - m + 1
+              } as any,
+            });
+          }
+        }
       }
     }
 
@@ -624,6 +679,10 @@ export class TransactionService {
           },
         },
         payments: true,
+        paymentSchedules: {
+          orderBy: { month: 'asc' },
+          include: { paidBy: true }
+        },
         tasks: {
           include: {
             auditor: true,
@@ -822,6 +881,12 @@ export class TransactionService {
           include: { paidBy: true }
         },
         payments: true,
+        tasks: {
+          include: {
+            auditor: true,
+            uydanCollectedBy: true,
+          }
+        }
       }
     });
 
@@ -1070,7 +1135,14 @@ export class TransactionService {
       include: {
         customer: true,
         items: { include: { product: true } },
-        paymentSchedules: { orderBy: { month: 'asc' } }
+        paymentSchedules: { orderBy: { month: 'asc' } },
+        payments: true,
+        tasks: {
+          include: {
+            auditor: true,
+            uydanCollectedBy: true,
+          }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -1113,6 +1185,20 @@ export class TransactionService {
               remainingBalance: nextDue.remainingBalance
             }
             : null,
+          uydan: {
+            amount: (t.tasks || []).reduce((sum, task: any) => sum + Number(task?.uydanAmount || 0), 0),
+            collectedAmount: (t.tasks || []).reduce((sum, task: any) => sum + Number(task?.uydanCollectedAmount || 0), 0),
+            isCollected: (t.tasks || []).some((task: any) => Boolean(task?.isUydanCollected)),
+            collectNote: (t.tasks || []).map((task: any) => task?.uydanCollectNote).find(Boolean) || null,
+            courier: (() => {
+              const taskWithCourier = (t.tasks || []).find((task: any) => task?.auditor);
+              return taskWithCourier?.auditor || null;
+            })(),
+            collectedBy: (() => {
+              const taskWithCollector = (t.tasks || []).find((task: any) => task?.uydanCollectedBy);
+              return taskWithCollector?.uydanCollectedBy || null;
+            })()
+          },
           items: (t.items || []).map((it) => ({
             id: it.id,
             productId: it.productId,

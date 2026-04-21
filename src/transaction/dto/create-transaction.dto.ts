@@ -79,11 +79,23 @@ export class TransactionItemDto {
 
 export class PaymentBreakdownDto {
   @IsString()
-  method: 'CASH' | 'CARD' | 'TERMINAL' | 'TOVAR' | 'UYDAN';
+  method: 'CASH' | 'CARD' | 'TERMINAL' | 'TOVAR' | 'UYDAN' | 'INSTALLMENT';
 
   @IsNumber()
   @Min(0)
   amount: number;
+
+  @IsOptional()
+  @IsString()
+  termUnit?: 'MONTHS' | 'DAYS';
+
+  @IsOptional()
+  @IsNumber()
+  months?: number;
+
+  @IsOptional()
+  @IsNumber()
+  days?: number;
 }
 
 export class CreateTransactionDto {

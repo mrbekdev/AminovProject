@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Patch, BadRequestException } from '@nestjs/common';
 import { TaskService } from './task.service';
 
 @Controller('tasks')
@@ -65,5 +65,21 @@ export class TaskController {
   @Post(':id/cancel')
   cancelPost(@Param('id') id: string) {
     return this.taskService.cancel(Number(id));
+  }
+
+  @Patch(':id/collect-uydan')
+  collectUydan(
+    @Param('id') id: string,
+    @Body() body: { userId?: number; amount?: number; note?: string }
+  ) {
+    const userId = body?.userId ? Number(body.userId) : NaN;
+    const amount = body?.amount != null ? Number(body.amount) : NaN;
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new BadRequestException('userId required');
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('amount required');
+    }
+    return this.taskService.collectUydan(Number(id), userId, amount, body?.note);
   }
 }

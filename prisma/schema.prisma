@@ -203,6 +203,7 @@ model User {
   faceTemplates       FaceTemplate[]
   Transaction         Transaction[]
   auditTasks          Task[]                @relation("TaskAuditor")
+  collectedUydanTasks Task[]                @relation("TaskUydanCollectedBy")
 
   @@index([phone])
   @@index([branchId])
@@ -676,15 +677,24 @@ model Task {
   auditorId     Int?
   transactionId Int
   status        TaskStatus @default(PENDING)
+  uydanAmount   Float      @default(0)
+  isUydanCollected Boolean @default(false)
+  uydanCollectedAmount Float @default(0)
+  uydanCollectedAt DateTime?
+  uydanCollectedById Int?
+  uydanCollectNote String?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
   auditor     User?        @relation("TaskAuditor", fields: [auditorId], references: [id], onDelete: SetNull)
+  uydanCollectedBy User?    @relation("TaskUydanCollectedBy", fields: [uydanCollectedById], references: [id], onDelete: SetNull)
   transaction Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
   @@index([auditorId])
   @@index([transactionId])
   @@index([status])
+  @@index([isUydanCollected])
+  @@index([uydanCollectedById])
 }
 
 model WorkSchedule {
