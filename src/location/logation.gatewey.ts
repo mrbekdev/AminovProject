@@ -8,7 +8,7 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { LocationService, UserLocationWithUser } from './location.service';
 import { JwtService } from '@nestjs/jwt';
 import { debounce } from 'lodash';
@@ -89,8 +89,23 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         this.logger.log(`Sent adminAllLocations to admin ${client.userId}: ${validUsers.length} users`);
       }
 
-      const myLocation = await this.locationService.getUserLocation(client.userId);
-      client.emit('myLocationUpdated', myLocation);
+      try {
+        const myLocation = await this.locationService.getUserLocation(client.userId);
+        // if location exists but is Tashkent default, skip and emit null
+        if (this.isTashkentLocation(myLocation.latitude, myLocation.longitude, myLocation.address)) {
+          client.emit('myLocationUpdated', null);
+        } else {
+          client.emit('myLocationUpdated', myLocation);
+        }
+      } catch (err) {
+        // If user location not found, don't treat as fatal — emit null so client can handle absence
+        if (err instanceof NotFoundException) {
+          this.logger.warn(`No stored location for user ${client.userId}, continuing connection`);
+          client.emit('myLocationUpdated', null);
+        } else {
+          throw err;
+        }
+      }
 
       client.emit('connectionSuccess', {
         userId: client.userId,
