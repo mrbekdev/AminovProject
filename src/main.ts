@@ -1,3 +1,6 @@
+// IMPORTANT: Initialize Sentry as early as possible.
+import './instrument';
+
 // main.ts
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';

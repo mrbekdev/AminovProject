@@ -46,7 +46,8 @@
     "socket.io-client": "^4.8.1",
     "swagger-ui-express": "^5.0.1",
     "xlsx": "^0.18.5",
-    "@logrocket/node": "^1.0.0"
+    "@sentry/nestjs": "^3.0.0",
+    "@sentry/node": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
