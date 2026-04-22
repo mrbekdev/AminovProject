@@ -24,6 +24,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { UserBranchAccessModule } from './user-branch-access/user-branch-access.module';
 import { TaskModule } from './task/task.module';
 import { DailyExpenseModule } from './daily-expense/daily-expense.module';
+import { DriverRatingModule } from './driver-rating/driver-rating.module';
 
 @Module({
   imports: [
@@ -49,7 +50,8 @@ import { DailyExpenseModule } from './daily-expense/daily-expense.module';
     AttendanceModule,
     UserBranchAccessModule,
     TaskModule,
-    DailyExpenseModule
+    DailyExpenseModule,
+    DriverRatingModule
   ],
   controllers: [AppController],
   providers: [AppService],

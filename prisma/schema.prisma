@@ -204,6 +204,8 @@ model User {
   Transaction         Transaction[]
   auditTasks          Task[]                @relation("TaskAuditor")
   collectedUydanTasks Task[]                @relation("TaskUydanCollectedBy")
+  driverRatings       DriverRating[]        @relation("DriverRatings")
+  ratingsGiven        DriverRating[]        @relation("RatingsGiven")
 
   @@index([phone])
   @@index([branchId])
@@ -399,6 +401,7 @@ model Transaction {
   defectiveLogs    DefectiveLog[]
   // Per-transaction payment breakdown (cash/card/terminal for simple sales)
   payments         TransactionPayment[]
+  driverRatings    DriverRating[]
 
   @@index([customerId])
   @@index([userId])
@@ -729,6 +732,27 @@ model FaceTemplate {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model DriverRating {
+  id            Int      @id @default(autoincrement())
+  driverId      Int      // The driver (auditor) being rated
+  transactionId Int      // The transaction/delivery being rated
+  rating        Int      // 1-5 stars
+  ratedBy       Int      // The operator who gave the rating
+  ratedAt       DateTime @default(now())
+  notes         String?  // Optional notes about the rating
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  driver        User     @relation("DriverRatings", fields: [driverId], references: [id], onDelete: Cascade)
+  rater         User     @relation("RatingsGiven", fields: [ratedBy], references: [id], onDelete: Cascade)
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@index([transactionId])
+  @@index([ratedBy])
+  @@unique([driverId, transactionId, ratedBy]) // One rating per driver per transaction per rater
 }
 
 // Single numeric value store
