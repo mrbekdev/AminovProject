@@ -3,13 +3,12 @@ generator client {
 }
 
 model DailyExpense {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   amount      Float
   reason      String
   description String?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime @default(now())
 }
-
 
 enum AttendanceEventType {
   CHECK_IN
@@ -28,7 +27,7 @@ model AttendanceDay {
   id           Int               @id @default(autoincrement())
   userId       Int
   branchId     Int?
-  date         DateTime 
+  date         DateTime
   checkInAt    DateTime?
   checkOutAt   DateTime?
   totalMinutes Int?              @default(0)
@@ -97,6 +96,7 @@ enum PaymentType {
   TERMINAL
   CREDIT
   INSTALLMENT
+  THIRD_PARTY
 }
 
 enum UserRole {
@@ -108,7 +108,6 @@ enum UserRole {
   MARKETING
   OPERATOR
   OPERATORCALL
-
 }
 
 enum BranchType {
@@ -166,46 +165,46 @@ model Branch {
 }
 
 model User {
-  id                  Int                    @id @default(autoincrement())
-  firstName           String?
-  lastName            String?
-  phone               String?                @unique
-  username            String                 @unique
-  password            String?
-  role                UserRole
-  branchId            Int?
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  status              UserStatus             @default(ACTIVE)
-  allowedBranches     UserBranchAccess[]
-  workStartTime       String?                @db.VarChar(5) 
-  workEndTime         String?                @db.VarChar(5) 
-  workShift           String?                @default("DAY") 
-  branch              Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  createdTransactions Transaction[]          @relation("TransactionsCreatedBy")
-  soldTransactions    Transaction[]          @relation("TransactionsSoldBy")
-  initiatedTransfers  ProductTransfer[]      @relation("InitiatedTransfers")
-  approvedTransfers   ProductTransfer[]      @relation("ApprovedTransfers")
-  userLocations       UserLocation[]
+  id                   Int                    @id @default(autoincrement())
+  firstName            String?
+  lastName             String?
+  phone                String?                @unique
+  username             String                 @unique
+  password             String?
+  role                 UserRole
+  branchId             Int?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  status               UserStatus             @default(ACTIVE)
+  allowedBranches      UserBranchAccess[]
+  workStartTime        String?                @db.VarChar(5)
+  workEndTime          String?                @db.VarChar(5)
+  workShift            String?                @default("DAY")
+  branch               Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdTransactions  Transaction[]          @relation("TransactionsCreatedBy")
+  soldTransactions     Transaction[]          @relation("TransactionsSoldBy")
+  initiatedTransfers   ProductTransfer[]      @relation("InitiatedTransfers")
+  approvedTransfers    ProductTransfer[]      @relation("ApprovedTransfers")
+  userLocations        UserLocation[]
   // Defective logs relations
-  createdDefectiveLogs DefectiveLog[] @relation("DefectiveLogCreatedBy")
-  handledDefectiveLogs DefectiveLog[] @relation("DefectiveLogHandledBy")
-  PaymentSchedule     PaymentSchedule[]
-  PaymentRepayment    PaymentRepayment[]
-  dailyRepayments     DailyRepayment[]
-  creditRepayments    CreditRepayment[]
-  cashierReports      CashierReport[]        @relation("CashierReports")
-  exchangeRates       CurrencyExchangeRate[]
-  bonuses             Bonus[]                @relation("UserBonuses")
-  createdBonuses      Bonus[]                @relation("BonusCreatedBy")
-  attendanceDays      AttendanceDay[]
-  attendanceEvents    AttendanceEvent[]
-  faceTemplates       FaceTemplate[]
-  Transaction         Transaction[]
-  auditTasks          Task[]                @relation("TaskAuditor")
-  collectedUydanTasks Task[]                @relation("TaskUydanCollectedBy")
-  driverRatings       DriverRating[]        @relation("DriverRatings")
-  ratingsGiven        DriverRating[]        @relation("RatingsGiven")
+  createdDefectiveLogs DefectiveLog[]         @relation("DefectiveLogCreatedBy")
+  handledDefectiveLogs DefectiveLog[]         @relation("DefectiveLogHandledBy")
+  PaymentSchedule      PaymentSchedule[]
+  PaymentRepayment     PaymentRepayment[]
+  dailyRepayments      DailyRepayment[]
+  creditRepayments     CreditRepayment[]
+  cashierReports       CashierReport[]        @relation("CashierReports")
+  exchangeRates        CurrencyExchangeRate[]
+  bonuses              Bonus[]                @relation("UserBonuses")
+  createdBonuses       Bonus[]                @relation("BonusCreatedBy")
+  attendanceDays       AttendanceDay[]
+  attendanceEvents     AttendanceEvent[]
+  faceTemplates        FaceTemplate[]
+  Transaction          Transaction[]
+  auditTasks           Task[]                 @relation("TaskAuditor")
+  collectedUydanTasks  Task[]                 @relation("TaskUydanCollectedBy")
+  driverRatings        DriverRating[]         @relation("DriverRatings")
+  ratingsGiven         DriverRating[]         @relation("RatingsGiven")
 
   @@index([phone])
   @@index([branchId])
@@ -279,7 +278,7 @@ model Product {
   categoryId        Int
   marketPrice       Float?
   bonusPercentage   Float?                    @default(0) // Bonus foizi
-  months            String?                   // Oylar soni (masalan: 001, 002, 012)
+  months            String? // Oylar soni (masalan: 001, 002, 012)
   isDeleted         Boolean                   @default(false) // Soft delete uchun
   deletedAt         DateTime?
   createdAt         DateTime?                 @default(now())
@@ -297,29 +296,29 @@ model Product {
 }
 
 model DefectiveLog {
-  id          Int      @id @default(autoincrement())
-  productId   Int
-  quantity    Int
-  description String
-  userId      Int?
-  branchId    Int?
-  cashAmount  Float    @default(0)
+  id                      Int      @id @default(autoincrement())
+  productId               Int
+  quantity                Int
+  description             String
+  userId                  Int?
+  branchId                Int?
+  cashAmount              Float    @default(0)
   // Optional explicit direction for cashier cash adjustment (PLUS/MINUS)
   cashAdjustmentDirection String?
-  actionType  String   @default("DEFECTIVE") // DEFECTIVE, FIXED, RETURN, EXCHANGE
-  createdAt   DateTime @default(now())
+  actionType              String   @default("DEFECTIVE") // DEFECTIVE, FIXED, RETURN, EXCHANGE
+  createdAt               DateTime @default(now())
 
   // Optional linkage to original sale
   transactionId Int?
 
   // Optional actor for who handled the operation (may differ from creator)
-  handledByUserId Int?
+  handledByUserId          Int?
   exchangeWithProductId    Int? // ID of the product being exchanged with
   replacementQuantity      Int? // Quantity of replacement product
   replacementUnitPrice     Float? // Unit price of replacement product
   replacementTransactionId Int? // ID of the new transaction created for replacement product
-  transaction            Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  handledBy              User?      @relation("DefectiveLogHandledBy", fields: [handledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  transaction              Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  handledBy                User?        @relation("DefectiveLogHandledBy", fields: [handledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   user    User?   @relation("DefectiveLogCreatedBy", fields: [userId], references: [id], onDelete: Cascade)
@@ -437,7 +436,7 @@ model TransactionItem {
 model TransactionPayment {
   id            Int      @id @default(autoincrement())
   transactionId Int
-  method        String   // CASH, CARD or TERMINAL
+  method        String // CASH, CARD or TERMINAL
   amount        Float
   createdAt     DateTime @default(now())
 
@@ -676,22 +675,22 @@ enum TaskStatus {
 }
 
 model Task {
-  id            Int        @id @default(autoincrement())
-  auditorId     Int?
-  transactionId Int
-  status        TaskStatus @default(PENDING)
-  uydanAmount   Float      @default(0)
-  isUydanCollected Boolean @default(false)
-  uydanCollectedAmount Float @default(0)
-  uydanCollectedAt DateTime?
-  uydanCollectedById Int?
-  uydanCollectNote String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id                   Int        @id @default(autoincrement())
+  auditorId            Int?
+  transactionId        Int
+  status               TaskStatus @default(PENDING)
+  uydanAmount          Float      @default(0)
+  isUydanCollected     Boolean    @default(false)
+  uydanCollectedAmount Float      @default(0)
+  uydanCollectedAt     DateTime?
+  uydanCollectedById   Int?
+  uydanCollectNote     String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
 
-  auditor     User?        @relation("TaskAuditor", fields: [auditorId], references: [id], onDelete: SetNull)
-  uydanCollectedBy User?    @relation("TaskUydanCollectedBy", fields: [uydanCollectedById], references: [id], onDelete: SetNull)
-  transaction Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  auditor          User?       @relation("TaskAuditor", fields: [auditorId], references: [id], onDelete: SetNull)
+  uydanCollectedBy User?       @relation("TaskUydanCollectedBy", fields: [uydanCollectedById], references: [id], onDelete: SetNull)
+  transaction      Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
   @@index([auditorId])
   @@index([transactionId])
@@ -729,30 +728,30 @@ model FaceTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 model DriverRating {
   id            Int      @id @default(autoincrement())
-  driverId      Int      // The driver (auditor) being rated
-  transactionId Int      // The transaction/delivery being rated
-  rating        Int      // 1-5 stars
-  ratedBy       Int      // The operator who gave the rating
+  driverId      Int // The driver (auditor) being rated
+  transactionId Int // The transaction/delivery being rated
+  rating        Int // 1-5 stars
+  ratedBy       Int // The operator who gave the rating
   ratedAt       DateTime @default(now())
-  notes         String?  // Optional notes about the rating
+  notes         String? // Optional notes about the rating
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  driver        User     @relation("DriverRatings", fields: [driverId], references: [id], onDelete: Cascade)
-  rater         User     @relation("RatingsGiven", fields: [ratedBy], references: [id], onDelete: Cascade)
-  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  driver      User        @relation("DriverRatings", fields: [driverId], references: [id], onDelete: Cascade)
+  rater       User        @relation("RatingsGiven", fields: [ratedBy], references: [id], onDelete: Cascade)
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
+  @@unique([driverId, transactionId, ratedBy]) // One rating per driver per transaction per rater
   @@index([driverId])
   @@index([transactionId])
   @@index([ratedBy])
-  @@unique([driverId, transactionId, ratedBy]) // One rating per driver per transaction per rater
 }
 
 // Single numeric value store

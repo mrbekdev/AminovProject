@@ -185,8 +185,105 @@ export class CreditRepaymentService {
   }
 
   async remove(id: number) {
-    return this.prisma.creditRepayment.delete({
-      where: { id },
+    // Perform a transactional revert: delete creditRepayment, remove linked paymentRepayment
+    // and adjust paymentSchedule / transaction / branch cash balances accordingly.
+    const existing = await this.prisma.creditRepayment.findUnique({ where: { id } });
+    if (!existing) return null;
+
+    return this.prisma.$transaction(async (tx) => {
+      // delete the credit repayment record
+      const deleted = await tx.creditRepayment.delete({ where: { id } });
+
+      // Helper: try to decrement branch cash if payment was CASH
+      const tryDecrementBranchCash = async (branchId: number | null, amount: number, channel?: string) => {
+        if (!branchId) return;
+        if ((String(channel || 'CASH').toUpperCase()) !== 'CASH') return;
+        try {
+          await tx.branch.update({ where: { id: branchId }, data: { cashBalance: { decrement: amount } } });
+        } catch (_) { /* ignore */ }
+      };
+
+      // If this repayment belonged to a payment schedule, revert schedule and related paymentRepayment
+      if (existing.scheduleId) {
+        // attempt to find a matching PaymentRepayment row for this schedule
+        const candidates = await tx.paymentRepayment.findMany({
+          where: { scheduleId: existing.scheduleId, amount: existing.amount },
+          orderBy: { paidAt: 'desc' },
+          take: 5,
+        });
+
+        let matched = null as any;
+        if (candidates.length === 1) matched = candidates[0];
+        else if (candidates.length > 1) {
+          if (existing.paidAt) {
+            const paidAtTime = new Date(existing.paidAt).getTime();
+            matched = candidates.find((c) => Math.abs(new Date(c.paidAt).getTime() - paidAtTime) < 5000) || candidates[0];
+          } else {
+            matched = candidates[0];
+          }
+        }
+
+        if (matched) {
+          try {
+            await tx.paymentRepayment.delete({ where: { id: matched.id } });
+          } catch (_) { /* ignore */ }
+        }
+
+        // Adjust payment schedule paidAmount / isPaid / remainingBalance
+        const schedule = await tx.paymentSchedule.findUnique({ where: { id: existing.scheduleId } });
+        if (schedule) {
+          const currentPaid = Number(schedule.paidAmount || 0);
+          const newPaid = Math.max(0, currentPaid - Number(existing.amount || 0));
+          const paymentTarget = Number(schedule.payment || 0);
+          const updateData: any = {
+            paidAmount: newPaid,
+            isPaid: newPaid >= paymentTarget,
+          };
+
+          // For daily installments also adjust remainingBalance
+          if (schedule.isDailyInstallment) {
+            const currentRemaining = Number(schedule.remainingBalance || 0);
+            updateData.remainingBalance = Math.max(0, currentRemaining + Number(existing.amount || 0));
+          }
+
+          try {
+            await tx.paymentSchedule.update({ where: { id: schedule.id }, data: updateData });
+          } catch (_) { /* ignore */ }
+        }
+
+        // Adjust parent transaction totals
+        try {
+          const txRec = await tx.transaction.findUnique({ where: { id: existing.transactionId } });
+          if (txRec) {
+            const currentCredit = Number(txRec.creditRepaymentAmount || 0);
+            const newCredit = Math.max(0, currentCredit - Number(existing.amount || 0));
+            const baseAmount = Number(txRec.finalTotal || txRec.total || 0);
+            const down = Number(txRec.downPayment || 0);
+            const newRemaining = Math.max(0, baseAmount - down - newCredit);
+            await tx.transaction.update({ where: { id: txRec.id }, data: { creditRepaymentAmount: newCredit, remainingBalance: newRemaining } });
+          }
+        } catch (_) { /* ignore */ }
+
+        // Decrement branch cash if applicable
+        await tryDecrementBranchCash(existing.branchId || null, Number(existing.amount || 0), existing.channel);
+      } else {
+        // Transaction-level repayment (no schedule) — adjust transaction totals
+        try {
+          const txRec = await tx.transaction.findUnique({ where: { id: existing.transactionId } });
+          if (txRec) {
+            const currentCredit = Number(txRec.creditRepaymentAmount || 0);
+            const newCredit = Math.max(0, currentCredit - Number(existing.amount || 0));
+            const baseAmount = Number(txRec.finalTotal || txRec.total || 0);
+            const down = Number(txRec.downPayment || 0);
+            const newRemaining = Math.max(0, baseAmount - down - newCredit);
+            await tx.transaction.update({ where: { id: txRec.id }, data: { creditRepaymentAmount: newCredit, remainingBalance: newRemaining } });
+          }
+        } catch (_) { /* ignore */ }
+
+        await tryDecrementBranchCash(existing.branchId || null, Number(existing.amount || 0), existing.channel);
+      }
+
+      return deleted;
     });
   }
 }

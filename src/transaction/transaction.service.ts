@@ -118,7 +118,7 @@ export class TransactionService {
           months: Number((p as any).months) > 0 ? Number((p as any).months) : undefined,
           days: Number((p as any).days) > 0 ? Number((p as any).days) : undefined,
         }))
-        .filter((p) => p.amount > 0 && ['CASH', 'CARD', 'TERMINAL', 'TOVAR', 'UYDAN', 'INSTALLMENT'].includes(p.method));
+        .filter((p) => p.amount > 0 && ['CASH', 'CARD', 'TERMINAL', 'TOVAR', 'UYDAN', 'INSTALLMENT', 'THIRD_PARTY'].includes(p.method));
       console.log('Processed paymentsData:', JSON.stringify(paymentsData, null, 2));
 
       const totalPayments = paymentsData.reduce((sum, p) => sum + p.amount, 0);
