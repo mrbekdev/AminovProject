@@ -60,13 +60,20 @@ export class PaymentScheduleService {
     const existingPaidAmount = existing.paidAmount || 0;
     const inputHasPaidAmount = paidAmount !== undefined && paidAmount !== null;
     const inputHasDelta = amountDelta !== undefined && amountDelta !== null;
+
+    // Calculate delta - can be positive (new payment) or negative (unpay/refund)
     const deltaPaid = inputHasDelta
-      ? Math.max(0, Number(amountDelta))
-      : (inputHasPaidAmount ? Math.max(0, Number(paidAmount) - existingPaidAmount) : 0);
+      ? Number(amountDelta)
+      : (inputHasPaidAmount ? Number(paidAmount) - existingPaidAmount : 0);
+
     const requestedPaidAmount = inputHasDelta
       ? existingPaidAmount + deltaPaid
       : (inputHasPaidAmount ? Number(paidAmount) : existingPaidAmount);
-    const effectivePaidAt = paidAt ? new Date(paidAt) : (deltaPaid > 0 ? new Date() : undefined);
+
+    // For unpay (decreasing paid amount), we allow paidAt to be explicitly null
+    const effectivePaidAt = paidAt !== undefined
+      ? (paidAt ? new Date(paidAt) : null)
+      : (deltaPaid > 0 ? new Date() : undefined);
 
     // Build schedule update data with only valid fields
     const data: any = {
@@ -134,8 +141,19 @@ export class PaymentScheduleService {
         }
       });
 
-              // Append a repayment history row and update branch cash if there is a positive delta
+        // Decide which branch cashbox to update: prefer cashier's branch, fallback to transaction's fromBranch
+        let targetBranchId: number | null = null;
+        if (paidByUserId) {
+          const cashier = await tx.user.findUnique({ where: { id: Number(paidByUserId) }, select: { branchId: true } });
+          if (cashier && cashier.branchId) targetBranchId = cashier.branchId;
+        }
+        if (!targetBranchId && existing.transaction?.fromBranchId) {
+          targetBranchId = existing.transaction.fromBranchId;
+        }
+
+        // Handle payment addition (deltaPaid > 0)
         if (deltaPaid > 0 && effectivePaidAt) {
+          // Append a repayment history row
           await tx.paymentRepayment.create({
             data: {
               transactionId: updatedSchedule.transactionId,
@@ -147,58 +165,59 @@ export class PaymentScheduleService {
             }
           });
 
-        // Decide which branch cashbox to increment: prefer cashier's branch, fallback to transaction's fromBranch
-        let targetBranchId: number | null = null;
-        if (paidByUserId) {
-          const cashier = await tx.user.findUnique({ where: { id: Number(paidByUserId) }, select: { branchId: true } });
-          if (cashier && cashier.branchId) targetBranchId = cashier.branchId;
-        }
-        if (!targetBranchId && existing.transaction?.fromBranchId) {
-          targetBranchId = existing.transaction.fromBranchId;
+          // Update branch cash only for CASH channel (increment)
+          if (targetBranchId && ((paidChannel || 'CASH').toUpperCase() === 'CASH')) {
+            await tx.branch.update({
+              where: { id: targetBranchId },
+              data: { cashBalance: { increment: deltaPaid } }
+            });
+          }
         }
 
-        // Update branch cash only for CASH channel
-        if (targetBranchId && ((paidChannel || 'CASH').toUpperCase() === 'CASH')) {
+        // Handle unpay/refund (deltaPaid < 0) - decrement branch cash
+        if (deltaPaid < 0 && targetBranchId && ((paidChannel || 'CASH').toUpperCase() === 'CASH')) {
           await tx.branch.update({
             where: { id: targetBranchId },
-            data: { cashBalance: { increment: deltaPaid } }
+            data: { cashBalance: { decrement: Math.abs(deltaPaid) } }
           });
         }
 
         // Update parent transaction last repayment date and remaining balance
         try {
-                  // Kunlik bo'lib to'lash uchun remaining balance ni yangilash
-        if (existing.isDailyInstallment) {
-          const currentRemaining = existing.remainingBalance || 0;
-          const newRemaining = Math.max(0, currentRemaining - deltaPaid);
-          
-          
-          await tx.transaction.update({
-            where: { id: existing.transactionId },
-            data: { 
-              lastRepaymentDate: effectivePaidAt as any,
-              remainingBalance: newRemaining,
-              creditRepaymentAmount: { increment: deltaPaid }
-            }
-          });
-          
-          // Kunlik bo'lib to'lash uchun transaction ning isPaid ni ham yangilash
-          if (newRemaining <= 0) {
+          // Kunlik bo'lib to'lash uchun remaining balance ni yangilash
+          if (existing.isDailyInstallment) {
+            const currentRemaining = existing.remainingBalance || 0;
+            const newRemaining = Math.max(0, currentRemaining - deltaPaid);
+
             await tx.transaction.update({
               where: { id: existing.transactionId },
-              data: { 
-                status: 'COMPLETED' as any // To'lov to'liq amalga oshirilganda status ni yangilash
+              data: {
+                lastRepaymentDate: effectivePaidAt as any,
+                remainingBalance: newRemaining,
+                creditRepaymentAmount: { increment: deltaPaid }
+              }
+            });
+
+            // Kunlik bo'lib to'lash uchun transaction ning isPaid ni ham yangilash
+            if (newRemaining <= 0) {
+              await tx.transaction.update({
+                where: { id: existing.transactionId },
+                data: {
+                  status: 'COMPLETED' as any // To'lov to'liq amalga oshirilganda status ni yangilash
+                }
+              });
+            }
+          } else {
+            // For regular schedules, update creditRepaymentAmount
+            await tx.transaction.update({
+              where: { id: existing.transactionId },
+              data: {
+                lastRepaymentDate: effectivePaidAt as any,
+                creditRepaymentAmount: { increment: deltaPaid }
               }
             });
           }
-        } else {
-          await tx.transaction.update({
-            where: { id: existing.transactionId },
-            data: { lastRepaymentDate: effectivePaidAt as any }
-          });
-        }
         } catch (_) {}
-      }
 
       return updatedSchedule;
     });

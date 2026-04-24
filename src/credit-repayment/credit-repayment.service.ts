@@ -32,15 +32,25 @@ export class CreditRepaymentService {
   }
 
   async findAll(query: any) {
-    const { transactionId, scheduleId, branchId, paidByUserId, startDate, endDate } = query;
-    
+    const { transactionId, scheduleId, branchId, paidByUserId, month, startDate, endDate } = query;
+
     const where: any = {};
-    
-    if (transactionId) where.transactionId = parseInt(transactionId);
-    if (scheduleId) where.scheduleId = parseInt(scheduleId);
+
+    // Handle transactionId and scheduleId with OR logic if both provided
+    if (transactionId && scheduleId) {
+      where.OR = [
+        { transactionId: parseInt(transactionId) },
+        { scheduleId: parseInt(scheduleId) }
+      ];
+    } else {
+      if (transactionId) where.transactionId = parseInt(transactionId);
+      if (scheduleId) where.scheduleId = parseInt(scheduleId);
+    }
+
     if (branchId) where.branchId = parseInt(branchId);
     if (paidByUserId) where.paidByUserId = parseInt(paidByUserId);
-    
+    if (month) where.month = String(month);
+
     if (startDate || endDate) {
       where.paidAt = {};
       if (startDate) where.paidAt.gte = new Date(startDate);
