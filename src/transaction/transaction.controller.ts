@@ -99,6 +99,29 @@ export class TransactionController {
     });
   }
 
+  @Get('debt-customers')
+  getDebtCustomers(
+    @Query('branchId') branchId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('hasOutstanding') hasOutstanding?: string,
+    @Query('paymentStatus') paymentStatus?: string
+  ) {
+    return this.transactionService.getDebtCustomers({
+      branchId: branchId ? parseInt(branchId) : undefined,
+      page: page ? parseInt(page) : undefined,
+      limit: limit ? parseInt(limit) : undefined,
+      search,
+      startDate,
+      endDate,
+      hasOutstanding: hasOutstanding ? hasOutstanding === 'true' : undefined,
+      paymentStatus,
+    });
+  }
+
   @Get('pending-transfers')
   getPendingTransfers(@Query('branchId') branchId?: string) {
     return this.transactionService.getPendingTransfers(

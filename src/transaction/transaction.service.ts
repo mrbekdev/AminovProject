@@ -1257,7 +1257,168 @@ export class TransactionService {
       summary: {
         totalOutstanding,
         totalCustomers: customers.length,
-        totalDebtTransactions: debts.length
+      }
+    };
+  }
+
+  async getDebtCustomers(params: {
+    branchId?: number;
+    page?: number;
+    limit?: number;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+    hasOutstanding?: boolean;
+    paymentStatus?: string; // ALL, FULLY_PAID, HAS_REMAINING, UYDAN
+  }) {
+    const { branchId, page = 1, limit = 50, search, startDate, endDate, hasOutstanding, paymentStatus } = params;
+
+    const skip = (page - 1) * limit;
+
+    // Build where clause
+    const where: any = {
+      status: { not: TransactionStatus.CANCELLED },
+    };
+
+    // Payment type filter - check if it's CREDIT, INSTALLMENT, or has UYDAN/INSTALLMENT payments
+    const paymentTypeConditions = [
+      { paymentType: { in: [PaymentType.CREDIT, PaymentType.INSTALLMENT] } },
+      { payments: { some: { method: { in: ['UYDAN', 'INSTALLMENT'] } } } }
+    ];
+
+    // Handle payment status filter
+    if (paymentStatus === 'UYDAN') {
+      // Only show transactions with UYDAN payments
+      where.OR = [
+        { payments: { some: { method: { in: ['UYDAN'] } } } }
+      ];
+    } else {
+      where.OR = paymentTypeConditions;
+    }
+
+    // Branch filter
+    if (branchId) {
+      where.AND = [
+        {
+          OR: [
+            { fromBranchId: branchId },
+            { toBranchId: branchId }
+          ]
+        }
+      ];
+    }
+
+    // Date filter - handle single or both dates
+    if (startDate || endDate) {
+      if (!where.AND) where.AND = [];
+      const dateCondition: any = {};
+      if (startDate) dateCondition.gte = new Date(startDate);
+      if (endDate) dateCondition.lte = new Date(endDate);
+      where.AND.push({ createdAt: dateCondition });
+    }
+
+    // Search filter
+    if (search) {
+      if (!where.AND) where.AND = [];
+      where.AND.push({
+        customer: {
+          OR: [
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search, mode: 'insensitive' } }
+          ]
+        }
+      });
+    }
+
+    console.log('getDebtCustomers where clause:', JSON.stringify(where, null, 2));
+
+    // Get transactions with minimal data for performance
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      include: {
+        customer: true,
+        paymentSchedules: {
+          select: {
+            payment: true,
+            paidAmount: true,
+            isPaid: true,
+            month: true
+          }
+        },
+        payments: {
+          select: {
+            method: true,
+            amount: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    console.log('Found transactions:', transactions.length);
+
+    // Group by customer and calculate totals
+    const customerMap = new Map<number, any>();
+
+    for (const t of transactions) {
+      const cust = t.customer;
+      if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
+
+      const schedules = t.paymentSchedules || [];
+      const payments = t.payments || [];
+
+      // Calculate totals
+      const totalPayable = schedules.reduce((sum, s) => sum + (s.payment || 0), 0);
+      const totalPaidFromSchedules = schedules.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
+      const upfrontPaid = (t.downPayment || 0) + (t.amountPaid || 0);
+      const totalPaid = totalPaidFromSchedules + upfrontPaid;
+      const outstanding = Math.max(0, totalPayable - totalPaid);
+
+      // Filter by hasOutstanding if specified
+      if (hasOutstanding === true && outstanding <= 0) continue;
+      if (hasOutstanding === false && outstanding > 0) continue;
+
+      // Filter by payment status
+      if (paymentStatus === 'FULLY_PAID' && outstanding > 0) continue;
+      if (paymentStatus === 'HAS_REMAINING' && outstanding <= 0) continue;
+
+      if (!customerMap.has(cust.id)) {
+        customerMap.set(cust.id, {
+          id: cust.id,
+          fullName: cust.fullName,
+          phone: cust.phone,
+          totalPayable: 0,
+          totalPaid: 0,
+          outstanding: 0,
+          transactionCount: 0,
+          createdAt: t.createdAt
+        });
+      }
+
+      const agg = customerMap.get(cust.id);
+      agg.totalPayable += totalPayable;
+      agg.totalPaid += totalPaid;
+      agg.outstanding += outstanding;
+      agg.transactionCount += 1;
+    }
+
+    // Convert to array and sort
+    let customers = Array.from(customerMap.values())
+      .sort((a, b) => b.outstanding - a.outstanding);
+
+    console.log('Grouped customers:', customers.length);
+
+    // Apply pagination
+    const total = customers.length;
+    const paginatedCustomers = customers.slice(skip, skip + limit);
+
+    return {
+      customers: paginatedCustomers,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
       }
     };
   }
