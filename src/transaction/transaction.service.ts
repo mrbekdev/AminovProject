@@ -1390,10 +1390,13 @@ export class TransactionService {
 
   // Filiallar orasida o'tkazma
   async createTransfer(transferData: any) {
-    const { fromBranchId, toBranchId, items, ...data } = transferData;
+    const { fromBranchId, toBranchId, items, soldByUserId, userId, ...data } = transferData;
 
     // Umumiy summani hisoblash
     const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    // Qaysi user o'tkazma qilganini aniqlash
+    const effectiveUserId = soldByUserId || userId || data.userId;
 
     return this.prisma.$transaction(async (tx) => {
       // O'tkazma yaratish
@@ -1403,6 +1406,8 @@ export class TransactionService {
           type: TransactionType.TRANSFER,
           fromBranchId: fromBranchId,
           toBranchId: toBranchId,
+          userId: userId || effectiveUserId,
+          soldByUserId: effectiveUserId,
           status: TransactionStatus.PENDING,
           total: total,
           finalTotal: total, // Transfer uchun total va finalTotal bir xil

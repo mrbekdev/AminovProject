@@ -144,8 +144,8 @@ export class TransactionController {
   createTransfer(@Body() transferData: any, @CurrentUser() user: any) {
     return this.transactionService.createTransfer({
       ...transferData,
-      userId: user.id,
-      soldByUserId: user.id // Kim sotganini saqlash
+      userId: transferData.userId || user.id,
+      soldByUserId: transferData.soldByUserId || user.id // Frontend dan kelgan yoki current user
     });
   }
 
