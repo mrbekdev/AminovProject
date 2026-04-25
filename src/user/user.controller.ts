@@ -81,8 +81,14 @@ export class UserController {
   @ApiOperation({ summary: 'Barcha foydalanuvchilarni olish' })
   @ApiQuery({ name: 'skip', required: false })
   @ApiQuery({ name: 'take', required: false })
-  async findAll(@Query('skip') skip = '0', @Query('take') take = '100') {
-    return this.userService.findAll(+skip, +take);
+  @ApiQuery({ name: 'role', required: false })
+  async findAll(
+    @Query('skip') skip = '0',
+    @Query('take') take = '100',
+    @Query('role') role?: string,
+    @Query('branchId') branchId?: string
+  ) {
+    return this.userService.findAll(+skip, +take, role, branchId ? +branchId : undefined);
   }
 
   @Put(':id')

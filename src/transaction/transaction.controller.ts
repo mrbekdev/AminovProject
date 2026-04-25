@@ -108,7 +108,8 @@ export class TransactionController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('hasOutstanding') hasOutstanding?: string,
-    @Query('paymentStatus') paymentStatus?: string
+    @Query('paymentStatus') paymentStatus?: string,
+    @Query('cashierId') cashierId?: string
   ) {
     return this.transactionService.getDebtCustomers({
       branchId: branchId ? parseInt(branchId) : undefined,
@@ -119,6 +120,7 @@ export class TransactionController {
       endDate,
       hasOutstanding: hasOutstanding ? hasOutstanding === 'true' : undefined,
       paymentStatus,
+      cashierId: cashierId ? parseInt(cashierId) : undefined,
     });
   }
 

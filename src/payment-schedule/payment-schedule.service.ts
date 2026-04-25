@@ -165,6 +165,33 @@ export class PaymentScheduleService {
             }
           });
 
+          // Also record in CreditRepayment or DailyRepayment for reporting consistency
+          if (existing.isDailyInstallment) {
+            await tx.dailyRepayment.create({
+              data: {
+                transactionId: updatedSchedule.transactionId,
+                amount: deltaPaid,
+                channel: (paidChannel || 'CASH').toString(),
+                paidAt: effectivePaidAt,
+                paidByUserId: paidByUserId ? Number(paidByUserId) : null,
+                branchId: targetBranchId
+              }
+            });
+          } else {
+            await tx.creditRepayment.create({
+              data: {
+                transactionId: updatedSchedule.transactionId,
+                scheduleId: updatedSchedule.id,
+                amount: deltaPaid,
+                channel: (paidChannel || 'CASH').toString(),
+                paidAt: effectivePaidAt,
+                paidByUserId: paidByUserId ? Number(paidByUserId) : null,
+                branchId: targetBranchId,
+                month: updatedSchedule.month?.toString() || '1'
+              }
+            });
+          }
+
           // Update branch cash only for CASH channel (increment)
           if (targetBranchId && ((paidChannel || 'CASH').toUpperCase() === 'CASH')) {
             await tx.branch.update({

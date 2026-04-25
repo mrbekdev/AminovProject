@@ -121,15 +121,22 @@ export class UserService {
     });
   }
 
-  async findAll(skip: number, take: number) {
+  async findAll(skip: number, take: number, role?: string, branchId?: number) {
+    const where: any = {
+      status: {
+        not: 'DELETED',
+      },
+    };
+    if (role) {
+      where.role = role;
+    }
+    if (branchId) {
+      where.branchId = branchId;
+    }
     return this.prisma.user.findMany({
       skip,
       take,
-      where: {
-        status: {
-          not: 'DELETED',
-        },
-      },
+      where,
       include: { 
         branch: true,
         allowedBranches: {
