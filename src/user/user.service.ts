@@ -40,50 +40,23 @@ export class UserService {
     if (orConditions.length > 0) {
       const existingUsers = await this.prisma.user.findMany({ where: { OR: orConditions } });
       if (existingUsers.length > 0) {
-        // If any existing user is ACTIVE (not DELETED) -> conflict
-        const activeUser = existingUsers.find(u => u.status !== 'DELETED');
+        // If any existing user is ACTIVE -> conflict
+        const activeUser = existingUsers.find(u => u.status === 'ACTIVE');
         if (activeUser) {
-          throw new ConflictException('Username or phone already exists');
+          throw new ConflictException('Username or phone already exists and is ACTIVE');
         }
 
-        // All matches are DELETED. If exactly one, restore/update it instead of creating a new record.
-        if (existingUsers.length === 1) {
-          const deletedUser = existingUsers[0];
-
-          // Ensure allowedBranches is set on the deleted user
-          let finalAllowedBranches = allowedBranches || [];
-          if (finalAllowedBranches.length === 0) {
-            const allBranches = await this.prisma.branch.findMany({ where: { status: 'ACTIVE' }, select: { id: true } });
-            finalAllowedBranches = allBranches.map(b => b.id);
-          }
-
-          const updateData: any = {
-            ...userData,
-            password: hashedPassword,
-            workStartTime,
-            workEndTime,
-            workShift: workShift || 'DAY',
-            status: 'ACTIVE',
-            updatedAt: new Date(),
-            allowedBranches: {
-              create: finalAllowedBranches.map(branchId => ({ branch: { connect: { id: branchId } } }))
-            }
-          };
-
-          if (userData.role === 'MARKETING') {
-            delete updateData.branchId;
-          }
-
-          return this.prisma.user.update({
+        // All matches are DELETED. Suffix them to free up the unique identifiers.
+        for (const deletedUser of existingUsers) {
+          const timestamp = Date.now();
+          await this.prisma.user.update({
             where: { id: deletedUser.id },
-            data: updateData,
-            include: {
-              branch: true,
-              allowedBranches: { include: { branch: true } }
+            data: {
+              username: `${deletedUser.username}_deleted_${timestamp}_${deletedUser.id}`,
+              phone: deletedUser.phone ? `${deletedUser.phone}_deleted_${timestamp}_${deletedUser.id}` : null,
             }
           });
         }
-        throw new ConflictException('Conflicting deleted user records found for provided username/phone');
       }
     }
 
@@ -227,26 +200,53 @@ export class UserService {
     if (userData.branchId !== undefined && userData.role !== 'MARKETING') updateData.branchId = userData.branchId;
     if (data.password) updateData.password = data.password;
 
+    // Check for conflicts if username or phone is changing
+    if (userData.username || userData.phone) {
+      const conflictOr: any[] = [];
+      if (userData.username) conflictOr.push({ username: userData.username });
+      if (userData.phone) conflictOr.push({ phone: userData.phone });
+
+      const conflicts = await this.prisma.user.findMany({
+        where: {
+          OR: conflictOr,
+          id: { not: id },
+          status: 'ACTIVE'
+        }
+      });
+
+      if (conflicts.length > 0) {
+        throw new ConflictException('Username or phone already taken by another ACTIVE user');
+      }
+    }
+
     return this.prisma.user.update({
-      where: {
-        id: id
-      },
+      where: { id },
       data: updateData
     });
   }
 
   async remove(id: number) {
-    const findUser = await this.prisma.user.findUnique({ where: { id } });
-    if (!findUser) throw new Error('User not found');
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('User not found');
+    
+    const timestamp = Date.now();
     return this.prisma.user.update({
       where: { id },
-      data: { status: 'DELETED', updatedAt: new Date() },
+      data: { 
+        status: 'DELETED', 
+        username: `${user.username}_deleted_${timestamp}_${id}`,
+        phone: user.phone ? `${user.phone}_deleted_${timestamp}_${id}` : null,
+        updatedAt: new Date() 
+      },
     });
   }
 
   async findByUsername(username: string) {
-    const user = await this.prisma.user.findUnique({ 
-      where: { username },
+    const user = await this.prisma.user.findFirst({ 
+      where: { 
+        username,
+        status: 'ACTIVE'
+      },
       include: {
         branch: true,
         allowedBranches: {
@@ -280,8 +280,11 @@ export class UserService {
   }
 
   async checkUsernameExists(username: string, excludeUserId?: number) {
-    const existingUser = await this.prisma.user.findUnique({
-      where: { username },
+    const existingUser = await this.prisma.user.findFirst({
+      where: { 
+        username,
+        status: 'ACTIVE'
+      },
       select: { id: true }
     });
     

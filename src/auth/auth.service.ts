@@ -14,9 +14,14 @@ export class AuthService {
 
     async login(username: string, password: string) {
 
-        const user = await this.prisma.user.findUnique({ where: { username } });
+        const user = await this.prisma.user.findFirst({ 
+            where: { 
+                username,
+                status: 'ACTIVE'
+            } 
+        });
         if (!user) {
-            throw new UnauthorizedException('Invalid credentials');
+            throw new UnauthorizedException('Invalid credentials or user is DELETED');
         }
 
         // Time-based login restriction for MARKETING users

@@ -108,6 +108,7 @@ enum UserRole {
   MARKETING
   OPERATOR
   OPERATORCALL
+  HISOBCHI
 }
 
 enum BranchType {

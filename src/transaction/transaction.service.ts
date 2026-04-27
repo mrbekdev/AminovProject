@@ -1611,7 +1611,7 @@ export class TransactionService {
     // Umumiy summani hisoblash
     const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-    // Qaysi user o'tkazma qilganini aniqlash
+    // Qaysi user o'tkazma qil`ganini aniqlash
     const effectiveUserId = soldByUserId || userId || data.userId;
 
     return this.prisma.$transaction(async (tx) => {
