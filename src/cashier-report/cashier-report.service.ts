@@ -5,7 +5,7 @@ import { UpdateCashierReportDto } from './dto/update-cashier-report.dto';
 
 @Injectable()
 export class CashierReportService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async create(createCashierReportDto: CreateCashierReportDto) {
     return this.prisma.cashierReport.create({
@@ -19,17 +19,17 @@ export class CashierReportService {
 
   async findAll(query: any = {}) {
     const { cashierId, branchId, startDate, endDate, limit = 100 } = query;
-    
+
     const where: any = {};
-    
+
     if (cashierId) {
       where.cashierId = parseInt(cashierId);
     }
-    
+
     if (branchId) {
       where.branchId = parseInt(branchId);
     }
-    
+
     if (startDate || endDate) {
       where.reportDate = {};
       if (startDate) {
