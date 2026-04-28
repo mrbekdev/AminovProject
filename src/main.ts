@@ -24,11 +24,16 @@ async function bootstrap() {
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 
-  app.enableCors({ 
-    origin: true, 
+  app.enableCors({
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'https://zippy.travel-map.uz',
+      'https://alikafecrmm.uz',
+    ],
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   });
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port, '0.0.0.0');
