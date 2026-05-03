@@ -8,7 +8,14 @@ export class DailyExpenseService {
   constructor(private prisma: PrismaService) {}
 
   create(dto: CreateDailyExpenseDto) {
-    return this.prisma.dailyExpense.create({ data: { amount: dto.amount, reason: dto.reason, description: dto.description } });
+    return this.prisma.dailyExpense.create({
+      data: {
+        amount: dto.amount,
+        reason: dto.reason,
+        description: dto.description,
+        createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
+      },
+    });
   }
 
   findAll() {
@@ -24,7 +31,13 @@ export class DailyExpenseService {
   async update(id: number, dto: UpdateDailyExpenseDto) {
     const exists = await this.prisma.dailyExpense.findUnique({ where: { id } });
     if (!exists) throw new NotFoundException('Expense not found');
-    return this.prisma.dailyExpense.update({ where: { id }, data: dto });
+    return this.prisma.dailyExpense.update({
+      where: { id },
+      data: {
+        ...dto,
+        createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
+      },
+    });
   }
 
   async remove(id: number) {

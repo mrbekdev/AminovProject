@@ -52,7 +52,7 @@ async function bootstrap() {
     const networkUrl = ip ? `http://${ip}:${port}/` : null;
     if (networkUrl) {
     }
-  } catch {}
+  } catch { }
 }
 
 // Start the app.

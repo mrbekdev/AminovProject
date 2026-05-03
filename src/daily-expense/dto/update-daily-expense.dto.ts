@@ -13,4 +13,8 @@ export class UpdateDailyExpenseDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @IsString()
+  @IsOptional()
+  createdAt?: string;
 }
