@@ -6,6 +6,7 @@ import { Prisma, TransactionType, TransactionStatus, PaymentType } from '@prisma
 import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
 import { BonusService } from '../bonus/bonus.service';
 import { TaskService } from '../task/task.service';
+import { TransactionBonusProductService } from '../transaction-bonus-product/transaction-bonus-product.service';
 
 @Injectable()
 export class TransactionService {
@@ -14,6 +15,7 @@ export class TransactionService {
     private currencyExchangeRateService: CurrencyExchangeRateService,
     private bonusService: BonusService,
     private taskService: TaskService,
+    private transactionBonusProductService: TransactionBonusProductService,
   ) { }
 
   async create(createTransactionDto: CreateTransactionDto, userId?: number) {
@@ -2439,7 +2441,9 @@ export class TransactionService {
   }
 
   async getUserReport(userId: number, query: any = {}) {
-    const { startDate, endDate, search } = query;
+    const { startDate, endDate, search, page = 1, limit = 100 } = query;
+    const skip = (Number(page) - 1) * Number(limit);
+    const take = Number(limit);
 
     // Build where clause for date filtering
     const dateWhere: any = {};
@@ -2453,110 +2457,158 @@ export class TransactionService {
       }
     }
 
-    // Fetch user
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { branch: true }
-    });
-
-    // Fetch bonuses with date filtering
-    const bonuses = await this.prisma.bonus.findMany({
-      where: {
-        userId,
-        ...dateWhere,
-        ...(search && search.trim() ? {
-          OR: [
-            { reason: { contains: search, mode: 'insensitive' } },
-            { description: { contains: search, mode: 'insensitive' } }
-          ]
-        } : {})
-      },
-      include: {
-        user: true,
-        branch: true,
-        createdBy: true
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    // Fetch transactions with date filtering
-    const transactions = await this.prisma.transaction.findMany({
-      where: {
+    const transactionWhere = {
+      OR: [
+        { soldByUserId: userId },
+        { userId: userId }
+      ],
+      ...dateWhere,
+      ...(search && search.trim() ? {
         OR: [
-          { soldByUserId: userId },
-          { userId: userId }
-        ],
-        ...dateWhere,
-        ...(search && search.trim() ? {
-          OR: [
-            { customer: { fullName: { contains: search, mode: 'insensitive' } } },
-            { customer: { phone: { contains: search, mode: 'insensitive' } } },
-            { items: { some: { product: { name: { contains: search, mode: 'insensitive' } } } } }
-          ]
-        } : {})
-      },
-      include: {
-        customer: true,
-        user: true,
-        soldBy: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+          { customer: { fullName: { contains: search, mode: 'insensitive' } } },
+          { customer: { phone: { contains: search, mode: 'insensitive' } } },
+          { items: { some: { product: { name: { contains: search, mode: 'insensitive' } } } } }
+        ]
+      } : {})
+    };
 
-    // Fetch bonus products with date filtering
-    const bonusProducts = await this.prisma.transactionBonusProduct.findMany({
-      where: {
-        transaction: {
-          OR: [
-            { soldByUserId: userId },
-            { userId: userId }
-          ],
-          ...dateWhere
+    const bonusWhere = {
+      userId,
+      ...dateWhere,
+      ...(search && search.trim() ? {
+        OR: [
+          { reason: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } }
+        ]
+      } : {})
+    };
+
+    // 1. Fetch data in parallel for speed
+    const [
+      user,
+      transactionCount,
+      bonusCount,
+      transactions,
+      bonuses,
+      transactionAggregate,
+      bonusAggregate,
+      bonusProductsReport,
+      salesBonusesForProfit,
+      paymentTypeStats
+    ] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { branch: true }
+      }),
+      this.prisma.transaction.count({ where: transactionWhere }),
+      (this.prisma as any).bonus.count({ where: bonusWhere }),
+      this.prisma.transaction.findMany({
+        where: transactionWhere,
+        include: {
+          customer: true,
+          user: true,
+          soldBy: true,
+          items: {
+            include: {
+              product: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take
+      }),
+      (this.prisma as any).bonus.findMany({
+        where: bonusWhere,
+        include: {
+          user: true,
+          branch: true,
+          createdBy: true
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take
+      }),
+      this.prisma.transaction.aggregate({
+        where: transactionWhere,
+        _sum: {
+          finalTotal: true,
+          extraProfit: true
         }
-      },
-      include: {
-        product: true,
-        transaction: true
-      }
-    });
+      }),
+      (this.prisma as any).bonus.aggregate({
+        where: bonusWhere,
+        _sum: {
+          amount: true
+        }
+      }),
+      this.transactionBonusProductService.getTotalBonusProductsValueByUserId(userId, startDate, endDate),
+      (this.prisma as any).bonus.findMany({
+        where: {
+          ...bonusWhere,
+          reason: 'SALES_BONUS',
+          description: { contains: 'Sof ortiqcha:' }
+        },
+        select: { description: true }
+      }),
+      this.prisma.transaction.groupBy({
+        by: ['paymentType'],
+        where: transactionWhere,
+        _sum: { finalTotal: true }
+      })
+    ]);
+
+    // Calculate totalSofOrtiqcha from SALES_BONUS descriptions
+    const totalSofOrtiqcha = salesBonusesForProfit.reduce((sum, b) => {
+      const match = b.description.match(/Sof ortiqcha:\s*([\d,]+)/);
+      return match ? sum + parseInt(match[1].replace(/,/g, '')) : sum;
+    }, 0);
 
     // Calculate stats
-    const totalSales = transactions.reduce((sum, tx) => sum + (tx.finalTotal || 0), 0);
-    const totalBonuses = bonuses.reduce((sum, b) => sum + (b.amount || 0), 0);
-    const bonusProductsValue = bonusProducts.reduce((sum, bp) => {
-      const price = bp.product?.price || 0;
-      return sum + (price * bp.quantity);
-    }, 0);
+    const totalSales = transactionAggregate._sum.finalTotal || 0;
+    const totalBonuses = (bonusAggregate._sum.amount || 0) + bonusProductsReport.totalValueUZS;
+    const bonusProductsValue = bonusProductsReport.totalValueUZS;
     const salesWithBonuses = bonuses.filter(b => b.reason === 'SALES_BONUS').length;
-    const totalProfit = transactions.reduce((sum, tx) => sum + ((tx as any).extraProfit || 0), 0);
+    const totalProfit = (transactionAggregate._sum.extraProfit || 0) + totalSofOrtiqcha;
 
     const stats = {
       totalSales,
       totalBonuses,
       bonusProductsValue,
       salesWithBonuses,
-      totalProfit
+      totalProfit,
+      totalMonthlyBonuses: bonusAggregate._sum.amount || 0
     };
 
-    // Calculate earnings summary
+    // Build earningsSummary for frontend
+    const cashSales = paymentTypeStats.find(s => s.paymentType === 'CASH')?._sum.finalTotal || 0;
+    const cardSales = paymentTypeStats.find(s => s.paymentType === 'CARD')?._sum.finalTotal || 0;
+    const creditSales = paymentTypeStats.filter(s => ['CREDIT', 'INSTALLMENT'].includes(s.paymentType as string)).reduce((sum, s) => sum + (s._sum.finalTotal || 0), 0);
+
     const earningsSummary = {
       [userId]: {
-        totalSalesInSom: totalSales
+        totalSalesInSom: totalSales,
+        transactionCount: transactionCount,
+        cashSales,
+        cardSales,
+        creditSales,
+        branches: user?.branchId ? [user.branchId] : []
       }
     };
 
     return {
       user,
       bonuses,
-      bonusProducts,
+      bonusProducts: bonusProductsReport.bonusProducts,
       stats,
       transactions,
-      earningsSummary
+      earningsSummary,
+      pagination: {
+        totalTransactions: transactionCount,
+        totalBonuses: bonusCount,
+        page: Number(page),
+        limit: Number(limit)
+      }
     };
   }
 }
