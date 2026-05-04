@@ -236,7 +236,7 @@ export class TransactionService {
         const rawTermCount = isDays ? ip.days : ip.months;
         const termCount = Number(rawTermCount) > 0 ? Number(rawTermCount) : 1;
         console.log('Creating installment schedule:', { amount, isDays, rawTermCount, termCount, months: ip.months, days: ip.days, termUnit: ip.termUnit });
-        
+
         if (isDays) {
           await this.prisma.paymentSchedule.create({
             data: {
@@ -733,7 +733,7 @@ export class TransactionService {
 
     for (const u of users) {
       const name = [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.username || `User ${u.id}`;
-      
+
       // Marketing xodimlari barcha ro'llar uchun asosan "Sotuvchi" vazifasini bajaradi
       if (['MARKETING', 'ADMIN', 'MANAGER'].includes(u.role)) {
         sellersMap.set(u.id, { id: u.id, name, role: u.role });
@@ -1668,8 +1668,8 @@ export class TransactionService {
 
       return { success: true, data: refreshed } as any;
     }, {
-      maxWait: 300000, 
-      timeout: 1200000 
+      maxWait: 300000,
+      timeout: 1200000
     });
   }
 
@@ -2436,5 +2436,127 @@ export class TransactionService {
     } catch (error) {
       // Bonus yaratishda xatolik bo'lsa ham, asosiy tranzaksiya davom etsin
     }
+  }
+
+  async getUserReport(userId: number, query: any = {}) {
+    const { startDate, endDate, search } = query;
+
+    // Build where clause for date filtering
+    const dateWhere: any = {};
+    if (startDate || endDate) {
+      dateWhere.createdAt = {};
+      if (startDate) dateWhere.createdAt.gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateWhere.createdAt.lte = end;
+      }
+    }
+
+    // Fetch user
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { branch: true }
+    });
+
+    // Fetch bonuses with date filtering
+    const bonuses = await this.prisma.bonus.findMany({
+      where: {
+        userId,
+        ...dateWhere,
+        ...(search && search.trim() ? {
+          OR: [
+            { reason: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } }
+          ]
+        } : {})
+      },
+      include: {
+        user: true,
+        branch: true,
+        createdBy: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Fetch transactions with date filtering
+    const transactions = await this.prisma.transaction.findMany({
+      where: {
+        OR: [
+          { soldByUserId: userId },
+          { userId: userId }
+        ],
+        ...dateWhere,
+        ...(search && search.trim() ? {
+          OR: [
+            { customer: { fullName: { contains: search, mode: 'insensitive' } } },
+            { customer: { phone: { contains: search, mode: 'insensitive' } } },
+            { items: { some: { product: { name: { contains: search, mode: 'insensitive' } } } } }
+          ]
+        } : {})
+      },
+      include: {
+        customer: true,
+        user: true,
+        soldBy: true,
+        items: {
+          include: {
+            product: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Fetch bonus products with date filtering
+    const bonusProducts = await this.prisma.transactionBonusProduct.findMany({
+      where: {
+        transaction: {
+          OR: [
+            { soldByUserId: userId },
+            { userId: userId }
+          ],
+          ...dateWhere
+        }
+      },
+      include: {
+        product: true,
+        transaction: true
+      }
+    });
+
+    // Calculate stats
+    const totalSales = transactions.reduce((sum, tx) => sum + (tx.finalTotal || 0), 0);
+    const totalBonuses = bonuses.reduce((sum, b) => sum + (b.amount || 0), 0);
+    const bonusProductsValue = bonusProducts.reduce((sum, bp) => {
+      const price = bp.product?.price || 0;
+      return sum + (price * bp.quantity);
+    }, 0);
+    const salesWithBonuses = bonuses.filter(b => b.reason === 'SALES_BONUS').length;
+    const totalProfit = transactions.reduce((sum, tx) => sum + ((tx as any).extraProfit || 0), 0);
+
+    const stats = {
+      totalSales,
+      totalBonuses,
+      bonusProductsValue,
+      salesWithBonuses,
+      totalProfit
+    };
+
+    // Calculate earnings summary
+    const earningsSummary = {
+      [userId]: {
+        totalSalesInSom: totalSales
+      }
+    };
+
+    return {
+      user,
+      bonuses,
+      bonusProducts,
+      stats,
+      transactions,
+      earningsSummary
+    };
   }
 }

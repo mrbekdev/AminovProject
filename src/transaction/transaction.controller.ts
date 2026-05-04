@@ -19,7 +19,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 @Controller('transactions')
 @UseGuards(JwtAuthGuard)
 export class TransactionController {
-  constructor(private readonly transactionService: TransactionService) {}
+  constructor(private readonly transactionService: TransactionService) { }
 
   @Post()
   create(@Body() createTransactionDto: CreateTransactionDto, @CurrentUser() user: any) {
@@ -62,7 +62,7 @@ export class TransactionController {
     @Query('month') month?: string
   ) {
     const parsedProductId = parseInt(productId);
-    
+
     if (isNaN(parsedProductId) || parsedProductId <= 0) {
       return {
         transactions: [],
@@ -70,7 +70,7 @@ export class TransactionController {
         typeCounts: { SALE: 0, PURCHASE: 0, TRANSFER: 0, RETURN: 0, WRITE_OFF: 0, STOCK_ADJUSTMENT: 0 }
       };
     }
-    
+
     const result = await this.transactionService.findByProductId(parsedProductId, month);
     return result;
   }
@@ -134,6 +134,14 @@ export class TransactionController {
   @Get('transfers/:branchId')
   getTransfersByBranch(@Param('branchId') branchId: string) {
     return this.transactionService.getTransfersByBranch(parseInt(branchId));
+  }
+
+  @Get('user-report/:userId')
+  getUserReport(
+    @Param('userId') userId: string,
+    @Query() query: any
+  ) {
+    return this.transactionService.getUserReport(+userId, query);
   }
 
   @Get(':id')

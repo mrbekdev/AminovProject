@@ -5,9 +5,10 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CurrencyExchangeRateModule } from '../currency-exchange-rate/currency-exchange-rate.module';
 import { BonusModule } from '../bonus/bonus.module';
 import { TaskModule } from '../task/task.module';
+import { TransactionBonusProductModule } from '../transaction-bonus-product/transaction-bonus-product.module';
 
 @Module({
-  imports: [CurrencyExchangeRateModule, BonusModule, TaskModule],
+  imports: [CurrencyExchangeRateModule, BonusModule, TaskModule, TransactionBonusProductModule],
   controllers: [TransactionController],
   providers: [TransactionService, PrismaService],
 })
