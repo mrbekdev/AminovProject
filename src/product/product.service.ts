@@ -100,15 +100,19 @@ async create(
     };
 
     if (branchId) {
-      where.branchId = +branchId;
+      where.branchId = Number(branchId);
     }
 
     if (categoryId) {
-      where.categoryId = +categoryId;
+      where.categoryId = Number(categoryId);
     }
 
     if (bonus !== undefined && !isNaN(bonus)) {
-      where.bonusPercentage = +bonus;
+      where.bonusPercentage = Number(bonus);
+    }
+
+    if (!includeZeroQuantity) {
+      where.quantity = { gt: 0 };
     }
 
     const andConditions: any[] = [];
@@ -122,10 +126,6 @@ async create(
           { model: { contains: searchTerm, mode: 'insensitive' } },
         ],
       });
-    }
-
-    if (!includeZeroQuantity) {
-      where.quantity = { gt: 0 };
     }
 
     if (status && status !== 'ALL') {

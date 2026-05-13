@@ -42,12 +42,28 @@ export class TaskService {
     return created;
   }
 
-  async findAll(status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED', auditorId?: number) {
+  async findAll(status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED', auditorId?: number, startDate?: string, endDate?: string) {
+    const where: any = {
+      ...(status ? { status } : {}),
+      ...(auditorId != null ? { auditorId: Number(auditorId) } : {}),
+    };
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        where.createdAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
+      }
+    }
+
     return (this.prisma as any).task.findMany({
-      where: {
-        ...(status ? { status } : {}),
-        ...(auditorId != null ? { auditorId: Number(auditorId) } : {}),
-      },
+      where,
       include: { 
         transaction: { 
           include: { 

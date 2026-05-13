@@ -809,20 +809,21 @@ export class TransactionService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Calculate totalAmount for each transaction if it's missing
+    // Calculate product-specific total for each transaction
     const transactionsWithAmounts = transactions.map(transaction => {
-      let calculatedTotal = (transaction as any).totalAmount;
-
-      // If totalAmount is 0 or null, calculate from items
-      if (!calculatedTotal || calculatedTotal === 0) {
-        calculatedTotal = transaction.items.reduce((sum, item) => {
-          return sum + (item.total || (item.quantity * item.price));
-        }, 0);
-      }
+      const productSpecificTotal = transaction.items.reduce((sum, item) => {
+        return sum + (item.total || (item.quantity * (item.sellingPrice || item.price || 0)));
+      }, 0);
+      
+      const productSpecificQuantity = transaction.items.reduce((sum, item) => {
+        return sum + (item.quantity || 0);
+      }, 0);
 
       return {
         ...transaction,
-        totalAmount: calculatedTotal
+        totalAmount: productSpecificTotal,
+        productSpecificQuantity,
+        productSpecificTotal
       } as any;
     });
 

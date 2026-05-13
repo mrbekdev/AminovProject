@@ -18,9 +18,11 @@ export class TaskController {
   findAll(
     @Query('status') status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED',
     @Query('auditorId') auditorId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
     const aid = auditorId != null ? Number(auditorId) : undefined;
-    return this.taskService.findAll(status as any, aid);
+    return this.taskService.findAll(status as any, aid, startDate, endDate);
   }
 
   @Get('auditor/:auditorId')
