@@ -98,34 +98,51 @@ async create(
     const where: Prisma.ProductWhereInput = {
       isDeleted: false,
     };
-    if (branchId) where.branchId = +branchId;
-    if (categoryId) where.categoryId = +categoryId;
-    if (bonus !== undefined && !isNaN(bonus)) where.bonusPercentage = +bonus;
+
+    if (branchId) {
+      where.branchId = +branchId;
+    }
+
+    if (categoryId) {
+      where.categoryId = +categoryId;
+    }
+
+    if (bonus !== undefined && !isNaN(bonus)) {
+      where.bonusPercentage = +bonus;
+    }
+
+    const andConditions: any[] = [];
 
     if (search) {
       const searchTerm = String(search).trim();
-      where.OR = [
-        { name: { contains: searchTerm, mode: 'insensitive' } },
-        { barcode: { contains: searchTerm, mode: 'insensitive' } },
-        { model: { contains: searchTerm, mode: 'insensitive' } },
-      ];
+      andConditions.push({
+        OR: [
+          { name: { contains: searchTerm, mode: 'insensitive' } },
+          { barcode: { contains: searchTerm, mode: 'insensitive' } },
+          { model: { contains: searchTerm, mode: 'insensitive' } },
+        ],
+      });
     }
 
     if (!includeZeroQuantity) {
       where.quantity = { gt: 0 };
     }
 
-    // Status filter logic (IN_STOCK, DEFECTIVE)
-    // Note: SOLD filter will be applied after fetching because it depends on transaction totals
     if (status && status !== 'ALL') {
       if (status === 'IN_STOCK') {
         where.status = { in: ['IN_WAREHOUSE', 'IN_STORE'] };
       } else if (status === 'DEFECTIVE') {
-        where.OR = [
-          { status: 'DEFECTIVE' },
-          { defectiveQuantity: { gt: 0 } }
-        ];
+        andConditions.push({
+          OR: [
+            { status: 'DEFECTIVE' },
+            { defectiveQuantity: { gt: 0 } },
+          ],
+        });
       }
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
     }
 
     const total = await this.prisma.product.count({ where });
