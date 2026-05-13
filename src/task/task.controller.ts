@@ -29,8 +29,10 @@ export class TaskController {
   findByAuditor(
     @Param('auditorId') auditorId: string,
     @Query('status') status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED',
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
-    return this.taskService.findByAuditor(Number(auditorId), status as any);
+    return this.taskService.findByAuditor(Number(auditorId), status as any, startDate, endDate);
   }
 
   @Get(':id')

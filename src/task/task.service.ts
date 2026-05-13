@@ -49,16 +49,17 @@ export class TaskService {
     };
 
     if (startDate || endDate) {
-      where.createdAt = {};
+      // Filter by the transaction's creation date as it's more intuitive for users
+      where.transaction = {};
       if (startDate) {
         const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        where.createdAt.gte = start;
+        start.setUTCHours(0, 0, 0, 0);
+        where.transaction.createdAt = { ...where.transaction.createdAt, gte: start };
       }
       if (endDate) {
         const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.createdAt.lte = end;
+        end.setUTCHours(23, 59, 59, 999);
+        where.transaction.createdAt = { ...where.transaction.createdAt, lte: end };
       }
     }
 
@@ -80,9 +81,28 @@ export class TaskService {
     });
   }
 
-  async findByAuditor(auditorId: number, status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED') {
+  async findByAuditor(auditorId: number, status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED', startDate?: string, endDate?: string) {
+    const where: any = {
+      auditorId: Number(auditorId),
+      ...(status ? { status } : {}),
+    };
+
+    if (startDate || endDate) {
+      where.transaction = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setUTCHours(0, 0, 0, 0);
+        where.transaction.createdAt = { ...where.transaction.createdAt, gte: start };
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setUTCHours(23, 59, 59, 999);
+        where.transaction.createdAt = { ...where.transaction.createdAt, lte: end };
+      }
+    }
+
     return (this.prisma as any).task.findMany({
-      where: { auditorId: Number(auditorId), ...(status ? { status } : {}) },
+      where,
       include: { 
         transaction: { 
           include: { 
