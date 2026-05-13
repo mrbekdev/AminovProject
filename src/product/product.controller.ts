@@ -44,10 +44,15 @@ export class ProductController {
     @Query('categoryId') categoryId?: string,
     @Query('status') status?: string,
     @Query('bonus') bonus?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const parsedBranchId = branchId ? parseInt(branchId) : undefined;
     const parsedCategoryId = categoryId ? parseInt(categoryId) : undefined;
     const parsedBonus = bonus ? parseFloat(bonus) : undefined;
+    const parsedPage = page ? parseInt(page) : undefined;
+    const parsedLimit = limit ? parseInt(limit) : undefined;
+
     return this.productService.findAll(
       parsedBranchId,
       search,
@@ -55,6 +60,8 @@ export class ProductController {
       parsedCategoryId,
       status,
       parsedBonus,
+      parsedPage,
+      parsedLimit,
     );
   }
 

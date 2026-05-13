@@ -92,6 +92,8 @@ async create(
     categoryId?: number,
     status?: string,
     bonus?: number,
+    page?: number,
+    limit?: number,
   ) {
     const where: Prisma.ProductWhereInput = {
       isDeleted: false,
@@ -126,10 +128,13 @@ async create(
       }
     }
 
+    const total = await this.prisma.product.count({ where });
+
     const products = await this.prisma.product.findMany({
       where,
       include: { category: true, branch: true },
       orderBy: { id: 'asc' },
+      ...(page && limit ? { skip: (page - 1) * limit, take: limit } : {}),
     });
 
     // Get all product names in the current result set
@@ -145,26 +150,12 @@ async create(
     const idToNameMap = new Map(allRelatedProducts.map(p => [p.id, p.name]));
 
     // Get sold counts for all related product IDs
+    // We include all transaction types EXCEPT CANCELLED to match TopsotilganProducts.jsx logic
     const soldCounts = await this.prisma.transactionItem.groupBy({
       by: ['productId'],
       where: {
         productId: { in: relatedIds },
         transaction: {
-          type: { in: ['SALE', 'DELIVERY', 'TRANSFER'] },
-          status: { not: 'CANCELLED' }
-        }
-      },
-      _sum: {
-        quantity: true
-      }
-    });
-
-    const returnCounts = await this.prisma.transactionItem.groupBy({
-      by: ['productId'],
-      where: {
-        productId: { in: relatedIds },
-        transaction: {
-          type: 'RETURN',
           status: { not: 'CANCELLED' }
         }
       },
@@ -175,79 +166,80 @@ async create(
 
     // Aggregate totals by NAME
     const nameToSoldMap = new Map<string, number>();
+    const individualSalesMap = new Map<number, number>();
     
     soldCounts.forEach(item => {
       if (item.productId) {
         const name = idToNameMap.get(item.productId);
+        const qty = item._sum.quantity || 0;
+        
         if (name) {
-          const current = nameToSoldMap.get(name) || 0;
-          nameToSoldMap.set(name, current + (item._sum.quantity || 0));
+          nameToSoldMap.set(name, (nameToSoldMap.get(name) || 0) + qty);
         }
+        individualSalesMap.set(item.productId, (individualSalesMap.get(item.productId) || 0) + qty);
       }
     });
 
-    returnCounts.forEach(item => {
-      if (item.productId) {
-        const name = idToNameMap.get(item.productId);
-        if (name) {
-          const current = nameToSoldMap.get(name) || 0;
-          nameToSoldMap.set(name, current - (item._sum.quantity || 0));
-        }
-      }
+    // Get exchange rate once to avoid thousands of DB calls
+    const exchangeRate = await this.currencyExchangeRateService.getCurrentRate('USD', 'UZS');
+
+
+    // Efficient local enrichment
+    const enrichedProducts = products.map((product) => {
+      const priceInSom = Math.round(product.price * exchangeRate);
+      const marketPriceInSom = product.marketPrice ? Math.round(product.marketPrice * exchangeRate) : null;
+
+      return {
+        ...product,
+        priceInSom,
+        marketPriceInSom,
+        priceInDollar: product.price,
+        trueSoldCount: nameToSoldMap.get(product.name) || 0,
+        individualSoldCount: individualSalesMap.get(product.id) || 0,
+      };
     });
-
-    const individualSalesMap = new Map<number, number>();
-    soldCounts.forEach(item => {
-      if (item.productId) {
-        const current = individualSalesMap.get(item.productId) || 0;
-        individualSalesMap.set(item.productId, current + (item._sum.quantity || 0));
-      }
-    });
-
-    returnCounts.forEach(item => {
-      if (item.productId) {
-        const current = individualSalesMap.get(item.productId) || 0;
-        individualSalesMap.set(item.productId, current - (item._sum.quantity || 0));
-      }
-    });
-
-    // Convert prices to som and add trueSoldCount
-    let enrichedProducts = await Promise.all(
-      products.map(async (product) => {
-        const [priceInSom, marketPriceInSom] = await Promise.all([
-          this.currencyExchangeRateService.convertCurrency(
-            product.price,
-            'USD',
-            'UZS',
-            product.branchId,
-          ),
-          product.marketPrice 
-            ? this.currencyExchangeRateService.convertCurrency(
-                product.marketPrice,
-                'USD',
-                'UZS',
-                product.branchId,
-              )
-            : Promise.resolve(null)
-        ]);
-
-        return {
-          ...product,
-          priceInSom,
-          marketPriceInSom,
-          priceInDollar: product.price,
-          trueSoldCount: nameToSoldMap.get(product.name) || 0,
-          individualSoldCount: individualSalesMap.get(product.id) || 0,
-        };
-      }),
-    );
 
     // Apply SOLD filter if requested
+    let finalProducts = enrichedProducts;
     if (status === 'SOLD') {
-      enrichedProducts = enrichedProducts.filter(p => p.trueSoldCount > 0);
+      finalProducts = enrichedProducts.filter(p => p.individualSoldCount > 0);
     }
 
-    return enrichedProducts;
+    if (page && limit) {
+      // Calculate global summary for the entire filtered set (for the summary cards)
+      const globalSummary = await this.prisma.product.aggregate({
+        where,
+        _sum: {
+          quantity: true,
+        }
+      });
+
+      const globalSold = await this.prisma.transactionItem.aggregate({
+        where: {
+          product: where,
+          transaction: {
+            status: { not: 'CANCELLED' }
+          }
+        },
+        _sum: {
+          quantity: true
+        }
+      });
+
+      return {
+        data: finalProducts,
+        total,
+        page,
+        limit,
+        summary: {
+          totalRemaining: globalSummary._sum.quantity || 0,
+          totalProducts: total,
+          totalSold: globalSold._sum.quantity || 0,
+        }
+      };
+    }
+
+    return finalProducts;
   }
 
   async findOne(id: number) {
