@@ -196,6 +196,21 @@ async create(
       }
     });
 
+    const individualSalesMap = new Map<number, number>();
+    soldCounts.forEach(item => {
+      if (item.productId) {
+        const current = individualSalesMap.get(item.productId) || 0;
+        individualSalesMap.set(item.productId, current + (item._sum.quantity || 0));
+      }
+    });
+
+    returnCounts.forEach(item => {
+      if (item.productId) {
+        const current = individualSalesMap.get(item.productId) || 0;
+        individualSalesMap.set(item.productId, current - (item._sum.quantity || 0));
+      }
+    });
+
     // Convert prices to som and add trueSoldCount
     let enrichedProducts = await Promise.all(
       products.map(async (product) => {
@@ -222,6 +237,7 @@ async create(
           marketPriceInSom,
           priceInDollar: product.price,
           trueSoldCount: nameToSoldMap.get(product.name) || 0,
+          individualSoldCount: individualSalesMap.get(product.id) || 0,
         };
       }),
     );
