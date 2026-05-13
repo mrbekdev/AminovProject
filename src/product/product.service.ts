@@ -85,44 +85,153 @@ async create(
 }
 
 
-  async findAll(branchId?: number, search?: string, includeZeroQuantity: boolean = false) {
+  async findAll(
+    branchId?: number,
+    search?: string,
+    includeZeroQuantity: boolean = false,
+    categoryId?: number,
+    status?: string,
+    bonus?: number,
+  ) {
     const where: Prisma.ProductWhereInput = {
       isDeleted: false,
     };
     if (branchId) where.branchId = +branchId;
+    if (categoryId) where.categoryId = +categoryId;
+    if (bonus !== undefined && !isNaN(bonus)) where.bonusPercentage = +bonus;
+
     if (search) {
+      const searchTerm = String(search).trim();
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { barcode: { contains: search, mode: 'insensitive' } },
+        { name: { contains: searchTerm, mode: 'insensitive' } },
+        { barcode: { contains: searchTerm, mode: 'insensitive' } },
+        { model: { contains: searchTerm, mode: 'insensitive' } },
       ];
     }
+
     if (!includeZeroQuantity) {
       where.quantity = { gt: 0 };
     }
+
+    // Status filter logic (IN_STOCK, DEFECTIVE)
+    // Note: SOLD filter will be applied after fetching because it depends on transaction totals
+    if (status && status !== 'ALL') {
+      if (status === 'IN_STOCK') {
+        where.status = { in: ['IN_WAREHOUSE', 'IN_STORE'] };
+      } else if (status === 'DEFECTIVE') {
+        where.OR = [
+          { status: 'DEFECTIVE' },
+          { defectiveQuantity: { gt: 0 } }
+        ];
+      }
+    }
+
     const products = await this.prisma.product.findMany({
       where,
       include: { category: true, branch: true },
       orderBy: { id: 'asc' },
     });
 
-    // Convert prices to som for display
-    const productsWithSomPrices = await Promise.all(
+    // Get all product names in the current result set
+    const productNames = Array.from(new Set(products.map(p => p.name).filter(Boolean)));
+    
+    // Find all IDs of products sharing these names (to aggregate across branches/IDs)
+    const allRelatedProducts = await this.prisma.product.findMany({
+      where: { name: { in: productNames } },
+      select: { id: true, name: true }
+    });
+    
+    const relatedIds = allRelatedProducts.map(p => p.id);
+    const idToNameMap = new Map(allRelatedProducts.map(p => [p.id, p.name]));
+
+    // Get sold counts for all related product IDs
+    const soldCounts = await this.prisma.transactionItem.groupBy({
+      by: ['productId'],
+      where: {
+        productId: { in: relatedIds },
+        transaction: {
+          type: { in: ['SALE', 'DELIVERY', 'TRANSFER'] },
+          status: { not: 'CANCELLED' }
+        }
+      },
+      _sum: {
+        quantity: true
+      }
+    });
+
+    const returnCounts = await this.prisma.transactionItem.groupBy({
+      by: ['productId'],
+      where: {
+        productId: { in: relatedIds },
+        transaction: {
+          type: 'RETURN',
+          status: { not: 'CANCELLED' }
+        }
+      },
+      _sum: {
+        quantity: true
+      }
+    });
+
+    // Aggregate totals by NAME
+    const nameToSoldMap = new Map<string, number>();
+    
+    soldCounts.forEach(item => {
+      if (item.productId) {
+        const name = idToNameMap.get(item.productId);
+        if (name) {
+          const current = nameToSoldMap.get(name) || 0;
+          nameToSoldMap.set(name, current + (item._sum.quantity || 0));
+        }
+      }
+    });
+
+    returnCounts.forEach(item => {
+      if (item.productId) {
+        const name = idToNameMap.get(item.productId);
+        if (name) {
+          const current = nameToSoldMap.get(name) || 0;
+          nameToSoldMap.set(name, current - (item._sum.quantity || 0));
+        }
+      }
+    });
+
+    // Convert prices to som and add trueSoldCount
+    let enrichedProducts = await Promise.all(
       products.map(async (product) => {
-        const priceInSom = await this.currencyExchangeRateService.convertCurrency(
-          product.price,
-          'USD',
-          'UZS',
-          product.branchId,
-        );
+        const [priceInSom, marketPriceInSom] = await Promise.all([
+          this.currencyExchangeRateService.convertCurrency(
+            product.price,
+            'USD',
+            'UZS',
+            product.branchId,
+          ),
+          product.marketPrice 
+            ? this.currencyExchangeRateService.convertCurrency(
+                product.marketPrice,
+                'USD',
+                'UZS',
+                product.branchId,
+              )
+            : Promise.resolve(null)
+        ]);
+
         return {
           ...product,
           priceInSom,
+          marketPriceInSom,
           priceInDollar: product.price,
+          trueSoldCount: nameToSoldMap.get(product.name) || 0,
         };
       }),
     );
 
-    return productsWithSomPrices;
+    // Apply SOLD filter if requested
+    if (status === 'SOLD') {
+      enrichedProducts = enrichedProducts.filter(p => p.trueSoldCount > 0);
+    }
+
+    return enrichedProducts;
   }
 
   async findOne(id: number) {

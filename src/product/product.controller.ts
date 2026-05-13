@@ -41,9 +41,21 @@ export class ProductController {
     @Query('branchId') branchId?: string,
     @Query('search') search?: string,
     @Query('includeZeroQuantity') includeZeroQuantity: string = 'false',
+    @Query('categoryId') categoryId?: string,
+    @Query('status') status?: string,
+    @Query('bonus') bonus?: string,
   ) {
     const parsedBranchId = branchId ? parseInt(branchId) : undefined;
-    return this.productService.findAll(parsedBranchId, search, includeZeroQuantity === 'true');
+    const parsedCategoryId = categoryId ? parseInt(categoryId) : undefined;
+    const parsedBonus = bonus ? parseFloat(bonus) : undefined;
+    return this.productService.findAll(
+      parsedBranchId,
+      search,
+      includeZeroQuantity === 'true',
+      parsedCategoryId,
+      status,
+      parsedBonus,
+    );
   }
 
   @Get('defective')
