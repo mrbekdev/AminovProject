@@ -150,7 +150,7 @@ async create(
     const products = await this.prisma.product.findMany({
       where,
       include: { category: true, branch: true },
-      orderBy: { id: 'asc' },
+      orderBy: [{ name: 'asc' }, { id: 'desc' }],
       ...(page && limit ? { skip: (page - 1) * limit, take: limit } : {}),
     });
 
