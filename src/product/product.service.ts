@@ -224,11 +224,27 @@ async create(
 
     if (page && limit) {
       // Calculate global summary for the entire filtered set (for the summary cards)
-      const globalSummary = await this.prisma.product.aggregate({
+      const allProductsForSummary = await this.prisma.product.findMany({
         where,
-        _sum: {
+        select: {
+          price: true,
+          marketPrice: true,
           quantity: true,
+          bonusPercentage: true,
         }
+      });
+
+      let totalPrice = 0;
+      let totalMarketPrice = 0;
+      let totalBonus = 0;
+      let totalRemaining = 0;
+
+      allProductsForSummary.forEach(p => {
+        const qty = p.quantity || 0;
+        totalRemaining += qty;
+        totalPrice += (p.price || 0) * qty;
+        totalMarketPrice += (p.marketPrice || 0) * qty;
+        totalBonus += (p.bonusPercentage || 0);
       });
 
       const globalSold = await this.prisma.transactionItem.aggregate({
@@ -249,9 +265,12 @@ async create(
         page,
         limit,
         summary: {
-          totalRemaining: globalSummary._sum.quantity || 0,
+          totalRemaining,
           totalProducts: total,
           totalSold: globalSold._sum.quantity || 0,
+          totalPrice,
+          totalMarketPrice,
+          averageBonusPercentage: allProductsForSummary.length > 0 ? totalBonus / allProductsForSummary.length : 0
         }
       };
     }
