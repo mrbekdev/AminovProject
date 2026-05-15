@@ -11,7 +11,8 @@ export interface UserLocationWithUser {
   updatedAt: Date;
   user: {
     id: number;
-    name: string;
+    firstName?: string;
+    lastName?: string;
     username?: string;
     role: string;
     branch?: {
@@ -80,6 +81,8 @@ export class LocationService {
           user: {
             select: {
               id: true,
+              firstName: true,
+              lastName: true,
               role: true,
               branch: {
                 select: {
@@ -114,6 +117,8 @@ export class LocationService {
           user: {
             select: {
               id: true,
+              firstName: true,
+              lastName: true,
               role: true,
               branch: {
                 select: {
@@ -166,7 +171,8 @@ export class LocationService {
           user: {
             select: {
               id: true,
-
+              firstName: true,
+              lastName: true,
               role: true,
               branch: {
                 select: {
@@ -211,6 +217,8 @@ export class LocationService {
           user: {
             select: {
               id: true,
+              firstName: true,
+              lastName: true,
               role: true,
               branch: {
                 select: {
