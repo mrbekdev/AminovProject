@@ -119,13 +119,18 @@ async create(
 
     if (search) {
       const searchTerm = String(search).trim();
-      andConditions.push({
-        OR: [
-          { name: { contains: searchTerm, mode: 'insensitive' } },
-          { barcode: { contains: searchTerm, mode: 'insensitive' } },
-          { model: { contains: searchTerm, mode: 'insensitive' } },
-        ],
-      });
+      const words = searchTerm.split(/\s+/).filter(Boolean);
+      if (words.length > 0) {
+        words.forEach((word) => {
+          andConditions.push({
+            OR: [
+              { name: { contains: word, mode: 'insensitive' } },
+              { barcode: { contains: word, mode: 'insensitive' } },
+              { model: { contains: word, mode: 'insensitive' } },
+            ],
+          });
+        });
+      }
     }
 
     if (status && status !== 'ALL') {
