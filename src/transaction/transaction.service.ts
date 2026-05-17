@@ -2560,4 +2560,149 @@ export class TransactionService {
       earningsSummary
     };
   }
+
+  async getTopSoldProducts(filters: {
+    startDate?: string;
+    endDate?: string;
+    branchId?: number;
+    categoryId?: number;
+    search?: string;
+  }) {
+    const { startDate, endDate, branchId, categoryId, search } = filters;
+
+    const where: any = {
+      transaction: {
+        status: { not: 'CANCELLED' }
+      }
+    };
+
+    if (startDate || endDate) {
+      where.transaction.createdAt = {};
+      if (startDate) where.transaction.createdAt.gte = new Date(startDate);
+      if (endDate) where.transaction.createdAt.lte = new Date(endDate);
+    }
+
+    if (branchId) {
+      where.transaction.fromBranchId = branchId;
+    }
+
+    const productWhere: any = {};
+    if (categoryId) {
+      productWhere.categoryId = categoryId;
+    }
+
+    if (search) {
+      const searchTerm = String(search).trim();
+      const words = searchTerm.split(/\s+/).filter(Boolean);
+      if (words.length > 0) {
+        productWhere.AND = words.map(word => ({
+          OR: [
+            { name: { contains: word, mode: 'insensitive' } },
+            { barcode: { contains: word, mode: 'insensitive' } },
+            { model: { contains: word, mode: 'insensitive' } },
+          ]
+        }));
+      }
+    }
+
+    if (Object.keys(productWhere).length > 0) {
+      where.product = productWhere;
+    }
+
+    const transactionItems = await this.prisma.transactionItem.findMany({
+      where,
+      include: {
+        product: {
+          include: {
+            category: true
+          }
+        },
+        transaction: {
+          include: {
+            fromBranch: true
+          }
+        }
+      }
+    });
+
+    const productSales: Record<string, any> = {};
+
+    transactionItems.forEach(item => {
+      const product = item.product;
+      if (!product) return;
+
+      const productName = (product.name || 'Номаълум махсулот').trim();
+      const quantity = Number(item.quantity) || 0;
+      const price = Number(item.price) || Number(product.price) || 0;
+      const branchName = item.transaction?.fromBranch?.name ||
+        (item.transaction?.fromBranchId ? `Филиал #${item.transaction.fromBranchId}` : 'Номаълум filial');
+
+      if (!productSales[productName]) {
+        productSales[productName] = {
+          id: product.id,
+          name: productName,
+          unit: 'дона',
+          model: String(product.model || '-').trim(),
+          barcode: product.barcode || 'Номаълум',
+          categoryId: product.categoryId,
+          category: product.category,
+          transactionCount: 0,
+          totalQuantity: 0,
+          totalAmount: 0,
+          barcodes: new Set<string>(),
+          branchNames: new Set<string>(),
+          models: []
+        };
+      }
+
+      const pSales = productSales[productName];
+      pSales.transactionCount += 1;
+      pSales.totalQuantity += quantity;
+      pSales.totalAmount += quantity * price;
+
+      if (product.barcode) pSales.barcodes.add(product.barcode);
+      pSales.branchNames.add(branchName);
+
+      const existingModel = pSales.models.find(
+        m => m.model === product.model && m.barcode === product.barcode
+      );
+      if (existingModel) {
+        existingModel.quantity += quantity;
+      } else {
+        pSales.models.push({
+          model: product.model,
+          barcode: product.barcode,
+          quantity,
+          price,
+          branchName,
+          unit: 'дона',
+          date: item.transaction?.createdAt ? new Date(item.transaction.createdAt).toLocaleDateString() : 'Номаълум сана'
+        });
+      }
+    });
+
+    const ranked = Object.values(productSales)
+      .filter(item => item.transactionCount > 0 && item.totalQuantity > 0)
+      .sort((a, b) => b.totalQuantity - a.totalQuantity || b.transactionCount - a.transactionCount)
+      .map((item: any, index) => {
+        const avgPricePerUnit = item.totalQuantity > 0
+          ? Math.round((item.totalAmount / item.totalQuantity) * 100) / 100
+          : 0;
+
+        return {
+          ...item,
+          rank: index + 1,
+          color: index < 3 ? ['#FFD700', '#C0C0C0', '#CD7F32'][index] : '#3b82f6',
+          barcodes: Array.from(item.barcodes).join(', '),
+          branchName: Array.from(item.branchNames).join(', '),
+          totalAmount: Math.round(item.totalAmount * 100) / 100,
+          avgPrice: item.transactionCount > 0
+            ? Math.round((item.totalAmount / item.transactionCount) * 100) / 100
+            : 0,
+          avgPricePerUnit,
+        };
+      });
+
+    return ranked;
+  }
 }

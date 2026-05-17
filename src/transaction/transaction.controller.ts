@@ -88,6 +88,23 @@ export class TransactionController {
     );
   }
 
+  @Get('top-sold')
+  getTopSoldProducts(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('branchId') branchId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.transactionService.getTopSoldProducts({
+      startDate,
+      endDate,
+      branchId: branchId ? parseInt(branchId) : undefined,
+      categoryId: categoryId ? parseInt(categoryId) : undefined,
+      search,
+    });
+  }
+
   @Get('debts')
   getDebts(
     @Query('branchId') branchId?: string,

@@ -172,13 +172,13 @@ async create(
     const idToNameMap = new Map(allRelatedProducts.map(p => [p.id, p.name]));
 
     // Get sold counts for all related product IDs
-    // We include only transaction type SALE and EXCEPT CANCELLED to get the actual sold count
+    // We include only transaction types SALE and DELIVERY, and EXCEPT CANCELLED to get the actual sold count
     const soldCounts = await this.prisma.transactionItem.groupBy({
       by: ['productId'],
       where: {
         productId: { in: relatedIds },
         transaction: {
-          type: 'SALE',
+          type: { in: ['SALE', 'DELIVERY'] },
           status: { not: 'CANCELLED' }
         }
       },
