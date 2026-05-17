@@ -2572,6 +2572,7 @@ export class TransactionService {
 
     const where: any = {
       transaction: {
+        type: { in: ['SALE', 'DELIVERY'] },
         status: { not: 'CANCELLED' }
       }
     };
