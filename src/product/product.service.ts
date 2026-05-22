@@ -938,4 +938,88 @@ return this.prisma.$transaction(async (tx) => {
       priceInSom: product.priceInSom,
     };
   }
+
+  async checkTransferMatches(toBranchId: number, items: any[]) {
+    const results: any[] = [];
+    for (const item of items) {
+      const { productId, name, model, barcode } = item;
+      
+      // Find source product if productId is provided
+      let sourceProduct: any = null;
+      if (productId) {
+        sourceProduct = await this.prisma.product.findUnique({
+          where: { id: productId }
+        });
+      }
+
+      let targetProduct: any = null;
+      const actualBarcode = barcode || sourceProduct?.barcode;
+
+      // Find by barcode
+      if (actualBarcode) {
+        targetProduct = await this.prisma.product.findFirst({
+          where: { barcode: actualBarcode, branchId: toBranchId, isDeleted: false }
+        });
+      }
+
+      // Fallback: Find by name and model matching
+      if (!targetProduct) {
+        const actualName = name || sourceProduct?.name;
+        const actualModel = model || sourceProduct?.model || '';
+        
+        if (actualName) {
+          const searchConditions: any = {
+            AND: [
+              {
+                OR: [
+                  { name: { equals: actualName, mode: 'insensitive' } },
+                  { name: { contains: actualName, mode: 'insensitive' } },
+                  { name: { contains: actualName.trim(), mode: 'insensitive' } }
+                ]
+              },
+              { branchId: toBranchId, isDeleted: false }
+            ]
+          };
+
+          if (actualModel && actualModel.trim()) {
+            searchConditions.AND.push({
+              OR: [
+                { model: { equals: actualModel, mode: 'insensitive' } },
+                { model: { contains: actualModel, mode: 'insensitive' } },
+                { model: { contains: actualModel.trim(), mode: 'insensitive' } }
+              ]
+            });
+          } else {
+            searchConditions.AND.push({
+              OR: [
+                { model: null },
+                { model: '' },
+                { model: { equals: '', mode: 'insensitive' } }
+              ]
+            });
+          }
+
+          targetProduct = await this.prisma.product.findFirst({ where: searchConditions });
+        }
+      }
+
+      results.push({
+        productId,
+        name: name || sourceProduct?.name,
+        model: model || sourceProduct?.model,
+        barcode: actualBarcode,
+        exists: !!targetProduct,
+        targetProduct: targetProduct ? {
+          id: targetProduct.id,
+          name: targetProduct.name,
+          model: targetProduct.model,
+          barcode: targetProduct.barcode,
+          quantity: targetProduct.quantity,
+          branchId: targetProduct.branchId
+        } : null
+      });
+    }
+
+    return results;
+  }
 }

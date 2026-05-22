@@ -29,7 +29,7 @@ async function bootstrap() {
       'http://localhost:3000',
       'http://localhost:5173',
       'https://zippy.travel-map.uz',
-      'https://alikafecrmm.uz',
+      'http://localhost:4000',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

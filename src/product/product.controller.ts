@@ -36,6 +36,14 @@ export class ProductController {
     return this.productService.create(createProductDto, req.user.id);
   }
 
+  @Post('check-transfer-matches')
+  checkTransferMatches(@Body() body: { toBranchId: number; items: any[] }) {
+    if (!body.toBranchId || !body.items || !Array.isArray(body.items)) {
+      throw new BadRequestException('Invalid payload. toBranchId and items array are required.');
+    }
+    return this.productService.checkTransferMatches(body.toBranchId, body.items);
+  }
+
   @Get()
   findAll(
     @Query('branchId') branchId?: string,
