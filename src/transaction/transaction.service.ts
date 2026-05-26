@@ -1836,7 +1836,8 @@ export class TransactionService {
       if (targetProduct) {
         // MUHIM: Eng yangi holatni o'qib, unga qo'shamiz (race condition oldini olish)
         const freshTarget = await tx.product.findUnique({ where: { id: targetProduct.id } });
-        const currentTargetQty = Number(freshTarget?.quantity) || 0;
+        const isDeleted = freshTarget?.isDeleted || false;
+        const currentTargetQty = isDeleted ? 0 : (Number(freshTarget?.quantity) || 0);
         const newQuantity = currentTargetQty + transferQty;
 
         await tx.product.update({
@@ -1844,7 +1845,9 @@ export class TransactionService {
           data: {
             quantity: newQuantity,
             status: 'IN_WAREHOUSE',
-            bonusPercentage: sourceProduct?.bonusPercentage ?? targetProduct.bonusPercentage
+            bonusPercentage: sourceProduct?.bonusPercentage ?? targetProduct.bonusPercentage,
+            isDeleted: false,
+            deletedAt: null
           }
         });
       } else {

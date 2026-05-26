@@ -122,13 +122,33 @@ async create(
       const words = searchTerm.split(/\s+/).filter(Boolean);
       if (words.length > 0) {
         words.forEach((word) => {
-          andConditions.push({
-            OR: [
-              { name: { contains: word, mode: 'insensitive' } },
-              { barcode: { contains: word, mode: 'insensitive' } },
-              { model: { contains: word, mode: 'insensitive' } },
-            ],
-          });
+          // Split the word into alphabetical and numeric segments
+          // e.g., "iph15p" -> ["iph", "15", "p"]
+          // e.g., "15pro" -> ["15", "pro"]
+          const segments = word.match(/[a-zA-Z]+|[0-9]+/g) || [word];
+
+          if (segments.length > 1) {
+            // For mixed alphanumeric terms, all segments must be matched across searchable fields
+            const segmentConditions = segments.map((seg) => ({
+              OR: [
+                { name: { contains: seg, mode: 'insensitive' } },
+                { barcode: { contains: seg, mode: 'insensitive' } },
+                { model: { contains: seg, mode: 'insensitive' } },
+              ],
+            }));
+            andConditions.push({
+              AND: segmentConditions,
+            });
+          } else {
+            // Single segment word, standard match
+            andConditions.push({
+              OR: [
+                { name: { contains: word, mode: 'insensitive' } },
+                { barcode: { contains: word, mode: 'insensitive' } },
+                { model: { contains: word, mode: 'insensitive' } },
+              ],
+            });
+          }
         });
       }
     }
