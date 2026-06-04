@@ -121,34 +121,29 @@ async create(
       const searchTerm = String(search).trim();
       const words = searchTerm.split(/\s+/).filter(Boolean);
       if (words.length > 0) {
-        words.forEach((word) => {
-          // Split the word into alphabetical and numeric segments
-          // e.g., "iph15p" -> ["iph", "15", "p"]
-          // e.g., "15pro" -> ["15", "pro"]
-          const segments = word.match(/[a-zA-Z]+|[0-9]+/g) || [word];
+        // Collect all unique segments from all words
+        const allSegments: string[] = [];
 
-          if (segments.length > 1) {
-            // For mixed alphanumeric terms, all segments must be matched across searchable fields
-            const segmentConditions = segments.map((seg) => ({
-              OR: [
-                { name: { contains: seg, mode: 'insensitive' } },
-                { barcode: { contains: seg, mode: 'insensitive' } },
-                { model: { contains: seg, mode: 'insensitive' } },
-              ],
-            }));
-            andConditions.push({
-              AND: segmentConditions,
-            });
-          } else {
-            // Single segment word, standard match
-            andConditions.push({
-              OR: [
-                { name: { contains: word, mode: 'insensitive' } },
-                { barcode: { contains: word, mode: 'insensitive' } },
-                { model: { contains: word, mode: 'insensitive' } },
-              ],
-            });
-          }
+        words.forEach((word) => {
+          // Split the word into alphabetical (Latin + Cyrillic) and numeric segments
+          // e.g., "iph15p" -> ["iph", "15", "p"]
+          // e.g., "sam17" -> ["sam", "17"]
+          // e.g., "самсунг" -> ["самсунг"]
+          const segments = word.match(/[a-zA-Zа-яА-ЯёЁўЎқҚғҒҳҲ]+|[0-9]+/g) || [word];
+          allSegments.push(...segments);
+        });
+
+        // Each segment must match at least one searchable field (name, model, barcode, or category.name)
+        // This allows cross-field matching: "sam 17" matches name="Samsung" + model="A17"
+        allSegments.forEach((seg) => {
+          andConditions.push({
+            OR: [
+              { name: { contains: seg, mode: 'insensitive' } },
+              { barcode: { contains: seg, mode: 'insensitive' } },
+              { model: { contains: seg, mode: 'insensitive' } },
+              { category: { name: { contains: seg, mode: 'insensitive' } } },
+            ],
+          });
         });
       }
     }
