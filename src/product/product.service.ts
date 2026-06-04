@@ -121,29 +121,42 @@ async create(
       const searchTerm = String(search).trim();
       const words = searchTerm.split(/\s+/).filter(Boolean);
       if (words.length > 0) {
-        // Collect all unique segments from all words
-        const allSegments: string[] = [];
-
         words.forEach((word) => {
-          // Split the word into alphabetical (Latin + Cyrillic) and numeric segments
-          // e.g., "iph15p" -> ["iph", "15", "p"]
-          // e.g., "sam17" -> ["sam", "17"]
-          // e.g., "самсунг" -> ["самсунг"]
-          const segments = word.match(/[a-zA-Zа-яА-ЯёЁўЎқҚғҒҳҲ]+|[0-9]+/g) || [word];
-          allSegments.push(...segments);
-        });
-
-        // Each segment must match at least one searchable field (name, model, barcode, or category.name)
-        // This allows cross-field matching: "sam 17" matches name="Samsung" + model="A17"
-        allSegments.forEach((seg) => {
-          andConditions.push({
+          // Build searchable fields condition for a given term
+          const fieldMatch = (term: string) => ({
             OR: [
-              { name: { contains: seg, mode: 'insensitive' } },
-              { barcode: { contains: seg, mode: 'insensitive' } },
-              { model: { contains: seg, mode: 'insensitive' } },
-              { category: { name: { contains: seg, mode: 'insensitive' } } },
+              { name: { contains: term, mode: 'insensitive' as const } },
+              { barcode: { contains: term, mode: 'insensitive' as const } },
+              { model: { contains: term, mode: 'insensitive' as const } },
+              { category: { name: { contains: term, mode: 'insensitive' as const } } },
             ],
           });
+
+          // Split the word into alphabetical (Latin + Cyrillic) and numeric segments
+          // e.g., "sam17" -> ["sam", "17"], "A17" -> ["A", "17"]
+          const segments = word.match(/[a-zA-Zа-яА-ЯёЁўЎқҚғҒҳҲ]+|[0-9]+/g) || [word];
+          const hasMultipleSegments = segments.length > 1;
+          // Only split when ALL segments are meaningful (>= 2 chars each)
+          // This prevents "A17" from splitting into "A" + "17" (where "A" matches everything)
+          const allSegmentsMeaningful = segments.every((s) => s.length >= 2);
+
+          if (hasMultipleSegments && allSegmentsMeaningful) {
+            // Either the whole word matches in any field,
+            // OR all segments independently match across fields
+            // e.g., "sam17" -> whole "sam17" matches OR ("sam" in name AND "17" in model)
+            const segmentConditions = segments.map((seg) => fieldMatch(seg));
+            andConditions.push({
+              OR: [
+                fieldMatch(word),           // Whole word match (primary)
+                { AND: segmentConditions },  // All segments match across fields
+              ],
+            });
+          } else {
+            // Simple whole-word match (no splitting)
+            // e.g., "A17" searches for "A17" as-is -> matches model "SAMSUNG A17"
+            // e.g., "samsung" searches for "samsung" as-is -> matches name "SAMSUNG"
+            andConditions.push(fieldMatch(word));
+          }
         });
       }
     }
