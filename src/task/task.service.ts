@@ -43,23 +43,68 @@ export class TaskService {
   }
 
   async findAll(status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED', auditorId?: number, startDate?: string, endDate?: string) {
-    const where: any = {
-      ...(status ? { status } : {}),
-      ...(auditorId != null ? { auditorId: Number(auditorId) } : {}),
-    };
+    let where: any;
 
-    if (startDate || endDate) {
-      // Filter by the transaction's creation date as it's more intuitive for users
-      where.transaction = {};
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setUTCHours(0, 0, 0, 0);
-        where.transaction.createdAt = { ...where.transaction.createdAt, gte: start };
-      }
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setUTCHours(23, 59, 59, 999);
-        where.transaction.createdAt = { ...where.transaction.createdAt, lte: end };
+    if (auditorId != null && !status && !startDate && !endDate) {
+      const localDateStr = new Date(new Date().getTime() + 5 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const startOfDay = new Date(localDateStr);
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const startUtc = new Date(startOfDay.getTime() - 5 * 60 * 60 * 1000);
+      
+      const endOfDay = new Date(localDateStr);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+      const endUtc = new Date(endOfDay.getTime() - 5 * 60 * 60 * 1000);
+
+      where = {
+        OR: [
+          { status: 'PENDING' },
+          { status: 'ACCEPTED', auditorId: Number(auditorId) },
+          {
+            status: 'DELIVERED',
+            auditorId: Number(auditorId),
+            transaction: {
+              createdAt: {
+                gte: startUtc,
+                lte: endUtc,
+              },
+            },
+          },
+        ],
+      };
+    } else {
+      where = {
+        ...(status ? { status } : {}),
+        ...(auditorId != null ? { auditorId: Number(auditorId) } : {}),
+      };
+
+      if (status === 'DELIVERED' && !startDate && !endDate) {
+        const localDateStr = new Date(new Date().getTime() + 5 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const startOfDay = new Date(localDateStr);
+        startOfDay.setUTCHours(0, 0, 0, 0);
+        const startUtc = new Date(startOfDay.getTime() - 5 * 60 * 60 * 1000);
+        
+        const endOfDay = new Date(localDateStr);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        const endUtc = new Date(endOfDay.getTime() - 5 * 60 * 60 * 1000);
+
+        where.transaction = {
+          createdAt: {
+            gte: startUtc,
+            lte: endUtc,
+          },
+        };
+      } else if (startDate || endDate) {
+        where.transaction = {};
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setUTCHours(0, 0, 0, 0);
+          where.transaction.createdAt = { ...where.transaction.createdAt, gte: start };
+        }
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setUTCHours(23, 59, 59, 999);
+          where.transaction.createdAt = { ...where.transaction.createdAt, lte: end };
+        }
       }
     }
 
@@ -87,7 +132,23 @@ export class TaskService {
       ...(status ? { status } : {}),
     };
 
-    if (startDate || endDate) {
+    if (status === 'DELIVERED' && !startDate && !endDate) {
+      const localDateStr = new Date(new Date().getTime() + 5 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const startOfDay = new Date(localDateStr);
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const startUtc = new Date(startOfDay.getTime() - 5 * 60 * 60 * 1000);
+      
+      const endOfDay = new Date(localDateStr);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+      const endUtc = new Date(endOfDay.getTime() - 5 * 60 * 60 * 1000);
+
+      where.transaction = {
+        createdAt: {
+          gte: startUtc,
+          lte: endUtc,
+        },
+      };
+    } else if (startDate || endDate) {
       where.transaction = {};
       if (startDate) {
         const start = new Date(startDate);
