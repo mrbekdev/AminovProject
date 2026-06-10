@@ -108,7 +108,8 @@ export class TaskService {
       }
     }
 
-    return (this.prisma as any).task.findMany({
+    console.log('TaskService.findAll Prisma where:', JSON.stringify(where, null, 2));
+    const tasks = await (this.prisma as any).task.findMany({
       where,
       include: { 
         transaction: { 
@@ -124,6 +125,8 @@ export class TaskService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    console.log(`TaskService.findAll found ${tasks.length} tasks.`);
+    return tasks;
   }
 
   async findByAuditor(auditorId: number, status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED', startDate?: string, endDate?: string) {

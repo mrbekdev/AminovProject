@@ -22,6 +22,7 @@ export class TaskController {
     @Query('endDate') endDate?: string,
   ) {
     const aid = auditorId != null ? Number(auditorId) : undefined;
+    console.log('TaskController.findAll query params:', { status, auditorId, aid, startDate, endDate });
     return this.taskService.findAll(status as any, aid, startDate, endDate);
   }
 
