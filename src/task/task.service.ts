@@ -46,29 +46,11 @@ export class TaskService {
     let where: any;
 
     if (auditorId != null && !status && !startDate && !endDate) {
-      const localDateStr = new Date(new Date().getTime() + 5 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const startOfDay = new Date(localDateStr);
-      startOfDay.setUTCHours(0, 0, 0, 0);
-      const startUtc = new Date(startOfDay.getTime() - 5 * 60 * 60 * 1000);
-      
-      const endOfDay = new Date(localDateStr);
-      endOfDay.setUTCHours(23, 59, 59, 999);
-      const endUtc = new Date(endOfDay.getTime() - 5 * 60 * 60 * 1000);
-
       where = {
         OR: [
           { status: 'PENDING' },
           { status: 'ACCEPTED', auditorId: Number(auditorId) },
-          {
-            status: 'DELIVERED',
-            auditorId: Number(auditorId),
-            transaction: {
-              createdAt: {
-                gte: startUtc,
-                lte: endUtc,
-              },
-            },
-          },
+          { status: 'DELIVERED', auditorId: Number(auditorId) },
         ],
       };
     } else {
@@ -77,23 +59,7 @@ export class TaskService {
         ...(auditorId != null ? { auditorId: Number(auditorId) } : {}),
       };
 
-      if (status === 'DELIVERED' && !startDate && !endDate) {
-        const localDateStr = new Date(new Date().getTime() + 5 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const startOfDay = new Date(localDateStr);
-        startOfDay.setUTCHours(0, 0, 0, 0);
-        const startUtc = new Date(startOfDay.getTime() - 5 * 60 * 60 * 1000);
-        
-        const endOfDay = new Date(localDateStr);
-        endOfDay.setUTCHours(23, 59, 59, 999);
-        const endUtc = new Date(endOfDay.getTime() - 5 * 60 * 60 * 1000);
-
-        where.transaction = {
-          createdAt: {
-            gte: startUtc,
-            lte: endUtc,
-          },
-        };
-      } else if (startDate || endDate) {
+      if (startDate || endDate) {
         where.transaction = {};
         if (startDate) {
           const start = new Date(startDate);
@@ -108,9 +74,12 @@ export class TaskService {
       }
     }
 
+    const take = (status === 'DELIVERED' && !startDate && !endDate) ? 50 : undefined;
+
     console.log('TaskService.findAll Prisma where:', JSON.stringify(where, null, 2));
     const tasks = await (this.prisma as any).task.findMany({
       where,
+      take,
       include: { 
         transaction: { 
           include: { 
@@ -135,23 +104,7 @@ export class TaskService {
       ...(status ? { status } : {}),
     };
 
-    if (status === 'DELIVERED' && !startDate && !endDate) {
-      const localDateStr = new Date(new Date().getTime() + 5 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const startOfDay = new Date(localDateStr);
-      startOfDay.setUTCHours(0, 0, 0, 0);
-      const startUtc = new Date(startOfDay.getTime() - 5 * 60 * 60 * 1000);
-      
-      const endOfDay = new Date(localDateStr);
-      endOfDay.setUTCHours(23, 59, 59, 999);
-      const endUtc = new Date(endOfDay.getTime() - 5 * 60 * 60 * 1000);
-
-      where.transaction = {
-        createdAt: {
-          gte: startUtc,
-          lte: endUtc,
-        },
-      };
-    } else if (startDate || endDate) {
+    if (startDate || endDate) {
       where.transaction = {};
       if (startDate) {
         const start = new Date(startDate);
@@ -165,8 +118,11 @@ export class TaskService {
       }
     }
 
+    const take = (status === 'DELIVERED' && !startDate && !endDate) ? 50 : undefined;
+
     return (this.prisma as any).task.findMany({
       where,
+      take,
       include: { 
         transaction: { 
           include: { 
