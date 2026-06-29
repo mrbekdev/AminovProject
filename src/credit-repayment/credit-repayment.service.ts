@@ -60,7 +60,17 @@ export class CreditRepaymentService {
     return this.prisma.creditRepayment.findMany({
       where,
       include: {
-        transaction: true,
+        transaction: {
+          include: {
+            customer: true,
+            soldBy: true,
+            items: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        },
         schedule: true,
         paidBy: true,
         branch: true,
@@ -145,6 +155,11 @@ export class CreditRepaymentService {
           include: {
             customer: true,
             soldBy: true,
+            items: {
+              include: {
+                product: true,
+              },
+            },
           },
         },
         schedule: true,

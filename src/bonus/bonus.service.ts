@@ -43,10 +43,41 @@ export class BonusService {
     });
   }
 
-  async findAll(skip = 0, take = 100) {
+  async findAll(query: any = {}) {
+    const { skip = '0', take = '100', userId, startDate, endDate, branchId } = query;
+    const parsedSkip = parseInt(skip) || 0;
+    const parsedTake = query.take === 'all' ? undefined : (parseInt(take) || 100);
+
+    const where: any = {};
+
+    if (userId) {
+      const userIds = String(userId)
+        .split(',')
+        .map((id) => parseInt(id.trim()))
+        .filter((id) => !isNaN(id));
+      if (userIds.length > 0) {
+        where.userId = { in: userIds };
+      }
+    }
+
+    if (branchId) {
+      where.branchId = parseInt(branchId);
+    }
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        where.createdAt.lte = new Date(endDate);
+      }
+    }
+
     return (this.prisma as any).bonus.findMany({
-      skip,
-      take,
+      where,
+      skip: parsedSkip,
+      take: parsedTake,
       orderBy: {
         createdAt: 'desc',
       },

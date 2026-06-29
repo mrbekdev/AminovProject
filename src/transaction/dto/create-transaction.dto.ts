@@ -34,7 +34,7 @@ export class TransactionItemDto {
 
   @IsOptional()
   @IsString()
-  productName?: string; // Product name for display
+  productName?: string; 
 
   @IsNumber()
   @IsPositive()
@@ -171,6 +171,10 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   deliveryAddress?: string; // Delivery address for customer
+
+  @IsOptional()
+  @IsString()
+  description?: string; // Credit platform name or other details
 
   @IsOptional()
   @ValidateNested()

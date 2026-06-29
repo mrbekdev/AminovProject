@@ -161,6 +161,7 @@ model Branch {
   bonuses          Bonus[]
   attendanceDays   AttendanceDay[]
   attendanceEvents AttendanceEvent[]
+  reconciliations  CashReconciliation[]
 
   @@index([name])
 }
@@ -206,6 +207,9 @@ model User {
   collectedUydanTasks  Task[]                 @relation("TaskUydanCollectedBy")
   driverRatings        DriverRating[]         @relation("DriverRatings")
   ratingsGiven         DriverRating[]         @relation("RatingsGiven")
+  cashierReconciliations       CashReconciliation[]           @relation("CashierReconciliations")
+  approvedReconciliations      CashReconciliation[]           @relation("ApprovedReconciliations")
+  uploadedReconciliationAttachments CashReconciliationAttachment[] @relation("ReconciliationUploadedAttachments")
 
   @@index([phone])
   @@index([branchId])
@@ -761,4 +765,80 @@ model GlobalRate {
   value     Float
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum ReconciliationStatus {
+  MATCHED
+  SHORTAGE
+  OVERAGE
+  REJECTED
+  PENDING
+}
+
+enum ReconciliationPaymentType {
+  CASH
+  CARD
+  TERMINAL
+  BANK
+  CREDIT_PAYMENT
+  ADVANCE_PAYMENT
+  INSTALLMENT
+  PRODUCT
+}
+
+model CashReconciliation {
+  id               Int                            @id @default(autoincrement())
+  cashierId        Int
+  branchId         Int
+  reportDate       DateTime
+  expectedCash     Float
+  receivedCash     Float
+  differenceAmount Float
+  status           ReconciliationStatus           @default(PENDING)
+  reason           String?
+  notes            String?
+  approvedBy       Int?
+  approvedAt       DateTime?
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
+  
+  cashier          User                           @relation("CashierReconciliations", fields: [cashierId], references: [id], onDelete: Cascade)
+  branch           Branch                         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  approver         User?                          @relation("ApprovedReconciliations", fields: [approvedBy], references: [id], onDelete: SetNull)
+  details          CashReconciliationDetail[]
+  attachments      CashReconciliationAttachment[]
+
+  @@unique([cashierId, branchId, reportDate])
+  @@index([cashierId])
+  @@index([branchId])
+  @@index([reportDate])
+}
+
+model CashReconciliationDetail {
+  id               Int                            @id @default(autoincrement())
+  reconciliationId Int
+  paymentType      ReconciliationPaymentType
+  expectedAmount   Float
+  actualAmount     Float
+  difference       Float
+  reason           String?
+  createdAt        DateTime                       @default(now())
+
+  reconciliation   CashReconciliation             @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+
+  @@index([reconciliationId])
+}
+
+model CashReconciliationAttachment {
+  id               Int                            @id @default(autoincrement())
+  reconciliationId Int
+  fileName         String
+  filePath         String
+  uploadedBy       Int
+  createdAt        DateTime                       @default(now())
+
+  reconciliation   CashReconciliation             @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  uploader         User                           @relation("ReconciliationUploadedAttachments", fields: [uploadedBy], references: [id], onDelete: Cascade)
+
+  @@index([reconciliationId])
 }

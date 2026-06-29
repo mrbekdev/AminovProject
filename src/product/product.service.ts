@@ -66,7 +66,7 @@ async create(
         finalTotal: 0,
         amountPaid: 0,
         remainingBalance: 0,
-        description: 'Initial stock for product creation',
+        description: 'Маҳсулот яратилгандаги бошланғич қолдиқ',
       },
     });
 

@@ -23,13 +23,17 @@ async function bootstrap() {
 
   app.use(json({ limit: '2000mb' }));
   app.use(urlencoded({ extended: true, limit: '2000mb' }));
+  
+  const express = require('express');
+  const path = require('path');
+  app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
   app.enableCors({
     origin: [
       'http://localhost:3000',
       'http://localhost:5173',
       'https://zippy.travel-map.uz',
-      'https://alikafecrmm.uz',
+      'http://localhost:4000',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

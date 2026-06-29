@@ -497,6 +497,7 @@ export class TransactionService {
       cashierUserId,
       deliveryType,
       deliveryStatus,
+      categoryId,
     } = query;
 
     // Parse and validate page and limit
@@ -554,11 +555,13 @@ export class TransactionService {
       });
     }
     if (upfrontPaymentType) where.upfrontPaymentType = upfrontPaymentType;
-    if (productId) {
+    const hasCategoryFilter = categoryId && categoryId !== 'ALL';
+    if (productId || hasCategoryFilter) {
+      const itemsConditions: any = {};
+      if (productId) itemsConditions.productId = parseInt(productId);
+      if (hasCategoryFilter) itemsConditions.product = { categoryId: parseInt(categoryId) };
       where.items = {
-        some: {
-          productId: parseInt(productId)
-        }
+        some: itemsConditions
       };
     }
 
@@ -814,7 +817,7 @@ export class TransactionService {
       const productSpecificTotal = transaction.items.reduce((sum, item) => {
         return sum + (item.total || (item.quantity * (item.sellingPrice || item.price || 0)));
       }, 0);
-      
+
       const productSpecificQuantity = transaction.items.reduce((sum, item) => {
         return sum + (item.quantity || 0);
       }, 0);
@@ -2445,14 +2448,22 @@ export class TransactionService {
   async getUserReport(userId: number, query: any = {}) {
     const { startDate, endDate, search } = query;
 
-    // Build where clause for date filtering
+    // Build where clause for date filtering with Tashkent local time (UTC+5) adjustment
     const dateWhere: any = {};
     if (startDate || endDate) {
       dateWhere.createdAt = {};
-      if (startDate) dateWhere.createdAt.gte = new Date(startDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        // adjust to Tashkent local time (UTC+5): subtract 5 hours
+        start.setUTCHours(start.getUTCHours() - 5);
+        dateWhere.createdAt.gte = start;
+      }
       if (endDate) {
         const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+        // end of day in Tashkent is next day UTC 00:00:00 minus 5 hours minus 1ms
+        end.setUTCDate(end.getUTCDate() + 1);
+        end.setUTCHours(end.getUTCHours() - 5);
+        end.setTime(end.getTime() - 1);
         dateWhere.createdAt.lte = end;
       }
     }
@@ -2495,7 +2506,9 @@ export class TransactionService {
           OR: [
             { customer: { fullName: { contains: search, mode: 'insensitive' } } },
             { customer: { phone: { contains: search, mode: 'insensitive' } } },
-            { items: { some: { product: { name: { contains: search, mode: 'insensitive' } } } } }
+            { items: { some: { product: { name: { contains: search, mode: 'insensitive' } } } } },
+            { items: { some: { product: { model: { contains: search, mode: 'insensitive' } } } } },
+            { items: { some: { product: { barcode: { contains: search, mode: 'insensitive' } } } } }
           ]
         } : {})
       },
@@ -2530,14 +2543,29 @@ export class TransactionService {
     });
 
     // Calculate stats
-    const totalSales = transactions.reduce((sum, tx) => sum + (tx.finalTotal || 0), 0);
+    let totalSales = 0;
+    let totalProfit = 0;
+    for (const b of bonuses) {
+      if (b.description) {
+        const matchSales = b.description.match(/Sotish narxi:\s*([\d,.-]+)/i);
+        if (matchSales) {
+          const valStr = matchSales[1].replace(/,/g, '');
+          totalSales += parseFloat(valStr) || 0;
+        }
+        const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
+        if (matchProfit) {
+          const valStr = matchProfit[1].replace(/,/g, '');
+          totalProfit += parseFloat(valStr) || 0;
+        }
+      }
+    }
+
     const totalBonuses = bonuses.reduce((sum, b) => sum + (b.amount || 0), 0);
     const bonusProductsValue = bonusProducts.reduce((sum, bp) => {
       const price = bp.product?.price || 0;
       return sum + (price * bp.quantity);
     }, 0);
     const salesWithBonuses = bonuses.filter(b => b.reason === 'SALES_BONUS').length;
-    const totalProfit = transactions.reduce((sum, tx) => sum + ((tx as any).extraProfit || 0), 0);
 
     const stats = {
       totalSales,

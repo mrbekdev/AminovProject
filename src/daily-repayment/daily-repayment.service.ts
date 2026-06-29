@@ -45,7 +45,17 @@ export class DailyRepaymentService {
     return this.prisma.dailyRepayment.findMany({
       where,
       include: {
-        transaction: true,
+        transaction: {
+          include: {
+            customer: true,
+            soldBy: true,
+            items: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        },
         paidBy: true,
         branch: true,
       },
@@ -126,6 +136,12 @@ export class DailyRepaymentService {
         transaction: {
           include: {
             customer: true,
+            soldBy: true,
+            items: {
+              include: {
+                product: true,
+              },
+            },
           },
         },
         paidBy: true,

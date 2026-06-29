@@ -139,7 +139,7 @@ export class LocationController {
     @Param('userId') userId: string,
   ): Promise<{
     success: boolean;
-    location: UserLocationWithUser;
+    location: UserLocationWithUser | null;
     message: string;
   }> {
     try {
@@ -172,8 +172,12 @@ export class LocationController {
 
       this.logger.error(`Failed to get location for user ${userId}:`, error);
 
-      if (error.message.includes('not found')) {
-        throw new HttpException('User location not found', HttpStatus.NOT_FOUND);
+      if (error.status === 404 || error.message?.includes('not found') || error.constructor?.name === 'NotFoundException') {
+        return {
+          success: false,
+          location: null,
+          message: 'User location not found',
+        };
       }
 
       throw new HttpException(error.message || 'Failed to get user location', HttpStatus.INTERNAL_SERVER_ERROR);

@@ -26,6 +26,9 @@ import { UserBranchAccessModule } from './user-branch-access/user-branch-access.
 import { TaskModule } from './task/task.module';
 import { DailyExpenseModule } from './daily-expense/daily-expense.module';
 import { DriverRatingModule } from './driver-rating/driver-rating.module';
+import { StatisticsModule } from './statistics/statistics.module';
+import { TelegramBackupModule } from './telegram-backup/telegram-backup.module';
+import { CashReconciliationModule } from './cash-reconciliation/cash-reconciliation.module';
 
 @Module({
   imports: [
@@ -54,7 +57,10 @@ import { DriverRatingModule } from './driver-rating/driver-rating.module';
     UserBranchAccessModule,
     TaskModule,
     DailyExpenseModule,
-    DriverRatingModule
+    DriverRatingModule,
+    StatisticsModule,
+    TelegramBackupModule,
+    CashReconciliationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

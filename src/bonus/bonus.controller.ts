@@ -42,8 +42,12 @@ export class BonusController {
   @ApiOperation({ summary: 'Get all bonuses' })
   @ApiQuery({ name: 'skip', required: false, description: 'Number of records to skip' })
   @ApiQuery({ name: 'take', required: false, description: 'Number of records to take' })
-  async findAll(@Query('skip') skip = '0', @Query('take') take = '100') {
-    return this.bonusService.findAll(+skip, +take);
+  @ApiQuery({ name: 'userId', required: false, description: 'Comma-separated user IDs' })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date filter' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date filter' })
+  @ApiQuery({ name: 'branchId', required: false, description: 'Branch ID filter' })
+  async findAll(@Query() query: any) {
+    return this.bonusService.findAll(query);
   }
 
   @Get('user/:userId')
