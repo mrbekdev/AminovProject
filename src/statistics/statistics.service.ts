@@ -39,7 +39,10 @@ export class StatisticsService {
       if (startDate) {
         // Use same UTC+5 (Tashkent) timezone-aware parsing as getUserReport
         start = new Date(startDate);
-        start.setUTCHours(start.getUTCHours() - 5);
+        const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+        if (!isUTC) {
+          start.setUTCHours(start.getUTCHours() - 5);
+        }
       } else {
         // Fallback to start of time
         start = new Date('2000-01-01T00:00:00.000Z');
@@ -47,9 +50,12 @@ export class StatisticsService {
       if (endDate) {
         // Use same UTC+5 (Tashkent) timezone-aware parsing as getUserReport
         end = new Date(endDate);
-        end.setUTCDate(end.getUTCDate() + 1);
-        end.setUTCHours(end.getUTCHours() - 5);
-        end.setTime(end.getTime() - 1);
+        const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+        if (!isUTC) {
+          end.setUTCDate(end.getUTCDate() + 1);
+          end.setUTCHours(end.getUTCHours() - 5);
+          end.setTime(end.getTime() - 1);
+        }
       } else {
         end = new Date();
       }
@@ -1741,15 +1747,21 @@ export class StatisticsService {
 
     if (startDate) {
       start = new Date(startDate);
-      start.setUTCHours(start.getUTCHours() - 5);
+      const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+      if (!isUTC) {
+        start.setUTCHours(start.getUTCHours() - 5);
+      }
     } else {
       start = new Date('2000-01-01T00:00:00.000Z');
     }
     if (endDate) {
       end = new Date(endDate);
-      end.setUTCDate(end.getUTCDate() + 1);
-      end.setUTCHours(end.getUTCHours() - 5);
-      end.setTime(end.getTime() - 1);
+      const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+      if (!isUTC) {
+        end.setUTCDate(end.getUTCDate() + 1);
+        end.setUTCHours(end.getUTCHours() - 5);
+        end.setTime(end.getTime() - 1);
+      }
     } else {
       end = new Date();
     }
@@ -1853,7 +1865,10 @@ export class StatisticsService {
     
     if (startDate && !isNaN(Date.parse(startDate))) {
       start = new Date(startDate);
-      start.setUTCHours(start.getUTCHours() - 5);
+      const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+      if (!isUTC) {
+        start.setUTCHours(start.getUTCHours() - 5);
+      }
     } else {
       start = new Date();
       start.setDate(start.getDate() - 30);
@@ -1862,9 +1877,12 @@ export class StatisticsService {
     
     if (endDate && !isNaN(Date.parse(endDate))) {
       end = new Date(endDate);
-      end.setUTCDate(end.getUTCDate() + 1);
-      end.setUTCHours(end.getUTCHours() - 5);
-      end.setTime(end.getTime() - 1);
+      const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+      if (!isUTC) {
+        end.setUTCDate(end.getUTCDate() + 1);
+        end.setUTCHours(end.getUTCHours() - 5);
+        end.setTime(end.getTime() - 1);
+      }
     } else {
       end = new Date();
     }

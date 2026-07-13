@@ -42,14 +42,20 @@ export class CashierReportController {
     let start = new Date('2000-01-01T00:00:00.000Z');
     if (startDate) {
       start = new Date(startDate);
-      start.setUTCHours(start.getUTCHours() - 5);
+      const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+      if (!isUTC) {
+        start.setUTCHours(start.getUTCHours() - 5);
+      }
     }
     let end = new Date();
     if (endDate) {
       end = new Date(endDate);
-      end.setUTCDate(end.getUTCDate() + 1);
-      end.setUTCHours(end.getUTCHours() - 5);
-      end.setTime(end.getTime() - 1);
+      const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+      if (!isUTC) {
+        end.setUTCDate(end.getUTCDate() + 1);
+        end.setUTCHours(end.getUTCHours() - 5);
+        end.setTime(end.getTime() - 1);
+      }
     }
 
     const parsedBranchId = branchId ? parseInt(branchId, 10) : NaN;

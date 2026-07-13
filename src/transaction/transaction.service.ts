@@ -683,14 +683,20 @@ export class TransactionService {
       where.createdAt = {};
       if (startDate) {
         const start = new Date(startDate);
-        start.setUTCHours(start.getUTCHours() - 5);
+        const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+        if (!isUTC) {
+          start.setUTCHours(start.getUTCHours() - 5);
+        }
         where.createdAt.gte = start;
       }
       if (endDate) {
         const end = new Date(endDate);
-        end.setUTCDate(end.getUTCDate() + 1);
-        end.setUTCHours(end.getUTCHours() - 5);
-        end.setTime(end.getTime() - 1);
+        const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+        if (!isUTC) {
+          end.setUTCDate(end.getUTCDate() + 1);
+          end.setUTCHours(end.getUTCHours() - 5);
+          end.setTime(end.getTime() - 1);
+        }
         where.createdAt.lte = end;
       }
     }
@@ -2510,16 +2516,20 @@ export class TransactionService {
       dateWhere.createdAt = {};
       if (startDate) {
         const start = new Date(startDate);
-        // adjust to Tashkent local time (UTC+5): subtract 5 hours
-        start.setUTCHours(start.getUTCHours() - 5);
+        const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+        if (!isUTC) {
+          start.setUTCHours(start.getUTCHours() - 5);
+        }
         dateWhere.createdAt.gte = start;
       }
       if (endDate) {
         const end = new Date(endDate);
-        // end of day in Tashkent is next day UTC 00:00:00 minus 5 hours minus 1ms
-        end.setUTCDate(end.getUTCDate() + 1);
-        end.setUTCHours(end.getUTCHours() - 5);
-        end.setTime(end.getTime() - 1);
+        const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+        if (!isUTC) {
+          end.setUTCDate(end.getUTCDate() + 1);
+          end.setUTCHours(end.getUTCHours() - 5);
+          end.setTime(end.getTime() - 1);
+        }
         dateWhere.createdAt.lte = end;
       }
     }

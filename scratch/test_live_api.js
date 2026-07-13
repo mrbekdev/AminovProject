@@ -6,7 +6,7 @@ if (!token) {
 }
 
 async function testAPI(label, startDate, endDate) {
-  let url = `http://localhost:4000/statistics?startDate=${startDate || ''}&endDate=${endDate || ''}`;
+  let url = `https://alikafecrmm.uz/statistics?startDate=${startDate || ''}&endDate=${endDate || ''}`;
   console.log(`\n=== ${label} ===`);
   console.log(`URL: ${url}`);
 
