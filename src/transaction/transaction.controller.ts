@@ -9,6 +9,7 @@ import {
   Delete,
   Query,
   UseGuards,
+  Res,
 } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -54,6 +55,14 @@ export class TransactionController {
     @CurrentUser() user: any
   ) {
     return this.transactionService.updateStatus(parseInt(id), body.status, user.id);
+  }
+
+  @Patch(':id/delivery-sent')
+  async updateDeliverySent(
+    @Param('id') id: string,
+    @Body() body: { deliverySent: boolean }
+  ) {
+    return this.transactionService.updateDeliverySent(parseInt(id), body.deliverySent);
   }
 
   @Get('product/:productId')
@@ -139,6 +148,38 @@ export class TransactionController {
       paymentStatus,
       cashierId: cashierId ? parseInt(cashierId) : undefined,
     });
+  }
+
+  @Get('debt-customers/export')
+  async exportDebtCustomers(
+    @Query('branchId') branchId?: string,
+    @Query('search') search?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('hasOutstanding') hasOutstanding?: string,
+    @Query('paymentStatus') paymentStatus?: string,
+    @Query('cashierId') cashierId?: string,
+    @Res() res?: any
+  ) {
+    const buffer = await this.transactionService.exportDebtCustomersToExcel({
+      branchId: branchId ? parseInt(branchId) : undefined,
+      search,
+      startDate,
+      endDate,
+      hasOutstanding: hasOutstanding ? hasOutstanding === 'true' : undefined,
+      paymentStatus,
+      cashierId: cashierId ? parseInt(cashierId) : undefined,
+    });
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=kredit_mijozlari.xlsx',
+    );
+    res.end(buffer);
   }
 
   @Get('pending-transfers')

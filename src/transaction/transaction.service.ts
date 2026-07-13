@@ -308,6 +308,10 @@ export class TransactionService {
     } catch (taskErr) {
     }
 
+    try {
+      this.taskService.emitUpdated({ type: 'transaction_created', id: transaction.id });
+    } catch {}
+
     return transaction;
   }
 
@@ -498,6 +502,7 @@ export class TransactionService {
       deliveryType,
       deliveryStatus,
       categoryId,
+      source,
     } = query;
 
     // Parse and validate page and limit
@@ -508,8 +513,25 @@ export class TransactionService {
     // AND shartlarini to'plash uchun massiv
     const andConditions: any[] = [];
 
+    if (source) {
+      if (source === 'Boshqa') {
+        andConditions.push({
+          OR: [
+            { source: null },
+            { NOT: { source: { in: ['Instagram', 'Telegram', 'Youtube', 'Tanishimdan'] } } }
+          ]
+        });
+      } else {
+        where.source = source;
+      }
+    }
+
     if (type) where.type = type;
-    if (status) where.status = status;
+    if (status) {
+      where.status = status;
+    } else {
+      where.status = { not: 'CANCELLED' };
+    }
     if (branchId) {
       // BranchId orqali filtrlash - bu filialdan chiqgan yoki kirgan transactionlarni olish
       andConditions.push({
@@ -659,8 +681,18 @@ export class TransactionService {
 
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setUTCHours(start.getUTCHours() - 5);
+        where.createdAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setUTCDate(end.getUTCDate() + 1);
+        end.setUTCHours(end.getUTCHours() - 5);
+        end.setTime(end.getTime() - 1);
+        where.createdAt.lte = end;
+      }
     }
 
     // AND shartlarini qo'shish
@@ -987,6 +1019,29 @@ export class TransactionService {
     return updatedTransaction;
   }
 
+  async updateDeliverySent(id: number, deliverySent: boolean) {
+    const transaction = await this.prisma.transaction.findUnique({
+      where: { id },
+    });
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    const updated = await this.prisma.transaction.update({
+      where: { id },
+      data: {
+        deliverySent,
+      },
+    });
+
+    try {
+      this.taskService.emitUpdated({ type: 'transaction_updated', id: updated.id });
+    } catch {}
+
+    return updated;
+  }
+
   private async processDeliveryCompletion(transaction: any) {
     // Update inventory for each item in the delivery
     for (const item of transaction.items) {
@@ -1297,7 +1352,7 @@ export class TransactionService {
       where.OR = [
         { payments: { some: { method: { in: ['UYDAN'] } } } }
       ];
-    } else {
+    } else if (paymentStatus === 'HAS_REMAINING' || paymentStatus === 'FULLY_PAID') {
       where.OR = paymentTypeConditions;
     }
 
@@ -1404,7 +1459,8 @@ export class TransactionService {
         const creditRepaid = Number((t as any).creditRepaymentAmount || 0);
         const uydanAmount = payments.filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
           .reduce((s, p) => s + Number(p.amount || 0), 0);
-        outstanding = Math.max(0, baseAmount - downPayment - creditRepaid) + uydanAmount;
+        const isDebtPaymentType = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType || '');
+        outstanding = isDebtPaymentType ? (Math.max(0, baseAmount - downPayment - creditRepaid) + uydanAmount) : uydanAmount;
         totalPaidOnDebt = creditRepaid;
       }
 
@@ -2736,5 +2792,254 @@ export class TransactionService {
       });
 
     return ranked;
+  }
+
+  async exportDebtCustomersToExcel(params: {
+    branchId?: number;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+    hasOutstanding?: boolean;
+    paymentStatus?: string; // ALL, FULLY_PAID, HAS_REMAINING, UYDAN
+    cashierId?: number;
+  }) {
+    const { branchId, search, startDate, endDate, hasOutstanding, paymentStatus, cashierId } = params;
+
+    const where: any = {
+      status: { not: TransactionStatus.CANCELLED },
+    };
+
+    const paymentTypeConditions = [
+      { paymentType: { in: [PaymentType.CREDIT, PaymentType.INSTALLMENT] } },
+      { payments: { some: { method: { in: ['UYDAN', 'INSTALLMENT'] } } } }
+    ];
+
+    if (paymentStatus === 'UYDAN') {
+      where.OR = [
+        { payments: { some: { method: { in: ['UYDAN'] } } } }
+      ];
+    } else if (paymentStatus === 'HAS_REMAINING' || paymentStatus === 'FULLY_PAID') {
+      where.OR = paymentTypeConditions;
+    }
+
+    if (!where.AND) where.AND = [];
+
+    if (branchId) {
+      where.AND.push({
+        OR: [
+          { fromBranchId: branchId },
+          { toBranchId: branchId }
+        ]
+      });
+    }
+
+    if (startDate || endDate) {
+      const dateCondition: any = {};
+      if (startDate) dateCondition.gte = new Date(startDate);
+      if (endDate) {
+        const endD = new Date(endDate);
+        endD.setHours(23, 59, 59, 999);
+        dateCondition.lte = endD;
+      }
+      where.AND.push({ createdAt: dateCondition });
+    }
+
+    if (search) {
+      where.AND.push({
+        customer: {
+          OR: [
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search, mode: 'insensitive' } }
+          ]
+        }
+      });
+    }
+
+    if (cashierId) {
+      where.AND.push({
+        OR: [
+          { soldByUserId: cashierId },
+          { userId: cashierId }
+        ]
+      });
+    }
+
+    if (where.AND.length === 0) delete where.AND;
+
+    // Load ALL matching transactions with complete details in one query
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      include: {
+        customer: true,
+        user: true,
+        soldBy: true,
+        fromBranch: true,
+        payments: true,
+        paymentSchedules: true,
+        items: {
+          include: {
+            product: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const customerMap = new Map<number, any>();
+
+    for (const t of transactions) {
+      const cust = t.customer;
+      if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
+
+      const schedules = t.paymentSchedules || [];
+      const payments = t.payments || [];
+
+      let outstanding = 0;
+      let totalPaidOnDebt = 0;
+
+      if (schedules.length > 0) {
+        outstanding = schedules.reduce((sum, s) => sum + Math.max(0, (s.payment || 0) - (s.paidAmount || 0)), 0);
+        totalPaidOnDebt = schedules.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
+      } else {
+        const baseAmount = Number(t.finalTotal || t.total || 0);
+        const downPayment = Number(t.downPayment || 0);
+        const creditRepaid = Number(t.creditRepaymentAmount || 0);
+        const uydanAmount = payments.filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
+          .reduce((s, p) => s + Number(p.amount || 0), 0);
+        const isDebtPaymentType = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType || '');
+        outstanding = isDebtPaymentType ? (Math.max(0, baseAmount - downPayment - creditRepaid) + uydanAmount) : uydanAmount;
+        totalPaidOnDebt = creditRepaid;
+      }
+
+      if (hasOutstanding === true && outstanding <= 0) continue;
+      if (hasOutstanding === false && outstanding > 0) continue;
+
+      if (paymentStatus === 'FULLY_PAID' && outstanding > 0) continue;
+      if (paymentStatus === 'HAS_REMAINING' && outstanding <= 0) continue;
+
+      if (!customerMap.has(cust.id)) {
+        customerMap.set(cust.id, {
+          customer: cust,
+          txs: []
+        });
+      }
+      customerMap.get(cust.id).txs.push(t);
+    }
+
+    const rows: any[] = [];
+    for (const entry of Array.from(customerMap.values())) {
+      const cust = entry.customer;
+      const txsAll = entry.txs;
+
+      const marketingNames = new Set<string>();
+      const cashierNames = new Set<string>();
+      const productSet = new Set<string>();
+      const bonusSet = new Set<string>();
+      const returnedTxIds: string[] = [];
+
+      let totalSold = 0;
+      let totalDebt = 0;
+      let totalDown = 0;
+      let totalPaid = 0;
+      let totalRemaining = 0;
+
+      for (const t of txsAll) {
+        const isReturned = String(t.status || '').toUpperCase() === 'RETURNED';
+        if (isReturned) returnedTxIds.push(String(t.id));
+
+        const marketingUser =
+          t.user && String(t.user.role).toUpperCase() === 'MARKETING'
+            ? t.user
+            : t.soldBy && String(t.soldBy.role).toUpperCase() === 'MARKETING'
+              ? t.soldBy
+              : null;
+
+        const cashierUser =
+          t.soldBy && String(t.soldBy.role).toUpperCase() === 'CASHIER'
+            ? t.soldBy
+            : t.user && String(t.user.role).toUpperCase() === 'CASHIER'
+              ? t.user
+              : null;
+
+        if (marketingUser) marketingNames.add(`${marketingUser.firstName || ''} ${marketingUser.lastName || ''}`.trim() || marketingUser.username);
+        if (cashierUser) cashierNames.add(`${cashierUser.firstName || ''} ${cashierUser.lastName || ''}`.trim() || cashierUser.username);
+
+        (t.items || []).forEach((it) => {
+          const name = it?.product?.name || it?.name || '';
+          const model = it?.product?.model || it?.model || '';
+          const label = `${name}${model ? ` (${model})` : ''}`.trim();
+          if (label) productSet.add(label);
+
+          const isBonus = it.isBonus === true || it.isGift === true || it.bonus === true || it.bonusProductId || Number(it.price ?? 0) === 0;
+          if (isBonus) bonusSet.add(label || name || 'BONUS');
+        });
+
+        if (isReturned) continue;
+
+        const soldAmt = Number(t.finalTotal || t.total || 0);
+        const downAmt = Number(t.downPayment || 0);
+        const isDebtPaymentType = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType || '');
+        const debtMade = isDebtPaymentType ? Math.max(0, soldAmt - downAmt) : 0;
+
+        let paidAmt = 0;
+        let remainingAmt = 0;
+        const schedules = t.paymentSchedules || [];
+        if (schedules.length > 0) {
+          remainingAmt = schedules.reduce((sum, s) => sum + Math.max(0, (s.payment || 0) - (s.paidAmount || 0)), 0);
+          paidAmt = downAmt + schedules.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
+        } else {
+          const creditRepaid = Number(t.creditRepaymentAmount || 0);
+          const uydanAmount = (t.payments || []).filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
+            .reduce((s, p) => s + Number(p.amount || 0), 0);
+          remainingAmt = isDebtPaymentType ? (Math.max(0, soldAmt - downAmt - creditRepaid) + uydanAmount) : uydanAmount;
+          paidAmt = isDebtPaymentType ? (downAmt + creditRepaid) : soldAmt;
+        }
+
+        totalSold += soldAmt;
+        totalDebt += debtMade;
+        totalDown += downAmt;
+        totalPaid += paidAmt;
+        totalRemaining += remainingAmt;
+      }
+
+      rows.push({
+        'Holat': returnedTxIds.length > 0 ? 'Qaytarilgan bor' : '-',
+        'Qaytarilgan TX ID': returnedTxIds.length ? returnedTxIds.join(', ') : '-',
+        'Marketing': Array.from(marketingNames).join(', ') || '-',
+        'Kassir': Array.from(cashierNames).join(', ') || '-',
+        'Mijoz': cust.fullName || 'Noma\'lum',
+        'Telefon': cust.phone || '-',
+        'Mahsulotlar (name + model)': Array.from(productSet).join(' | ') || '-',
+        'Bonus qo\'shilganlar': Array.from(bonusSet).join(' | ') || '-',
+        'Jami sotib olgan (so\'m)': totalSold,
+        'Qarz qilgan (so\'m)': totalDebt,
+        'Oldindan bergan (so\'m)': totalDown,
+        'Jami to\'lov qilgan (so\'m)': totalPaid,
+        'Qarzi qolgan (so\'m)': totalRemaining
+      });
+    }
+
+    const XLSX = require('xlsx');
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 18 }, // Holat
+      { wch: 28 }, // Returned tx ids
+      { wch: 20 }, // Marketing
+      { wch: 18 }, // Kassir
+      { wch: 22 }, // Mijoz
+      { wch: 16 }, // Telefon
+      { wch: 60 }, // Mahsulotlar
+      { wch: 45 }, // Bonus
+      { wch: 20 }, // sold
+      { wch: 18 }, // debt
+      { wch: 18 }, // down
+      { wch: 20 }, // paid
+      { wch: 18 }  // remaining
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Kredit mijozlari');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    return buffer;
   }
 }

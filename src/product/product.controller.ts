@@ -13,7 +13,8 @@ import {
   UploadedFile, 
   UseGuards, 
   Req, 
-  BadRequestException
+  BadRequestException,
+  ForbiddenException
 } from '@nestjs/common';
 import { Request } from 'express';
 import { ProductService } from './product.service';
@@ -23,7 +24,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 interface AuthRequest extends Request {
-  user: { id: number };
+  user: { id: number; role: string; userId: number };
 }
 
 @Controller('products')
@@ -33,7 +34,10 @@ export class ProductController {
 
   @Post()
   create(@Req() req: AuthRequest, @Body() createProductDto: CreateProductDto) {
-    return this.productService.create(createProductDto, req.user.id);
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulot yaratish huquqiga ega emas.');
+    }
+    return this.productService.create(createProductDto, req.user.id || req.user.userId);
   }
 
   @Post('check-transfer-matches')
@@ -93,66 +97,87 @@ export class ProductController {
 
   @Put(':id')
   update(@Req() req: AuthRequest, @Param('id', ParseIntPipe) id: number, @Body() updateProductDto: UpdateProductDto) {
-    return this.productService.update(id, updateProductDto, req.user.id);
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulotlarni tahrirlash huquqiga ega emas.');
+    }
+    return this.productService.update(id, updateProductDto, req.user.id || req.user.userId);
   }
 
-// Mahsulotni to'liq defective qilish
-@Put(':id/mark-defective')
-markAsDefective(
-  @Req() req: AuthRequest,
-  @Param('id', ParseIntPipe) id: number,
-  @Body() body: { description: string }
-) {
-  if (!body.description) {
-    throw new BadRequestException('Description is required');
+  // Mahsulotni to'liq defective qilish
+  @Put(':id/mark-defective')
+  markAsDefective(
+    @Req() req: AuthRequest,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { description: string }
+  ) {
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulotlarni o\'zgartirish huquqiga ega emas.');
+    }
+    if (!body.description) {
+      throw new BadRequestException('Description is required');
+    }
+    return this.productService.markAsDefective(id, body.description, req.user.id || req.user.userId);
   }
-  return this.productService.markAsDefective(id, body.description, req.user.id);
-}
 
-// Mahsulotdan ma'lum miqdorini defective qilish
-@Put(':id/partial-defective')
-markPartialDefective(
-  @Req() req: AuthRequest,
-  @Param('id', ParseIntPipe) id: number,
-  @Body() body: { defectiveCount: number; description: string }
-) {
-  if (!body.description) {
-    throw new BadRequestException('Description is required');
+  // Mahsulotdan ma'lum miqdorini defective qilish
+  @Put(':id/partial-defective')
+  markPartialDefective(
+    @Req() req: AuthRequest,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { defectiveCount: number; description: string }
+  ) {
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulotlarni o\'zgartirish huquqiga ega emas.');
+    }
+    if (!body.description) {
+      throw new BadRequestException('Description is required');
+    }
+    if (!body.defectiveCount || body.defectiveCount <= 0) {
+      throw new BadRequestException('Valid defectiveCount is required');
+    }
+    return this.productService.markPartialDefective(id, body.defectiveCount, body.description, req.user.id || req.user.userId);
   }
-  if (!body.defectiveCount || body.defectiveCount <= 0) {
-    throw new BadRequestException('Valid defectiveCount is required');
-  }
-  return this.productService.markPartialDefective(id, body.defectiveCount, body.description, req.user.id);
-}
 
-// Defective mahsulotni qaytarish
-@Put(':id/restore-defective')
-restoreDefectiveProduct(
-  @Req() req: AuthRequest,
-  @Param('id', ParseIntPipe) id: number,
-  @Body() body: { restoreCount: number }
-) {
-  if (!body.restoreCount || body.restoreCount <= 0) {
-    throw new BadRequestException('Valid restoreCount is required');
+  // Defective mahsulotni qaytarish
+  @Put(':id/restore-defective')
+  restoreDefectiveProduct(
+    @Req() req: AuthRequest,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { restoreCount: number }
+  ) {
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulotlarni o\'zgartirish huquqiga ega emas.');
+    }
+    if (!body.restoreCount || body.restoreCount <= 0) {
+      throw new BadRequestException('Valid restoreCount is required');
+    }
+    return this.productService.restoreDefectiveProduct(id, body.restoreCount, req.user.id || req.user.userId);
   }
-  return this.productService.restoreDefectiveProduct(id, body.restoreCount, req.user.id);
-}
 
   // Bulk defective
   @Post('bulk-defective')
   bulkMarkDefective(@Req() req: AuthRequest, @Body() body: { ids: number[]; description: string }) {
-    return this.productService.bulkMarkDefective(body.ids, body.description, req.user.id);
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulotlarni o\'zgartirish huquqiga ega emas.');
+    }
+    return this.productService.bulkMarkDefective(body.ids, body.description, req.user.id || req.user.userId);
   }
 
   // Bulk restore defective
   @Post('bulk-restore-defective')
   bulkRestoreDefective(@Req() req: AuthRequest, @Body() body: { ids: number[] }) {
-    return this.productService.bulkRestoreDefective(body.ids, req.user.id);
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulotlarni o\'zgartirish huquqiga ega emas.');
+    }
+    return this.productService.bulkRestoreDefective(body.ids, req.user.id || req.user.userId);
   }
 
   @Delete(':id')
   remove(@Req() req: AuthRequest, @Param('id', ParseIntPipe) id: number) {
-    return this.productService.remove(id, req.user.id);
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulotlarni o\'chirish huquqiga ega emas.');
+    }
+    return this.productService.remove(id, req.user.id || req.user.userId);
   }
 
   @Post('upload')
@@ -164,11 +189,17 @@ restoreDefectiveProduct(
     @Body('categoryId', ParseIntPipe) categoryId: number,
     @Body('status') status: string,
   ) {
-    return this.productService.uploadExcel(file, branchId, categoryId, status, req.user.id);
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulotlarni yuklash huquqiga ega emas.');
+    }
+    return this.productService.uploadExcel(file, branchId, categoryId, status, req.user.id || req.user.userId);
   }
 
   @Delete('bulk')
   bulkRemove(@Req() req: AuthRequest, @Body() body: { ids: number[] }) {
+    if (req.user.role === 'REVIZOR') {
+      throw new ForbiddenException('Revizor mahsulotlarni o\'chirish huquqiga ega emas.');
+    }
     return this.productService.removeMany(body.ids);
   }
 }

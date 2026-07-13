@@ -54,6 +54,10 @@ export class UpdateTransactionDto {
   @IsOptional()
   description?: string;
 
+  @IsString()
+  @IsOptional()
+  source?: string;
+
   // Credit repayment tracking fields
   @IsNumber()
   @IsOptional()

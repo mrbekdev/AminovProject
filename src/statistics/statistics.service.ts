@@ -1072,9 +1072,52 @@ export class StatisticsService {
       },
     });
 
+    // --- SOCIAL SOURCE STATS ---
+    const sourceTransactions = await this.prisma.transaction.findMany({
+      where: {
+        ...transactionWhere,
+        type: TransactionType.SALE,
+      },
+      select: {
+        source: true,
+        customerId: true,
+        finalTotal: true,
+      },
+    });
+
+    const sourcesList = ['Instagram', 'Telegram', 'Youtube', 'Tanishimdan'];
+    const socialStatsMap = new Map<string, { source: string; totalRevenue: number; salesCount: number; uniqueCustomers: Set<number> }>();
+
+    for (const src of [...sourcesList, 'Boshqa']) {
+      socialStatsMap.set(src, {
+        source: src,
+        totalRevenue: 0,
+        salesCount: 0,
+        uniqueCustomers: new Set<number>(),
+      });
+    }
+
+    for (const tx of sourceTransactions) {
+      const src = tx.source && sourcesList.includes(tx.source) ? tx.source : 'Boshqa';
+      const stats = socialStatsMap.get(src)!;
+      stats.totalRevenue += Number(tx.finalTotal || 0);
+      stats.salesCount++;
+      if (tx.customerId) {
+        stats.uniqueCustomers.add(tx.customerId);
+      }
+    }
+
+    const socialMediaStats = Array.from(socialStatsMap.values()).map(s => ({
+      source: s.source,
+      totalRevenue: s.totalRevenue,
+      salesCount: s.salesCount,
+      uniqueCustomersCount: s.uniqueCustomers.size,
+    }));
+
     return {
       dateRange: { start, end },
       salesCount,
+      socialMediaStats,
       cashRegister: {
         sales: {
           cash: cashSales,

@@ -177,6 +177,10 @@ export class CreateTransactionDto {
   description?: string; // Credit platform name or other details
 
   @IsOptional()
+  @IsString()
+  source?: string; // Instagram, Telegram, Youtube, Tanishimdan
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => CustomerDto)
   customer?: CustomerDto;

@@ -275,4 +275,10 @@ export class TaskService {
     try { this.gateway.emitUpdated({ type: 'uydan_collected', id: updated.id }); } catch {}
     return updated;
   }
+
+  emitUpdated(payload: any) {
+    try {
+      this.gateway.emitUpdated(payload);
+    } catch {}
+  }
 }

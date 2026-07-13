@@ -8,7 +8,10 @@ export class TaskGateway {
 
   emitUpdated(payload: any = null) {
     try {
+      console.log('TaskGateway: Emitting "tasks.updated" to clients with payload:', payload);
       this.server.emit('tasks.updated', payload ?? { ts: Date.now() });
-    } catch {}
+    } catch (err) {
+      console.error('TaskGateway error during emit:', err);
+    }
   }
 }

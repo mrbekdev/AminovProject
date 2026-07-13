@@ -109,6 +109,7 @@ enum UserRole {
   OPERATOR
   OPERATORCALL
   HISOBCHI
+  REVIZOR
 }
 
 enum BranchType {
@@ -162,6 +163,7 @@ model Branch {
   attendanceDays   AttendanceDay[]
   attendanceEvents AttendanceEvent[]
   reconciliations  CashReconciliation[]
+  incomingReports  IncomingStockReport[]  @relation("BranchIncomingReports")
 
   @@index([name])
 }
@@ -210,6 +212,10 @@ model User {
   cashierReconciliations       CashReconciliation[]           @relation("CashierReconciliations")
   approvedReconciliations      CashReconciliation[]           @relation("ApprovedReconciliations")
   uploadedReconciliationAttachments CashReconciliationAttachment[] @relation("ReconciliationUploadedAttachments")
+  createdIncomingReports            IncomingStockReport[]          @relation("UserCreatedIncomingReports")
+  approvedIncomingReports           IncomingStockReport[]          @relation("UserApprovedIncomingReports")
+  incomingStockAuditLogs            IncomingStockAuditLog[]        @relation("UserIncomingAuditLogs")
+  notifications                     Notification[]                 @relation("UserNotifications")
 
   @@index([phone])
   @@index([branchId])
@@ -294,6 +300,7 @@ model Product {
   DefectiveLog      DefectiveLog[]
   ProductTransfer   ProductTransfer[]
   bonusProducts     TransactionBonusProduct[]
+  incomingStockItems IncomingStockItem[]       @relation("ProductIncomingItems")
 
   @@unique([barcode, branchId], name: "barcode_branchId")
   @@index([isDeleted])
@@ -369,11 +376,13 @@ model Transaction {
   deliveryMethod        String?
   deliveryType          String? // PICKUP or DELIVERY
   deliveryAddress       String? // Delivery address for customer
+  deliverySent          Boolean           @default(false)
   amountPaid            Float?
   downPayment           Float?
   remainingBalance      Float?
   receiptId             String?
   description           String?
+  source                String?           // Instagram, Telegram, Youtube, Tanishimdan
   updatedById           Int?
   // Credit repayment tracking fields
   creditRepaymentAmount Float?            @default(0)
@@ -841,4 +850,103 @@ model CashReconciliationAttachment {
   uploader         User                           @relation("ReconciliationUploadedAttachments", fields: [uploadedBy], references: [id], onDelete: Cascade)
 
   @@index([reconciliationId])
+}
+
+enum IncomingStockReportStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum IncomingStockItemStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum IncomingStockAuditAction {
+  CREATED
+  UPDATED
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+model IncomingStockReport {
+  id            Int                       @id @default(autoincrement())
+  reportNumber  String                    @unique
+  branchId      Int
+  createdBy     Int
+  approvedBy    Int?
+  status        IncomingStockReportStatus @default(DRAFT)
+  fileName      String?
+  totalItems    Int
+  totalQuantity Int
+  note          String?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  submittedAt   DateTime?
+  approvedAt    DateTime?
+
+  branch        Branch                    @relation("BranchIncomingReports", fields: [branchId], references: [id], onDelete: Cascade)
+  creator       User                      @relation("UserCreatedIncomingReports", fields: [createdBy], references: [id], onDelete: Cascade)
+  approver      User?                     @relation("UserApprovedIncomingReports", fields: [approvedBy], references: [id], onDelete: SetNull)
+  items         IncomingStockItem[]       @relation("ReportItems")
+  auditLogs     IncomingStockAuditLog[]   @relation("ReportAuditLogs")
+
+  @@index([branchId])
+  @@index([createdBy])
+  @@index([approvedBy])
+  @@index([status])
+}
+
+model IncomingStockItem {
+  id        Int                     @id @default(autoincrement())
+  reportId  Int
+  productId Int
+  barcode   String
+  quantity  Int
+  note      String?
+  status    IncomingStockItemStatus @default(PENDING)
+  createdAt DateTime                @default(now())
+
+  report    IncomingStockReport @relation("ReportItems", fields: [reportId], references: [id], onDelete: Cascade)
+  product   Product             @relation("ProductIncomingItems", fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([productId])
+  @@index([status])
+}
+
+model IncomingStockAuditLog {
+  id         Int                      @id @default(autoincrement())
+  reportId   Int
+  userId     Int
+  action     IncomingStockAuditAction
+  oldValue   String?                  @db.Text
+  newValue   String?                  @db.Text
+  ipAddress  String?
+  device     String?
+  createdAt  DateTime                 @db.Timestamp @default(now())
+
+  report     IncomingStockReport      @relation("ReportAuditLogs", fields: [reportId], references: [id], onDelete: Cascade)
+  user       User                     @relation("UserIncomingAuditLogs", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([userId])
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  title       String
+  message     String
+  isRead      Boolean  @default(false)
+  type        String   @default("INFO")
+  createdAt   DateTime @default(now())
+
+  user        User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

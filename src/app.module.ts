@@ -29,6 +29,7 @@ import { DriverRatingModule } from './driver-rating/driver-rating.module';
 import { StatisticsModule } from './statistics/statistics.module';
 import { TelegramBackupModule } from './telegram-backup/telegram-backup.module';
 import { CashReconciliationModule } from './cash-reconciliation/cash-reconciliation.module';
+import { IncomingStockModule } from './incoming-stock/incoming-stock.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { CashReconciliationModule } from './cash-reconciliation/cash-reconciliat
     StatisticsModule,
     TelegramBackupModule,
     CashReconciliationModule,
+    IncomingStockModule,
   ],
   controllers: [AppController],
   providers: [AppService],

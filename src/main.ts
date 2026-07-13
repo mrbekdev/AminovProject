@@ -23,7 +23,7 @@ async function bootstrap() {
 
   app.use(json({ limit: '2000mb' }));
   app.use(urlencoded({ extended: true, limit: '2000mb' }));
-  
+
   const express = require('express');
   const path = require('path');
   app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
