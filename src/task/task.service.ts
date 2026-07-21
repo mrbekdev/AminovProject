@@ -15,6 +15,27 @@ export class TaskService {
     return 0;
   }
 
+  private parseDateRange(startDate?: string, endDate?: string) {
+    let start: Date | undefined;
+    let end: Date | undefined;
+
+    if (startDate) {
+      start = new Date(startDate);
+      if (!startDate.endsWith('Z') && !startDate.includes('+')) {
+        start.setUTCHours(start.getUTCHours() - 5);
+      }
+    }
+    if (endDate) {
+      end = new Date(endDate);
+      if (!endDate.endsWith('Z') && !endDate.includes('+')) {
+        end.setUTCDate(end.getUTCDate() + 1);
+        end.setUTCHours(end.getUTCHours() - 5);
+        end.setTime(end.getTime() - 1);
+      }
+    }
+    return { start, end };
+  }
+
   async create(data: { transactionId: number; auditorId?: number | null; status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED' }) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: Number(data.transactionId) },
@@ -61,14 +82,11 @@ export class TaskService {
 
       if (startDate || endDate) {
         where.transaction = {};
-        if (startDate) {
-          const start = new Date(startDate);
-          start.setUTCHours(0, 0, 0, 0);
+        const { start, end } = this.parseDateRange(startDate, endDate);
+        if (start) {
           where.transaction.createdAt = { ...where.transaction.createdAt, gte: start };
         }
-        if (endDate) {
-          const end = new Date(endDate);
-          end.setUTCHours(23, 59, 59, 999);
+        if (end) {
           where.transaction.createdAt = { ...where.transaction.createdAt, lte: end };
         }
       }
@@ -106,14 +124,11 @@ export class TaskService {
 
     if (startDate || endDate) {
       where.transaction = {};
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setUTCHours(0, 0, 0, 0);
+      const { start, end } = this.parseDateRange(startDate, endDate);
+      if (start) {
         where.transaction.createdAt = { ...where.transaction.createdAt, gte: start };
       }
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setUTCHours(23, 59, 59, 999);
+      if (end) {
         where.transaction.createdAt = { ...where.transaction.createdAt, lte: end };
       }
     }

@@ -43,14 +43,21 @@ export class CustomerController {
   @ApiQuery({ name: 'phone', required: false })
   @ApiQuery({ name: 'email', required: false })
   @ApiQuery({ name: 'fullName', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'paginated', required: false })
+  @ApiQuery({ name: 'sortBy', required: false })
   async findAll(
     @Query('skip') skip = '0',
     @Query('take') take = '1000',
     @Query('phone') phone?: string,
     @Query('email') email?: string,
     @Query('fullName') fullName?: string,
+    @Query('search') search?: string,
+    @Query('paginated') paginated?: string,
+    @Query('sortBy') sortBy?: string,
   ) {
-    return this.customerService.findAll(+skip, +take, { phone, email, fullName });
+    const isPaginated = paginated === 'true';
+    return this.customerService.findAll(+skip, +take, { phone, email, fullName, search }, isPaginated, sortBy);
   }
 
   @Put(':id')

@@ -10,6 +10,7 @@ export class StatisticsService {
     // 1. Calculate date boundaries
     let start = new Date();
     let end = new Date();
+    const outstandingByBranch = new Map<number, number>();
 
     if (period) {
       start = new Date();
@@ -31,7 +32,7 @@ export class StatisticsService {
         start.setHours(0, 0, 0, 0);
         end.setHours(23, 59, 59, 999);
       } else if (period === 'year') {
-        start.setFullYear(start.getFullYear() - 1);
+        start.setFullYear(start.getFullYear() - 1);     
         start.setHours(0, 0, 0, 0);
         end.setHours(23, 59, 59, 999);
       }
@@ -62,7 +63,7 @@ export class StatisticsService {
     }
 
     // Common WHERE clause for transactions
-    const transactionWhere: any = {
+    const transactionWhere: any = {     
       status: { not: TransactionStatus.CANCELLED },
     };
     if (branchId) {
@@ -1034,6 +1035,7 @@ export class StatisticsService {
           } : {})
         },
         select: {
+          fromBranchId: true,
           finalTotal: true,
           total: true,
           downPayment: true,
@@ -1066,6 +1068,10 @@ export class StatisticsService {
           outstanding = Math.max(0, baseAmount - downPayment - creditRepaid) + uydanAmount;
         }
         totalOutstandingDebts += outstanding;
+
+        if (t.fromBranchId) {
+          outstandingByBranch.set(t.fromBranchId, (outstandingByBranch.get(t.fromBranchId) || 0) + outstanding);
+        }
       }
     } catch (e) {
       console.error('Failed to calculate outstanding debts', e);
@@ -1120,10 +1126,106 @@ export class StatisticsService {
       uniqueCustomersCount: s.uniqueCustomers.size,
     }));
 
+    // Fetch all active branches
+    const allBranches = await this.prisma.branch.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        cashBalance: true,
+      },
+    });
+
+    // 1. Group active sales by branch in memory
+    const salesByBranch = new Map<number, { volume: number; count: number; creditVolume: number }>();
+    activeSales.forEach(t => {
+      const bId = t.fromBranchId;
+      if (!bId) return;
+      if (!salesByBranch.has(bId)) {
+        salesByBranch.set(bId, { volume: 0, count: 0, creditVolume: 0 });
+      }
+      const data = salesByBranch.get(bId)!;
+      const finalTotal = t.finalTotal || t.total || 0;
+      data.volume += finalTotal;
+      data.count += 1;
+      if (t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') {
+        data.creditVolume += finalTotal;
+      }
+    });
+
+    // 2. Fetch and group repayments by branch
+    const branchDailyRepayments = await this.prisma.dailyRepayment.groupBy({
+      by: ['branchId'],
+      where: repaymentWhere,
+      _sum: { amount: true },
+    });
+    const branchCreditRepayments = await this.prisma.creditRepayment.groupBy({
+      by: ['branchId'],
+      where: repaymentWhere,
+      _sum: { amount: true },
+    });
+    const repaymentsByBranch = new Map<number, number>();
+    branchDailyRepayments.forEach(r => {
+      if (r.branchId) {
+        repaymentsByBranch.set(r.branchId, (repaymentsByBranch.get(r.branchId) || 0) + (r._sum.amount || 0));
+      }
+    });
+    branchCreditRepayments.forEach(r => {
+      if (r.branchId) {
+        repaymentsByBranch.set(r.branchId, (repaymentsByBranch.get(r.branchId) || 0) + (r._sum.amount || 0));
+      }
+    });
+
+    // 3. Outstanding debts per branch are already computed in the totalOutstandingDebts block.
+
+    // 4. Group netProfit from bonuses in memory
+    const branchBonuses = await this.prisma.bonus.findMany({
+      where: {
+        createdAt: { gte: start, lte: end }
+      },
+      select: {
+        branchId: true,
+        description: true,
+      }
+    });
+    const profitByBranch = new Map<number, number>();
+    branchBonuses.forEach(b => {
+      if (b.branchId && b.description) {
+        const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
+        if (matchProfit) {
+          const valStr = matchProfit[1].replace(/,/g, '');
+          const val = parseFloat(valStr) || 0;
+          profitByBranch.set(b.branchId, (profitByBranch.get(b.branchId) || 0) + val);
+        }
+      }
+    });
+
+    // 5. Construct the final branches report array
+    const branchesReport = allBranches.map(b => {
+      const sales = salesByBranch.get(b.id) || { volume: 0, count: 0, creditVolume: 0 };
+      const repayments = repaymentsByBranch.get(b.id) || 0;
+      const outstanding = outstandingByBranch.get(b.id) || 0;
+      const profit = profitByBranch.get(b.id) || 0;
+      return {
+        branchId: b.id,
+        name: b.name,
+        type: b.type,
+        cashBalance: b.cashBalance || 0,
+        salesVolume: sales.volume,
+        salesCount: sales.count,
+        creditSales: sales.creditVolume,
+        repaymentsCollected: repayments,
+        outstandingDebts: outstanding,
+        netProfit: profit,
+      };
+    });
+
     return {
       dateRange: { start, end },
       salesCount,
       socialMediaStats,
+      branchesReport,
       cashRegister: {
         sales: {
           cash: cashSales,

@@ -49,8 +49,19 @@ export class CustomerService {
     return customer;
   }
 
-  async findAll(skip: number, take: number, filters?: { phone?: string; email?: string; fullName?: string }) {
-    let where: any = {};
+  async findAll(
+    skip: number,
+    take: number,
+    filters?: { phone?: string; email?: string; fullName?: string; search?: string },
+    paginated = false,
+    sortBy?: string,
+  ) {
+    let where: any = {
+      NOT: [
+        { fullName: 'Номаълум' },
+        { fullName: 'Номаълум Мижоз' }
+      ]
+    };
     
     if (filters?.phone) {
       where.phone = { contains: filters.phone, mode: 'insensitive' };
@@ -68,10 +79,41 @@ export class CustomerService {
       ];
     }
 
+    if (filters?.search) {
+      where.OR = [
+        { fullName: { contains: filters.search, mode: 'insensitive' } },
+        { phone: { contains: filters.search, mode: 'insensitive' } },
+        { address: { contains: filters.search, mode: 'insensitive' } }
+      ];
+      const searchId = parseInt(filters.search, 10);
+      if (!isNaN(searchId)) {
+        where.OR.push({ id: searchId });
+      }
+    }
+
+    let totalCount = 0;
+    let totalTransactions = 0;
+    if (paginated) {
+      totalCount = await this.prisma.customer.count({ where });
+      totalTransactions = await this.prisma.transaction.count({
+        where: {
+          customer: where
+        }
+      });
+    }
+
+    const prismaOrderBy: any = {};
+    if (sortBy === 'transactions') {
+      prismaOrderBy.transactions = {
+        _count: 'desc'
+      };
+    }
+
     const customers = await this.prisma.customer.findMany({
       skip,
       take,
       where,
+      orderBy: Object.keys(prismaOrderBy).length > 0 ? prismaOrderBy : undefined,
       include: { 
         transactions: { 
           include: { 
@@ -144,8 +186,18 @@ export class CustomerService {
       };
     });
 
-    // Sort by rating score (bad customers first)
-    customersWithRating.sort((a, b) => b.rating.ratingScore - a.rating.ratingScore);
+    // If NOT sorted by transactions in database, sort by rating score
+    if (sortBy !== 'transactions') {
+      customersWithRating.sort((a, b) => b.rating.ratingScore - a.rating.ratingScore);
+    }
+
+    if (paginated) {
+      return {
+        data: customersWithRating,
+        total: totalCount,
+        totalTransactions
+      };
+    }
 
     return customersWithRating;
   }

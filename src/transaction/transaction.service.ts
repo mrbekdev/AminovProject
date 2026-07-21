@@ -672,10 +672,7 @@ export class TransactionService {
           tasks: { some: { status: 'DELIVERED' } }
         });
       } else if (dStatus === 'CANCELLED') {
-        // Cancelled tasklar — backend da task statusi reset qilinadi PENDING ga, shuning uchun maxsus flag yo'q
-        // Ammo hozir CANCELLED filterni backendda qo'llab bo'lmaydi chunki TaskStatus enumda CANCELLED yo'q
-        // Shuning uchun bo'sh natija qaytaramiz
-        andConditions.push({ id: -1 }); // hech narsa qaytarmasin
+        andConditions.push({ id: -1 });
       }
     }
 
