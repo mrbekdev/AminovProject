@@ -545,6 +545,167 @@ export class IncomingStockService {
     });
   }
 
+  // ─── Confirm Product Quantity (Revizor) ────────────────────────────────────
+  async confirmQuantity(productId: number, branchId: number, userId: number, note?: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Mahsulot (ID: ${productId}) topilmadi.`);
+    }
+
+    if (product.branchId !== branchId) {
+      throw new BadRequestException('Mahsulot ko\'rsatilgan filialga tegishli emas.');
+    }
+
+    const reportNumber = await this.generateReportNumber();
+    const confirmNote = note?.trim()
+      ? `Soni tasdiqlandi. Izoh: ${note.trim()}`
+      : `Revizor tomonidan mahsulot soni to'g'ri ekanligini tasdiqladi. Hozirgi qoldiq: ${product.quantity} ta.`;
+
+    return this.prisma.$transaction(async (tx) => {
+      const report = await tx.incomingStockReport.create({
+        data: {
+          reportNumber,
+          branchId,
+          createdBy: userId,
+          status: 'CONFIRMED' as any,
+          note: confirmNote,
+          totalItems: 1,
+          totalQuantity: product.quantity,
+          submittedAt: new Date(),
+          approvedAt: new Date(),
+          approvedBy: userId,
+          items: {
+            create: [{
+              productId: product.id,
+              barcode: product.barcode || `PROD-${product.id}`,
+              quantity: product.quantity,
+              note: confirmNote,
+              status: 'APPROVED' as any,
+            }],
+          },
+        },
+      });
+
+      await tx.incomingStockAuditLog.create({
+        data: {
+          reportId: report.id,
+          userId,
+          action: 'CONFIRMED' as any,
+          newValue: JSON.stringify({
+            productId: product.id,
+            productName: product.name,
+            confirmedQuantity: product.quantity,
+          }),
+        },
+      });
+
+      return report;
+    });
+  }
+
+  // ─── Approve ALL Pending Reports (Admin Only) ──────────────────────────────
+  async approveAllPending(userId: number, branchId?: number) {
+    const where: any = { status: IncomingStockReportStatus.PENDING };
+    if (branchId) where.branchId = branchId;
+
+    const pendingReports = await this.prisma.incomingStockReport.findMany({
+      where,
+      include: { items: { where: { status: IncomingStockItemStatus.PENDING } } },
+    });
+
+    if (pendingReports.length === 0) {
+      throw new BadRequestException('Tasdiqlanmagan hisobotlar topilmadi.');
+    }
+
+    let approvedCount = 0;
+    let totalItemsApproved = 0;
+
+    for (const report of pendingReports) {
+      const itemsToApprove = report.items.filter(
+        (item) => item.status === IncomingStockItemStatus.PENDING,
+      );
+      if (itemsToApprove.length === 0) continue;
+
+      await this.prisma.$transaction(async (tx) => {
+        const transactionItemsData: any[] = [];
+
+        for (const item of itemsToApprove) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { quantity: { increment: item.quantity } },
+          });
+          transactionItemsData.push({
+            productId: item.productId,
+            quantity: item.quantity,
+            price: 0,
+            total: 0,
+          });
+        }
+
+        await tx.transaction.create({
+          data: {
+            userId,
+            soldByUserId: report.createdBy,
+            fromBranchId: report.branchId,
+            type: TransactionType.PURCHASE,
+            status: TransactionStatus.COMPLETED,
+            discount: 0,
+            total: 0,
+            finalTotal: 0,
+            amountPaid: 0,
+            remainingBalance: 0,
+            description: `Ommaviy tasdiqlash: ${report.reportNumber}`,
+            items: { create: transactionItemsData },
+          },
+        });
+
+        await tx.incomingStockItem.updateMany({
+          where: { id: { in: itemsToApprove.map((i) => i.id) } },
+          data: { status: IncomingStockItemStatus.APPROVED },
+        });
+
+        await tx.incomingStockReport.update({
+          where: { id: report.id },
+          data: {
+            status: IncomingStockReportStatus.APPROVED,
+            approvedBy: userId,
+            approvedAt: new Date(),
+          },
+        });
+
+        await tx.incomingStockAuditLog.create({
+          data: {
+            reportId: report.id,
+            userId,
+            action: IncomingStockAuditAction.APPROVED,
+            newValue: JSON.stringify({ bulkApprove: true, approvedItemIds: itemsToApprove.map((i) => i.id) }),
+          },
+        });
+
+        await tx.notification.create({
+          data: {
+            userId: report.createdBy,
+            title: 'Hisobotingiz tasdiqlandi',
+            message: `${report.reportNumber} sonli kirim hisoboti ommaviy tasdiqlash orqali tasdiqlandi.`,
+            type: 'SUCCESS',
+          },
+        });
+      });
+
+      approvedCount++;
+      totalItemsApproved += itemsToApprove.length;
+    }
+
+    return {
+      message: `${approvedCount} ta hisobot muvaffaqiyatli tasdiqlandi. Jami ${totalItemsApproved} ta tovar qoldig'i yangilandi.`,
+      approvedCount,
+      totalItemsApproved,
+    };
+  }
+
   // ─── List Reports ──────────────────────────────────────────────────────────
   async findAll(query: any, user: any) {
     const where: any = {};
@@ -617,18 +778,98 @@ export class IncomingStockService {
       this.prisma.incomingStockReport.count({ where }),
     ]);
 
-    // Statistics
-    let stats: any = null;
-    if (user.role === UserRole.ADMIN) {
-      const allStats = await this.prisma.incomingStockReport.groupBy({
-        by: ['status'],
-        _count: true,
-        _sum: {
-          totalQuantity: true,
-        },
-      });
-      stats = allStats;
+    // Statistics calculation for Kirim and Kamomad
+    const allReportItems = await this.prisma.incomingStockItem.findMany({
+      where: {
+        report: where
+      },
+      include: {
+        product: { select: { id: true, price: true } }
+      }
+    });
+
+    const defectiveLogWhere: any = { actionType: 'DEFECTIVE' };
+    if (query.branchId) defectiveLogWhere.branchId = parseInt(query.branchId);
+    if (query.startDate || query.endDate) {
+      defectiveLogWhere.createdAt = {};
+      if (query.startDate) defectiveLogWhere.createdAt.gte = new Date(query.startDate);
+      if (query.endDate) {
+        const end = new Date(query.endDate);
+        end.setHours(23, 59, 59, 999);
+        defectiveLogWhere.createdAt.lte = end;
+      }
     }
+
+    const defectiveLogs = await this.prisma.defectiveLog.findMany({
+      where: defectiveLogWhere,
+      include: {
+        product: { select: { id: true, price: true } }
+      }
+    });
+
+    let kirimTotalQty = 0;
+    let kirimTotalAmount = 0;
+    let kamomadTotalQty = 0;
+    let kamomadTotalAmount = 0;
+
+    for (const item of allReportItems) {
+      const price = Number(item.product?.price || 0);
+      const qty = Number(item.quantity || 0);
+      if (qty >= 0) {
+        kirimTotalQty += qty;
+        kirimTotalAmount += qty * price;
+      } else {
+        const absQty = Math.abs(qty);
+        kamomadTotalQty += absQty;
+        kamomadTotalAmount += absQty * price;
+      }
+    }
+
+    for (const log of defectiveLogs) {
+      const price = Number(log.product?.price || 0);
+      const qty = Number(log.quantity || 0);
+      kamomadTotalQty += qty;
+      kamomadTotalAmount += qty * price;
+    }
+
+    // Fetch active dollar exchange rate
+    const rateRecord = await this.prisma.currencyExchangeRate.findFirst({
+      where: {
+        isActive: true,
+        fromCurrency: { in: ['USD', 'usd', '$'] },
+        ...(query.branchId ? { OR: [{ branchId: parseInt(query.branchId) }, { branchId: null }] } : {})
+      },
+      orderBy: [
+        ...(query.branchId ? [{ branchId: 'desc' as const }] : []),
+        { createdAt: 'desc' as const }
+      ]
+    });
+    const exchangeRate = rateRecord?.rate && Number(rateRecord.rate) > 0 ? Number(rateRecord.rate) : 1;
+
+    const statusCounts = await this.prisma.incomingStockReport.groupBy({
+      by: ['status'],
+      where,
+      _count: true,
+    });
+
+    const statsObj = {
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      totalQty: kirimTotalQty,
+      kirimTotalAmount: kirimTotalAmount * exchangeRate,
+      kamomadTotalQty,
+      kamomadTotalAmount: kamomadTotalAmount * exchangeRate,
+      exchangeRate,
+    };
+
+    statusCounts.forEach(s => {
+      if (s.status === 'PENDING') statsObj.pending = s._count;
+      else if (s.status === 'APPROVED') statsObj.approved = s._count;
+      else if (s.status === 'REJECTED') statsObj.rejected = s._count;
+    });
+
+    const stats = statsObj;
 
     return {
       reports,
@@ -649,7 +890,7 @@ export class IncomingStockService {
         approver: { select: { id: true, firstName: true, lastName: true } },
         items: {
           include: {
-            product: { select: { id: true, name: true, quantity: true } },
+            product: { select: { id: true, name: true, model: true, price: true, quantity: true } },
           },
         },
         auditLogs: {
@@ -670,7 +911,24 @@ export class IncomingStockService {
       throw new ForbiddenException('Siz ushbu hisobot tafsilotlarini ko\'ra olmaysiz.');
     }
 
-    return report;
+    // Fetch active dollar exchange rate
+    const rateRecord = await this.prisma.currencyExchangeRate.findFirst({
+      where: {
+        isActive: true,
+        fromCurrency: { in: ['USD', 'usd', '$'] },
+        ...(report.branchId ? { OR: [{ branchId: report.branchId }, { branchId: null }] } : {})
+      },
+      orderBy: [
+        ...(report.branchId ? [{ branchId: 'desc' as const }] : []),
+        { createdAt: 'desc' as const }
+      ]
+    });
+    const exchangeRate = rateRecord?.rate && Number(rateRecord.rate) > 0 ? Number(rateRecord.rate) : 1;
+
+    return {
+      ...report,
+      exchangeRate,
+    };
   }
 
   // ─── Notifications List & Mark Read ────────────────────────────────────────

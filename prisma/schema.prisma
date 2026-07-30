@@ -857,6 +857,7 @@ enum IncomingStockReportStatus {
   PENDING
   APPROVED
   REJECTED
+  CONFIRMED
 }
 
 enum IncomingStockItemStatus {
@@ -871,6 +872,7 @@ enum IncomingStockAuditAction {
   SUBMITTED
   APPROVED
   REJECTED
+  CONFIRMED
 }
 
 model IncomingStockReport {

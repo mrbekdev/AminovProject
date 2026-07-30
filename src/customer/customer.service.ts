@@ -60,7 +60,7 @@ export class CustomerService {
       NOT: [
         { fullName: 'Номаълум' },
         { fullName: 'Номаълум Мижоз' }
-      ]
+      ]       
     };
     
     if (filters?.phone) {

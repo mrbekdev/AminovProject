@@ -89,6 +89,37 @@ export class IncomingStockController {
     return this.service.submitReport(id, userId);
   }
 
+  // ─── Confirm Product Quantity (Revizor) ────────────────────────────────────
+  @Post('incoming-stock-reports/confirm-quantity')
+  async confirmQuantity(
+    @Body('productId') productIdRaw: any,
+    @Body('branchId') branchIdRaw: any,
+    @Body('note') note: string,
+    @CurrentUser() user: any
+  ) {
+    const productId = parseInt(productIdRaw);
+    const branchId = parseInt(branchIdRaw);
+    if (isNaN(productId) || isNaN(branchId)) {
+      throw new BadRequestException('productId va branchId raqam bo\'lishi shart.');
+    }
+    const userId = user.userId || user.id || user.sub;
+    return this.service.confirmQuantity(productId, branchId, userId, note);
+  }
+
+  // ─── Approve All Pending Reports (Admin Only) ─────────────────────────────
+  @Post('incoming-stock-reports/approve-all-pending')
+  async approveAllPending(
+    @Body('branchId') branchIdRaw: any,
+    @CurrentUser() user: any
+  ) {
+    if (user.role !== 'ADMIN') {
+      throw new ForbiddenException('Ushbu amalni bajarish uchun sizda huquq yetarli emas.');
+    }
+    const userId = user.userId || user.id || user.sub;
+    const branchId = branchIdRaw ? parseInt(branchIdRaw) : undefined;
+    return this.service.approveAllPending(userId, branchId);
+  }
+
   // ─── Approve Report (Admin Only) ───────────────────────────────────────────
   @Post('incoming-stock-reports/:id/approve')
   async approve(
