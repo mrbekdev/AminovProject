@@ -506,7 +506,7 @@ export class TransactionService {
     const where: any = {};
     const andConditions: any[] = [];
 
-    if (source) {
+    if (source && source !== 'ALL') {
       if (source === 'Boshqa') {
         andConditions.push({
           OR: [
@@ -519,54 +519,64 @@ export class TransactionService {
       }
     }
 
-    if (type) where.type = type;
-    if (status) {
+    if (type && type !== 'ALL') where.type = type;
+    if (status && status !== 'ALL') {
       where.status = status;
     } else {
       where.status = { not: 'CANCELLED' };
     }
-    if (branchId) {
+    if (branchId && branchId !== 'ALL' && !isNaN(parseInt(branchId))) {
+      const bId = parseInt(branchId);
       andConditions.push({
         OR: [
-          { fromBranchId: parseInt(branchId) },
-          { toBranchId: parseInt(branchId) }
+          { fromBranchId: bId },
+          { toBranchId: bId }
         ]
       });
     }
-    if (customerId) where.customerId = parseInt(customerId);
-    if (userId) {
+    if (customerId && customerId !== 'ALL' && !isNaN(parseInt(customerId))) where.customerId = parseInt(customerId);
+    if (userId && userId !== 'ALL' && !isNaN(parseInt(userId))) {
+      const uId = parseInt(userId);
       andConditions.push({
         OR: [
-          { soldByUserId: parseInt(userId) },
-          { userId: parseInt(userId) }
+          { soldByUserId: uId },
+          { userId: uId }
         ]
       });
     }
 
-    if (paymentType) {
-      const normalizedType = String(paymentType).toUpperCase();
+    if (paymentType && paymentType !== 'ALL') {
+      const normalizedType = String(paymentType).toUpperCase().trim();
       const paymentTypeMapping: Record<string, string[]> = {
         'CASH': ['CASH', 'NAQD', 'NAL'],
         'CARD': ['CARD', 'ICAN', 'PLASTIC', 'PLASTIK'],
         'TERMINAL': ['TERMINAL', 'POS', 'TRANSFER', 'BANK', 'CLICK', 'PAYME'],
         'CREDIT': ['CREDIT', 'DEBT'],
         'INSTALLMENT': ['INSTALLMENT', 'BOLOB', "BO'LIB"],
+        'THIRD_PARTY': ['THIRD_PARTY', '3RD', 'THIRDPARTY'],
         'UYDAN': ['UYDAN', 'HOME'],
       };
       const matchedKey = Object.keys(paymentTypeMapping).find(k => paymentTypeMapping[k].includes(normalizedType)) || normalizedType;
+      
+      const validPaymentTypeEnums = ['CASH', 'CARD', 'TERMINAL', 'CREDIT', 'INSTALLMENT', 'THIRD_PARTY'];
+      const isEnumVal = validPaymentTypeEnums.includes(matchedKey);
+
       andConditions.push({
         OR: [
-          { paymentType: matchedKey as any },
+          ...(isEnumVal ? [{ paymentType: matchedKey as any }] : []),
           { payments: { some: { method: matchedKey } } },
-          ...(matchedKey === 'UYDAN' ? [{ payments: { some: { method: 'UYDAN' } } }] : []),
+          ...(matchedKey === 'UYDAN' ? [
+            { payments: { some: { method: 'UYDAN' } } },
+            { description: { contains: 'UYDAN', mode: 'insensitive' } }
+          ] : []),
         ]
       });
     }
-    if (upfrontPaymentType) where.upfrontPaymentType = upfrontPaymentType;
-    const hasCategoryFilter = categoryId && categoryId !== 'ALL';
-    if (productId || hasCategoryFilter) {
+    if (upfrontPaymentType && upfrontPaymentType !== 'ALL') where.upfrontPaymentType = upfrontPaymentType;
+    const hasCategoryFilter = categoryId && categoryId !== 'ALL' && !isNaN(parseInt(categoryId));
+    if ((productId && !isNaN(parseInt(productId))) || hasCategoryFilter) {
       const itemsConditions: any = {};
-      if (productId) itemsConditions.productId = parseInt(productId);
+      if (productId && !isNaN(parseInt(productId))) itemsConditions.productId = parseInt(productId);
       if (hasCategoryFilter) itemsConditions.product = { categoryId: parseInt(categoryId) };
       where.items = { some: itemsConditions };
     }
@@ -594,11 +604,11 @@ export class TransactionService {
       andConditions.push({ OR: searchConditions });
     }
 
-    if (sellerUserId) {
+    if (sellerUserId && sellerUserId !== 'ALL' && !isNaN(parseInt(sellerUserId))) {
       where.soldByUserId = parseInt(sellerUserId);
     }
 
-    if (cashierUserId) {
+    if (cashierUserId && cashierUserId !== 'ALL' && !isNaN(parseInt(cashierUserId))) {
       where.userId = parseInt(cashierUserId);
     }
 
@@ -775,7 +785,11 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: {
-            product: true,
+            product: {
+              include: {
+                branch: true,
+              },
+            },
           },
         },
         payments: true,
@@ -974,7 +988,11 @@ export class TransactionService {
         toBranch: true,
         items: {
           include: {
-            product: true
+            product: {
+              include: {
+                branch: true
+              }
+            }
           }
         },
         paymentSchedules: {
