@@ -38,8 +38,22 @@ export class DailyRepaymentService {
     
     if (startDate || endDate) {
       where.paidAt = {};
-      if (startDate) where.paidAt.gte = new Date(startDate);
-      if (endDate) where.paidAt.lte = new Date(endDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        const isUTC = String(startDate).endsWith('Z') || String(startDate).includes('+');
+        if (!isUTC) start.setUTCHours(start.getUTCHours() - 5);
+        where.paidAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        const isUTC = String(endDate).endsWith('Z') || String(endDate).includes('+');
+        if (!isUTC) {
+          end.setUTCDate(end.getUTCDate() + 1);
+          end.setUTCHours(end.getUTCHours() - 5);
+          end.setTime(end.getTime() - 1);
+        }
+        where.paidAt.lte = end;
+      }
     }
 
     return this.prisma.dailyRepayment.findMany({
@@ -79,8 +93,22 @@ export class DailyRepaymentService {
     
     if (startDate || endDate) {
       where.paidAt = {};
-      if (startDate) where.paidAt.gte = new Date(startDate);
-      if (endDate) where.paidAt.lte = new Date(endDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        const isUTC = String(startDate).endsWith('Z') || String(startDate).includes('+');
+        if (!isUTC) start.setUTCHours(start.getUTCHours() - 5);
+        where.paidAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        const isUTC = String(endDate).endsWith('Z') || String(endDate).includes('+');
+        if (!isUTC) {
+          end.setUTCDate(end.getUTCDate() + 1);
+          end.setUTCHours(end.getUTCHours() - 5);
+          end.setTime(end.getTime() - 1);
+        }
+        where.paidAt.lte = end;
+      }
     }
 
     return this.prisma.dailyRepayment.findMany({

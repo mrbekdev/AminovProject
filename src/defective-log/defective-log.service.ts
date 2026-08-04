@@ -489,7 +489,7 @@ export class DefectiveLogService {
   }
 
   async findAll(query: any = {}) {
-    const { branchId, actionType, startDate, endDate } = query;
+    const { branchId, actionType, startDate, endDate, page = '1', limit } = query;
     
     const where: any = {};
     
@@ -503,21 +503,67 @@ export class DefectiveLogService {
     
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        const isUTC = String(startDate).endsWith('Z') || String(startDate).includes('+');
+        if (!isUTC) {
+          start.setUTCHours(start.getUTCHours() - 5);
+        }
+        where.createdAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        const isUTC = String(endDate).endsWith('Z') || String(endDate).includes('+');
+        if (!isUTC) {
+          end.setUTCDate(end.getUTCDate() + 1);
+          end.setUTCHours(end.getUTCHours() - 5);
+          end.setTime(end.getTime() - 1);
+        }
+        where.createdAt.lte = end;
+      }
     }
 
-    return this.prisma.defectiveLog.findMany({
+    const parsedPage = parseInt(page) || 1;
+    const parsedLimit = limit && limit !== 'all' ? parseInt(limit) : undefined;
+
+    const logs = await this.prisma.defectiveLog.findMany({
       where,
-      include: {
-        product: true,
-        user: true,
-        branch: true
+      select: {
+        id: true,
+        productId: true,
+        quantity: true,
+        description: true,
+        userId: true,
+        branchId: true,
+        cashAmount: true,
+        actionType: true,
+        createdAt: true,
+        transactionId: true,
+        product: { select: { id: true, name: true, model: true, barcode: true, price: true } },
+        user: { select: { id: true, firstName: true, lastName: true, username: true } },
+        branch: { select: { id: true, name: true } },
       },
       orderBy: {
         createdAt: 'desc'
-      }
+      },
+      skip: parsedLimit ? (parsedPage - 1) * parsedLimit : 0,
+      take: parsedLimit || 50,
     });
+
+    if (limit) {
+      const total = await this.prisma.defectiveLog.count({ where });
+      return {
+        items: logs,
+        pagination: {
+          page: parsedPage,
+          limit: parsedLimit || total,
+          total,
+          pages: parsedLimit ? Math.ceil(total / parsedLimit) : 1
+        }
+      };
+    }
+
+    return logs;
   }
 
   async findByProduct(productId: number) {

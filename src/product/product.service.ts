@@ -118,46 +118,40 @@ async create(
     const andConditions: any[] = [];
 
     if (search) {
-      const searchTerm = String(search).trim();
-      const words = searchTerm.split(/\s+/).filter(Boolean);
-      if (words.length > 0) {
-        words.forEach((word) => {
-          // Build searchable fields condition for a given term
-          const fieldMatch = (term: string) => ({
+      const rawSearch = String(search).trim();
+      if (rawSearch) {
+        // Remove noise punctuation like parentheses, quotes, brackets, etc.
+        const cleaned = rawSearch.replace(/[\(\)\[\]\{\}\"\'\`,\?!\+]/g, ' ').trim();
+
+        // Split by whitespace, dashes, slashes, underscores, dots, colons into distinct tokens
+        const tokens = Array.from(
+          new Set(cleaned.split(/[\s\-_\/:\;.]+/).filter((t) => t.length > 0))
+        );
+
+        const fieldMatch = (term: string) => ({
+          OR: [
+            { name: { contains: term, mode: 'insensitive' as const } },
+            { model: { contains: term, mode: 'insensitive' as const } },
+            { barcode: { contains: term, mode: 'insensitive' as const } },
+            { category: { name: { contains: term, mode: 'insensitive' as const } } },
+          ],
+        });
+
+        if (tokens.length > 0) {
+          // Every token in the search string must match in AT LEAST ONE field (name, model, barcode, category)
+          // e.g., "avt f2j" -> token "avt" in name AND token "f2j" in model -> MATCHES!
+          const allTokensCondition = {
+            AND: tokens.map((token) => fieldMatch(token)),
+          };
+
+          // Also allow full rawSearch string match as an alternative fallback
+          andConditions.push({
             OR: [
-              { name: { contains: term, mode: 'insensitive' as const } },
-              { barcode: { contains: term, mode: 'insensitive' as const } },
-              { model: { contains: term, mode: 'insensitive' as const } },
-              { category: { name: { contains: term, mode: 'insensitive' as const } } },
+              allTokensCondition,
+              fieldMatch(rawSearch),
             ],
           });
-
-          // Split the word into alphabetical (Latin + Cyrillic) and numeric segments
-          // e.g., "sam17" -> ["sam", "17"], "A17" -> ["A", "17"]
-          const segments = word.match(/[a-zA-Zа-яА-ЯёЁўЎқҚғҒҳҲ]+|[0-9]+/g) || [word];
-          const hasMultipleSegments = segments.length > 1;
-          // Only split when ALL segments are meaningful (>= 2 chars each)
-          // This prevents "A17" from splitting into "A" + "17" (where "A" matches everything)
-          const allSegmentsMeaningful = segments.every((s) => s.length >= 2);
-
-          if (hasMultipleSegments && allSegmentsMeaningful) {
-            // Either the whole word matches in any field,
-            // OR all segments independently match across fields
-            // e.g., "sam17" -> whole "sam17" matches OR ("sam" in name AND "17" in model)
-            const segmentConditions = segments.map((seg) => fieldMatch(seg));
-            andConditions.push({
-              OR: [
-                fieldMatch(word),           // Whole word match (primary)
-                { AND: segmentConditions },  // All segments match across fields
-              ],
-            });
-          } else {
-            // Simple whole-word match (no splitting)
-            // e.g., "A17" searches for "A17" as-is -> matches model "SAMSUNG A17"
-            // e.g., "samsung" searches for "samsung" as-is -> matches name "SAMSUNG"
-            andConditions.push(fieldMatch(word));
-          }
-        });
+        }
       }
     }
 
@@ -1049,5 +1043,28 @@ return this.prisma.$transaction(async (tx) => {
     }
 
     return results;
+  }
+
+  async getBonusPercentages(branchId?: number) {
+    const where: any = { isDeleted: false };
+    if (branchId) where.branchId = branchId;
+
+    const products = await this.prisma.product.findMany({
+      where,
+      select: { bonusPercentage: true },
+      distinct: ['bonusPercentage'],
+    });
+
+    const bonuses = new Set<number>();
+    products.forEach((p) => {
+      if (p.bonusPercentage !== null && p.bonusPercentage !== undefined) {
+        const b = Number(p.bonusPercentage) || 0;
+        if (!isNaN(b) && b >= 0) {
+          bonuses.add(Math.round(b * 100) / 100);
+        }
+      }
+    });
+
+    return Array.from(bonuses).sort((a, b) => a - b);
   }
 }

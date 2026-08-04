@@ -38,6 +38,11 @@ export class TransactionController {
     return this.transactionService.findAll(query);
   }
 
+  @Get('totals')
+  getTotals(@Query() query: any) {
+    return this.transactionService.getTotals(query);
+  }
+
   @Get('filter-options')
   getFilterOptions(@Query() query: any) {
     return this.transactionService.getFilterOptions(query);

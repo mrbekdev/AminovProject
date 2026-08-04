@@ -36,9 +36,23 @@ export class TaskController {
     return this.taskService.findByAuditor(Number(auditorId), status as any, startDate, endDate);
   }
 
+  @Get('leaderboard')
+  getLeaderboard(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('auditorId') auditorId?: string,
+  ) {
+    const aid = auditorId ? Number(auditorId) : undefined;
+    return this.taskService.getDriverLeaderboard(startDate, endDate, aid);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.taskService.findOne(Number(id));
+    const numericId = Number(id);
+    if (!numericId || isNaN(numericId) || numericId <= 0) {
+      throw new BadRequestException('Нотўғри Таск ID');
+    }
+    return this.taskService.findOne(numericId);
   }
 
   @Patch(':id/accept')

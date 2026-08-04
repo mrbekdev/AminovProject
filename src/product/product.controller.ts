@@ -89,6 +89,11 @@ export class ProductController {
     return this.productService.getFixedProducts(parsedBranchId);
   }
 
+  @Get('bonus-percentages')
+  getBonusPercentages(@Query('branchId') branchId?: string) {
+    const parsedBranchId = branchId ? parseInt(branchId) : undefined;
+    return this.productService.getBonusPercentages(parsedBranchId);
+  }
 
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {

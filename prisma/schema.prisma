@@ -336,6 +336,11 @@ model DefectiveLog {
   user    User?   @relation("DefectiveLogCreatedBy", fields: [userId], references: [id], onDelete: Cascade)
   branch  Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
+  @@index([actionType])
+  @@index([createdAt])
+  @@index([branchId])
+  @@index([productId])
+  @@index([transactionId])
   @@map("defective_logs")
 }
 

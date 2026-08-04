@@ -155,8 +155,12 @@ export class TaskService {
   }
 
   async findOne(id: number) {
+    const numericId = Number(id);
+    if (!numericId || isNaN(numericId) || numericId <= 0) {
+      throw new BadRequestException('Нотўғри Таск ID');
+    }
     const task = await (this.prisma as any).task.findUnique({ 
-      where: { id: Number(id) }, 
+      where: { id: numericId }, 
       include: { 
         transaction: { 
           include: { 
@@ -175,12 +179,14 @@ export class TaskService {
   }
 
   async accept(id: number, auditorId?: number) {
-    // If already delivered, cannot accept
-    const task = await (this.prisma as any).task.findUnique({ where: { id: Number(id) } });
+    const numericId = Number(id);
+    if (!numericId || isNaN(numericId) || numericId <= 0) throw new BadRequestException('Нотўғри Таск ID');
+
+    const task = await (this.prisma as any).task.findUnique({ where: { id: numericId } });
     if (!task) throw new NotFoundException('Task not found');
 
     const updated = await (this.prisma as any).task.update({
-      where: { id: Number(id) },
+      where: { id: numericId },
       data: { status: 'ACCEPTED', auditorId: auditorId ?? task.auditorId ?? null },
       include: { transaction: true, auditor: true },
     });
@@ -189,11 +195,14 @@ export class TaskService {
   }
 
   async deliver(id: number) {
-    const task = await (this.prisma as any).task.findUnique({ where: { id: Number(id) } });
+    const numericId = Number(id);
+    if (!numericId || isNaN(numericId) || numericId <= 0) throw new BadRequestException('Нотўғри Таск ID');
+
+    const task = await (this.prisma as any).task.findUnique({ where: { id: numericId } });
     if (!task) throw new NotFoundException('Task not found');
 
     const delivered = await (this.prisma as any).task.update({
-      where: { id: Number(id) },
+      where: { id: numericId },
       data: { status: 'DELIVERED' },
       include: { transaction: true, auditor: true },
     });
@@ -202,7 +211,10 @@ export class TaskService {
   }
 
   async cancel(id: number) {
-    const task = await (this.prisma as any).task.findUnique({ where: { id: Number(id) } });
+    const numericId = Number(id);
+    if (!numericId || isNaN(numericId) || numericId <= 0) throw new BadRequestException('Нотўғри Таск ID');
+
+    const task = await (this.prisma as any).task.findUnique({ where: { id: numericId } });
     if (!task) throw new NotFoundException('Task not found');
 
     const canceled = await (this.prisma as any).task.update({
@@ -295,5 +307,157 @@ export class TaskService {
     try {
       this.gateway.emitUpdated(payload);
     } catch {}
+  }
+
+  async getDriverLeaderboard(startDate?: string, endDate?: string, currentAuditorId?: number) {
+    const { start, end } = this.parseDateRange(startDate, endDate);
+
+    const taskWhere: any = {};
+    if (start || end) {
+      const dateCond: any = {};
+      if (start) dateCond.gte = start;
+      if (end) dateCond.lte = end;
+      taskWhere.OR = [
+        { createdAt: dateCond },
+        { transaction: { createdAt: dateCond } },
+      ];
+    }
+
+    // 1. Group tasks by auditorId and status
+    const taskGroups = await (this.prisma as any).task.groupBy({
+      by: ['auditorId', 'status'],
+      where: {
+        ...taskWhere,
+        auditorId: { not: null },
+      },
+      _count: {
+        id: true,
+      },
+    });
+
+    // 2. Count total pending tasks for the date range
+    const pendingCount = await (this.prisma as any).task.count({
+      where: {
+        ...taskWhere,
+        status: 'PENDING',
+      },
+    });
+
+    // 3. Fetch all AUDITOR role users (couriers / delivery drivers)
+    const auditors = await this.prisma.user.findMany({
+      where: {
+        role: 'AUDITOR',
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+      },
+    });
+
+    // 4. Group driver ratings by driverId
+    let opRatingMap = new Map<number, { avg: number; count: number }>();
+    try {
+      const operatorRatings = await (this.prisma as any).driverRating.groupBy({
+        by: ['driverId'],
+        _avg: { rating: true },
+        _count: { rating: true },
+      });
+
+      operatorRatings.forEach((r: any) => {
+        if (r.driverId) {
+          opRatingMap.set(r.driverId, {
+            avg: Number(r._avg.rating || 0),
+            count: Number(r._count.rating || 0),
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('Could not group driver ratings:', e);
+    }
+
+    // Process per auditor statistics
+    const statsMap = new Map<number, { assigned: number; completed: number }>();
+    taskGroups.forEach((g: any) => {
+      const aid = Number(g.auditorId);
+      if (!aid) return;
+      const existing = statsMap.get(aid) || { assigned: 0, completed: 0 };
+      const st = String(g.status || '').toUpperCase();
+      if (st === 'ACCEPTED') existing.assigned += g._count.id;
+      else if (st === 'DELIVERED') existing.completed += g._count.id;
+      statsMap.set(aid, existing);
+    });
+
+    const leaderboard: any[] = [];
+
+    auditors.forEach((aud) => {
+      const v = statsMap.get(aud.id) || { assigned: 0, completed: 0 };
+      const completed = v.completed;
+      const assigned = v.assigned;
+      const total = assigned + completed;
+      const successRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+      // Score: completed * 2 + successRate * 0.5 + assigned * 0.25
+      const score = completed * 2 + successRate * 0.5 + assigned * 0.25;
+
+      const fullName = [aud.firstName, aud.lastName].filter(Boolean).join(' ');
+      const name = fullName || aud.username || `Dostavchik ${aud.id}`;
+
+      const opR = opRatingMap.get(aud.id);
+      const operatorRating = opR ? Math.round(opR.avg * 10) / 10 : 0;
+      const totalOperatorRatings = opR ? opR.count : 0;
+
+      leaderboard.push({
+        auditorId: aud.id,
+        name,
+        assigned,
+        completed,
+        successRate,
+        score,
+        operatorRating,
+        totalOperatorRatings,
+      });
+    });
+
+    // Sort leaderboard by score desc, completed desc, successRate desc
+    leaderboard.sort((a, b) => b.score - a.score || b.completed - a.completed || b.successRate - a.successRate);
+
+    const topScore = leaderboard[0]?.score || 0;
+
+    leaderboard.forEach((item, idx) => {
+      item.rank = idx + 1;
+      const rawStars = topScore > 0 ? 1 + 4 * Math.max(0, Math.min(1, item.score / topScore)) : 5;
+      let finalRating = rawStars;
+      if (item.operatorRating > 0) {
+        finalRating = rawStars * 0.7 + item.operatorRating * 0.3;
+      }
+      item.rating = Math.round(finalRating * 10) / 10;
+    });
+
+    // Current driver stats
+    const myStat = leaderboard.find((x) => Number(x.auditorId) === Number(currentAuditorId)) || {
+      auditorId: currentAuditorId,
+      name: 'Siz',
+      assigned: 0,
+      completed: 0,
+      successRate: 0,
+      score: 0,
+      rating: 5.0,
+      rank: null,
+      operatorRating: 0,
+      totalOperatorRatings: 0,
+    };
+
+    return {
+      pendingCount,
+      myStats: {
+        ...myStat,
+        pendingOrders: pendingCount,
+        assignedOrders: myStat.assigned,
+        completedOrders: myStat.completed,
+      },
+      leaderboard,
+    };
   }
 }

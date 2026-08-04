@@ -481,10 +481,9 @@ export class TransactionService {
     }
   }
 
-  async findAll(query: any = {}) {
+  // ═══════════════ PRIVATE HELPER: Build WHERE clause ═══════════════
+  private buildTransactionWhere(query: any = {}): { where: any; andConditions: any[] } {
     const {
-      page = '1',
-      limit = query.limit === 'all' ? undefined : (query.limit || 'all'),
       type,
       status,
       branchId,
@@ -495,7 +494,6 @@ export class TransactionService {
       paymentType,
       upfrontPaymentType,
       productId,
-      // ═══════════ YANGI FILTERLAR ═══════════
       search,
       sellerUserId,
       cashierUserId,
@@ -505,12 +503,7 @@ export class TransactionService {
       source,
     } = query;
 
-    // Parse and validate page and limit
-    const parsedPage = parseInt(page) || 1;
-    const parsedLimit = limit && limit !== 'all' ? parseInt(limit) : undefined;
-
     const where: any = {};
-    // AND shartlarini to'plash uchun massiv
     const andConditions: any[] = [];
 
     if (source) {
@@ -533,7 +526,6 @@ export class TransactionService {
       where.status = { not: 'CANCELLED' };
     }
     if (branchId) {
-      // BranchId orqali filtrlash - bu filialdan chiqgan yoki kirgan transactionlarni olish
       andConditions.push({
         OR: [
           { fromBranchId: parseInt(branchId) },
@@ -543,7 +535,6 @@ export class TransactionService {
     }
     if (customerId) where.customerId = parseInt(customerId);
     if (userId) {
-      // Filter by soldByUserId or userId (who created or sold the transaction)
       andConditions.push({
         OR: [
           { soldByUserId: parseInt(userId) },
@@ -552,10 +543,7 @@ export class TransactionService {
       });
     }
 
-    // ═══════════ PAYMENT TYPE FILTER ═══════════
-    // paymentType bo'yicha filterlash — asosiy paymentType YOKI payments jadvalidagi method
     if (paymentType) {
-      // UYDAN backendda PaymentType enumda yo'q, shuning uchun payments.method orqali qidirish kerak
       const normalizedType = String(paymentType).toUpperCase();
       const paymentTypeMapping: Record<string, string[]> = {
         'CASH': ['CASH', 'NAQD', 'NAL'],
@@ -566,12 +554,10 @@ export class TransactionService {
         'UYDAN': ['UYDAN', 'HOME'],
       };
       const matchedKey = Object.keys(paymentTypeMapping).find(k => paymentTypeMapping[k].includes(normalizedType)) || normalizedType;
-
       andConditions.push({
         OR: [
           { paymentType: matchedKey as any },
           { payments: { some: { method: matchedKey } } },
-          // UYDAN — maxsus holat, faqat payments.method orqali keladi
           ...(matchedKey === 'UYDAN' ? [{ payments: { some: { method: 'UYDAN' } } }] : []),
         ]
       });
@@ -582,39 +568,40 @@ export class TransactionService {
       const itemsConditions: any = {};
       if (productId) itemsConditions.productId = parseInt(productId);
       if (hasCategoryFilter) itemsConditions.product = { categoryId: parseInt(categoryId) };
-      where.items = {
-        some: itemsConditions
-      };
+      where.items = { some: itemsConditions };
     }
 
-    // ═══════════ SEARCH FILTER ═══════════
     if (search && String(search).trim()) {
       const term = String(search).trim();
+      const cleanTerm = term.replace(/^#/, '').trim();
       const searchConditions: any[] = [
         { customer: { fullName: { contains: term, mode: 'insensitive' } } },
         { customer: { phone: { contains: term, mode: 'insensitive' } } },
+        { receiptId: { contains: term, mode: 'insensitive' } },
+        { description: { contains: term, mode: 'insensitive' } },
         { items: { some: { product: { name: { contains: term, mode: 'insensitive' } } } } },
+        { items: { some: { product: { model: { contains: term, mode: 'insensitive' } } } } },
         { items: { some: { product: { barcode: { contains: term, mode: 'insensitive' } } } } },
+        { soldBy: { firstName: { contains: term, mode: 'insensitive' } } },
+        { soldBy: { lastName: { contains: term, mode: 'insensitive' } } },
+        { user: { firstName: { contains: term, mode: 'insensitive' } } },
+        { user: { lastName: { contains: term, mode: 'insensitive' } } },
       ];
-      // Agar raqam bo'lsa, ID bo'yicha ham qidirish
-      const numericId = parseInt(term);
+      const numericId = parseInt(cleanTerm);
       if (!isNaN(numericId) && numericId > 0) {
         searchConditions.push({ id: numericId });
       }
       andConditions.push({ OR: searchConditions });
     }
 
-    // ═══════════ SELLER (SOTUVCHI) FILTER ═══════════
     if (sellerUserId) {
       where.soldByUserId = parseInt(sellerUserId);
     }
 
-    // ═══════════ CASHIER (KASSIR) FILTER ═══════════
     if (cashierUserId) {
       where.userId = parseInt(cashierUserId);
     }
 
-    // ═══════════ DELIVERY TYPE FILTER ═══════════
     if (deliveryType) {
       const dType = String(deliveryType).toUpperCase();
       if (dType === 'DELIVERY') {
@@ -632,31 +619,25 @@ export class TransactionService {
           ]
         });
       } else if (dType === 'PICKUP') {
-        // Prisma NOT bilan OR ni nullable ustunlarda aralashtirganda xato beradi (crash/500 code).
-        // Shuning uchun PICKUP shartini bevosita (explicitly) kiritamiz.
         andConditions.push({
           AND: [
             { OR: [{ deliveryType: null }, { NOT: { deliveryType: { contains: 'DELIVERY', mode: 'insensitive' } } }] },
             { OR: [{ deliveryType: null }, { NOT: { deliveryType: { contains: 'COURIER', mode: 'insensitive' } } }] },
             { OR: [{ deliveryType: null }, { NOT: { deliveryType: { contains: 'DOSTAVKA', mode: 'insensitive' } } }] },
             { OR: [{ deliveryType: null }, { NOT: { deliveryType: { contains: 'SHIP', mode: 'insensitive' } } }] },
-
             { OR: [{ deliveryMethod: null }, { NOT: { deliveryMethod: { contains: 'DELIVERY', mode: 'insensitive' } } }] },
             { OR: [{ deliveryMethod: null }, { NOT: { deliveryMethod: { contains: 'COURIER', mode: 'insensitive' } } }] },
             { OR: [{ deliveryMethod: null }, { NOT: { deliveryMethod: { contains: 'DOSTAVKA', mode: 'insensitive' } } }] },
             { OR: [{ deliveryMethod: null }, { NOT: { deliveryMethod: { contains: 'SHIP', mode: 'insensitive' } } }] },
-
             { OR: [{ deliveryAddress: null }, { deliveryAddress: '' }, { deliveryAddress: ' ' }] }
           ]
         });
       }
     }
 
-    // ═══════════ DELIVERY STATUS FILTER ═══════════
     if (deliveryStatus) {
       const dStatus = String(deliveryStatus).toUpperCase();
       if (dStatus === 'PENDING') {
-        // PENDING = delivery bo'lib, task yo'q yoki task statusi PENDING
         andConditions.push({
           OR: [
             { tasks: { none: {} } },
@@ -664,13 +645,9 @@ export class TransactionService {
           ]
         });
       } else if (dStatus === 'IN_CAR') {
-        andConditions.push({
-          tasks: { some: { status: 'ACCEPTED' } }
-        });
+        andConditions.push({ tasks: { some: { status: 'ACCEPTED' } } });
       } else if (dStatus === 'DELIVERED') {
-        andConditions.push({
-          tasks: { some: { status: 'DELIVERED' } }
-        });
+        andConditions.push({ tasks: { some: { status: 'DELIVERED' } } });
       } else if (dStatus === 'CANCELLED') {
         andConditions.push({ id: -1 });
       }
@@ -680,7 +657,7 @@ export class TransactionService {
       where.createdAt = {};
       if (startDate) {
         const start = new Date(startDate);
-        const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+        const isUTC = String(startDate).endsWith('Z') || String(startDate).includes('+');
         if (!isUTC) {
           start.setUTCHours(start.getUTCHours() - 5);
         }
@@ -688,7 +665,7 @@ export class TransactionService {
       }
       if (endDate) {
         const end = new Date(endDate);
-        const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+        const isUTC = String(endDate).endsWith('Z') || String(endDate).includes('+');
         if (!isUTC) {
           end.setUTCDate(end.getUTCDate() + 1);
           end.setUTCHours(end.getUTCHours() - 5);
@@ -698,10 +675,95 @@ export class TransactionService {
       }
     }
 
-    // AND shartlarini qo'shish
     if (andConditions.length > 0) {
       where.AND = andConditions;
     }
+
+    return { where, andConditions };
+  }
+
+  // ═══════════════ GET TOTALS — fast aggregated summary ═══════════════
+  async getTotals(query: any = {}) {
+    const { where } = this.buildTransactionWhere(query);
+
+    // Normalize payment method to canonical type
+    const normalizeMethod = (raw: string): string => {
+      const t = String(raw || '').toUpperCase().trim();
+      if (['CASH', 'NAQD', 'NAL'].includes(t)) return 'CASH';
+      if (['CARD', 'ICAN', 'PLASTIC', 'PLASTIK'].includes(t)) return 'CARD';
+      if (['TERMINAL', 'POS', 'TRANSFER', 'BANK', 'CLICK', 'PAYME'].includes(t)) return 'TERMINAL';
+      if (['CREDIT', 'DEBT'].includes(t)) return 'CREDIT';
+      if (['INSTALLMENT', 'BOLOB', "BO'LIB"].includes(t)) return 'INSTALLMENT';
+      if (['UYDAN', 'HOME'].includes(t)) return 'UYDAN';
+      if (['THIRD_PARTY', 'THIRDPARTY', '3RD', '3RDPARTY', 'TASHQI'].includes(t)) return 'THIRD_PARTY';
+      if (['TOVAR'].includes(t)) return 'TOVAR';
+      return t;
+    };
+
+    // Fetch minimal fields for aggregation (much faster than full findMany)
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      select: {
+        finalTotal: true,
+        paymentType: true,
+        upfrontPaymentType: true,
+        payments: {
+          select: { method: true, amount: true }
+        }
+      }
+    });
+
+    const result = {
+      cash: 0, card: 0, terminal: 0, credit: 0, installment: 0,
+      uydan: 0, thirdParty: 0, tovar: 0, totalSales: 0, count: transactions.length
+    };
+
+    transactions.forEach(t => {
+      const finalTotal = Number(t.finalTotal || 0);
+      result.totalSales += finalTotal;
+
+      const hasPayments = Array.isArray(t.payments) && t.payments.length > 0;
+      if (hasPayments) {
+        t.payments.forEach((p: any) => {
+          const norm = normalizeMethod(p.method);
+          const amt = Number(p.amount || 0);
+          if (norm === 'CASH') result.cash += amt;
+          else if (norm === 'CARD') result.card += amt;
+          else if (norm === 'TERMINAL') result.terminal += amt;
+          else if (norm === 'CREDIT') result.credit += amt;
+          else if (norm === 'INSTALLMENT') result.installment += amt;
+          else if (norm === 'UYDAN') result.uydan += amt;
+          else if (norm === 'THIRD_PARTY') result.thirdParty += amt;
+          else if (norm === 'TOVAR') result.tovar += amt;
+        });
+      } else {
+        // Single payment type — full amount goes to that channel
+        const norm = normalizeMethod(t.paymentType as string);
+        if (norm === 'CASH') result.cash += finalTotal;
+        else if (norm === 'CARD') result.card += finalTotal;
+        else if (norm === 'TERMINAL') result.terminal += finalTotal;
+        else if (norm === 'CREDIT') result.credit += finalTotal;
+        else if (norm === 'INSTALLMENT') result.installment += finalTotal;
+        else if (norm === 'UYDAN') result.uydan += finalTotal;
+        else if (norm === 'THIRD_PARTY') result.thirdParty += finalTotal;
+        else if (norm === 'TOVAR') result.tovar += finalTotal;
+      }
+    });
+
+    return result;
+  }
+
+  async findAll(query: any = {}) {
+    const {
+      page = '1',
+      limit,
+    } = query;
+
+    // Parse and validate page and limit
+    const parsedPage = parseInt(page) || 1;
+    const parsedLimit = limit && limit !== 'all' ? parseInt(limit) : undefined;
+
+    const { where } = this.buildTransactionWhere(query);
 
     const transactions = await this.prisma.transaction.findMany({
       where,
