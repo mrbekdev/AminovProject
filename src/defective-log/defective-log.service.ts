@@ -424,7 +424,9 @@ export class DefectiveLogService {
     const where: any = {
       OR: [
         { handledByUserId: Number(cashierId) },
-        { userId: Number(cashierId) }
+        { userId: Number(cashierId) },
+        { transaction: { userId: Number(cashierId) } },
+        { transaction: { soldByUserId: Number(cashierId) } }
       ]
     };
     if (query?.branchId) {
@@ -450,8 +452,18 @@ export class DefectiveLogService {
     for (const log of logs) {
       const raw = Number((log as any).cashAmount ?? 0) || 0;
       const dir = String((log as any).cashAdjustmentDirection || '').toUpperCase();
-      let signed = dir === 'MINUS' ? -Math.abs(raw) : dir === 'PLUS' ? Math.abs(raw) : raw;
       const isReturn = String((log as any).actionType || '').toUpperCase() === 'RETURN';
+      let signed = 0;
+      if (dir === 'MINUS') {
+        signed = -Math.abs(raw);
+      } else if (dir === 'PLUS') {
+        signed = Math.abs(raw);
+      } else if (isReturn && raw > 0) {
+        signed = -Math.abs(raw); // Returns are cash deductions from register
+      } else {
+        signed = raw;
+      }
+
       if ((Number.isNaN(signed) ? 0 : signed) === 0 && isReturn) {
         const txId = (log as any).transactionId ? Number((log as any).transactionId) : null;
         if (txId) {
