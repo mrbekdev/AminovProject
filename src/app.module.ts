@@ -30,6 +30,7 @@ import { StatisticsModule } from './statistics/statistics.module';
 import { TelegramBackupModule } from './telegram-backup/telegram-backup.module';
 import { CashReconciliationModule } from './cash-reconciliation/cash-reconciliation.module';
 import { IncomingStockModule } from './incoming-stock/incoming-stock.module';
+import { DebtCashierReportModule } from './debt-cashier-report/debt-cashier-report.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { IncomingStockModule } from './incoming-stock/incoming-stock.module';
     TelegramBackupModule,
     CashReconciliationModule,
     IncomingStockModule,
+    DebtCashierReportModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -2518,5 +2518,244 @@ export class StatisticsService {
       },
     };
   }
+
+  async getSellerStatistics(
+    branchId?: number,
+    startDate?: string,
+    endDate?: string,
+    yearParam?: number,
+    monthParam?: number,
+  ) {
+    const now = new Date();
+
+    // 1. Calculate default date range: 1st of current month to now
+    let start: Date;
+    let end: Date;
+
+    if (startDate) {
+      start = new Date(startDate);
+      if (isNaN(start.getTime())) start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    } else {
+      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    }
+
+    if (endDate) {
+      end = new Date(endDate);
+      if (isNaN(end.getTime())) {
+        end = new Date();
+      } else if (!endDate.includes('T')) {
+        end.setHours(23, 59, 59, 999);
+      }
+    } else {
+      end = new Date();
+    }
+
+    const year = yearParam || start.getFullYear();
+    const month = monthParam || (start.getMonth() + 1);
+
+    // 2. Fetch active sellers ONLY (users with role MARKETING)
+    const userWhere: any = {
+      status: { not: UserStatus.DELETED },
+      role: UserRole.MARKETING,
+    };
+    if (branchId) {
+      userWhere.branchId = branchId;
+    }
+
+    const sellers = await this.prisma.user.findMany({
+      where: userWhere,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        phone: true,
+        role: true,
+        branchId: true,
+        branch: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    // 3. Fetch seller targets for current target year & month
+    const targets = await this.prisma.sellerTarget.findMany({
+      where: { year, month },
+    });
+    const targetMap = new Map<number, number>();
+    targets.forEach((t) => targetMap.set(t.sellerId, t.targetAmount));
+
+    // 4. Fetch sales transactions with items & product details in date range
+    const txWhere: any = {
+      type: TransactionType.SALE,
+      status: { not: TransactionStatus.CANCELLED },
+      createdAt: {
+        gte: start,
+        lte: end,
+      },
+    };
+    if (branchId) {
+      txWhere.fromBranchId = branchId;
+    }
+
+    const salesTransactions = await this.prisma.transaction.findMany({
+      where: txWhere,
+      select: {
+        id: true,
+        receiptId: true,
+        soldByUserId: true,
+        userId: true,
+        finalTotal: true,
+        total: true,
+        createdAt: true,
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            quantity: true,
+            price: true,
+            sellingPrice: true,
+            total: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                model: true,
+                barcode: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // 5. Aggregate metrics per seller
+    const sellersData = sellers.map((seller) => {
+      const sellerSales = salesTransactions.filter(
+        (tx) => tx.soldByUserId === seller.id || (!tx.soldByUserId && tx.userId === seller.id),
+      );
+
+      const totalSales = sellerSales.reduce(
+        (sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0),
+        0,
+      );
+      const salesCount = sellerSales.length;
+      const targetAmount = targetMap.get(seller.id) || 0;
+      const remainingAmount = Math.max(0, targetAmount - totalSales);
+      const completionPercentage =
+        targetAmount > 0 ? Number(((totalSales / targetAmount) * 100).toFixed(2)) : 0;
+
+      // Group seller sales by date (YYYY-MM-DD)
+      const dailySalesMap = new Map<string, { total: number; count: number }>();
+      sellerSales.forEach((tx) => {
+        const dateStr = tx.createdAt.toISOString().split('T')[0];
+        const existing = dailySalesMap.get(dateStr) || { total: 0, count: 0 };
+        dailySalesMap.set(dateStr, {
+          total: existing.total + (tx.finalTotal ?? tx.total ?? 0),
+          count: existing.count + 1,
+        });
+      });
+
+      const dailySales = Array.from(dailySalesMap.entries())
+        .map(([date, data]) => ({ date, total: data.total, count: data.count }))
+        .sort((a, b) => b.date.localeCompare(a.date));
+
+      // Detailed transactions list with product items
+      const transactions = sellerSales.map((tx) => ({
+        id: tx.id,
+        receiptId: tx.receiptId || `Чек #${tx.id}`,
+        createdAt: tx.createdAt,
+        totalAmount: tx.finalTotal ?? tx.total ?? 0,
+        items: (tx.items || []).map((item) => ({
+          itemId: item.id,
+          productId: item.productId,
+          productName: item.product?.name || 'Товар',
+          productModel: item.product?.model || '',
+          barcode: item.product?.barcode || '',
+          quantity: item.quantity || 1,
+          price: item.sellingPrice ?? item.price ?? 0,
+          total: item.total || (item.quantity * (item.sellingPrice ?? item.price ?? 0)),
+        })),
+      }));
+
+      return {
+        sellerId: seller.id,
+        name: [seller.firstName, seller.lastName].filter(Boolean).join(' ') || seller.username,
+        username: seller.username,
+        phone: seller.phone || '',
+        role: seller.role,
+        branchId: seller.branchId,
+        branchName: seller.branch?.name || '',
+        targetAmount,
+        totalSales,
+        remainingAmount,
+        completionPercentage,
+        salesCount,
+        dailySales,
+        transactions,
+      };
+    });
+
+    // 6. Summary aggregations
+    const totalTarget = sellersData.reduce((sum, s) => sum + s.targetAmount, 0);
+    const totalSales = sellersData.reduce((sum, s) => sum + s.totalSales, 0);
+    const totalRemaining = Math.max(0, totalTarget - totalSales);
+    const completionPercentage =
+      totalTarget > 0 ? Number(((totalSales / totalTarget) * 100).toFixed(2)) : 0;
+
+    return {
+      period: {
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        year,
+        month,
+      },
+      summary: {
+        sellersCount: sellersData.length,
+        totalTarget,
+        totalSales,
+        totalRemaining,
+        completionPercentage,
+      },
+      sellers: sellersData,
+    };
+  }
+
+  async setSellerTarget(sellerId: number, targetAmount: number, yearParam?: number, monthParam?: number) {
+    const now = new Date();
+    const year = yearParam || now.getFullYear();
+    const month = monthParam || (now.getMonth() + 1);
+
+    const seller = await this.prisma.user.findUnique({
+      where: { id: sellerId },
+    });
+    if (!seller || seller.status === UserStatus.DELETED) {
+      throw new NotFoundException('Сотувчи топилмади ёки ўчирилган.');
+    }
+
+    return this.prisma.sellerTarget.upsert({
+      where: {
+        sellerId_year_month: {
+          sellerId,
+          year,
+          month,
+        },
+      },
+      create: {
+        sellerId,
+        targetAmount: Number(targetAmount),
+        year,
+        month,
+      },
+      update: {
+        targetAmount: Number(targetAmount),
+      },
+    });
+  }
 }
 

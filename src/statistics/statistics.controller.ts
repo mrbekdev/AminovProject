@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Param, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, UseGuards, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { StatisticsService } from './statistics.service';
@@ -9,6 +9,49 @@ import { StatisticsService } from './statistics.service';
 @ApiBearerAuth()
 export class StatisticsController {
   constructor(private readonly statisticsService: StatisticsService) {}
+
+  @Get('sellers')
+  @ApiOperation({ summary: 'Get sales targets and progress statistics for all sellers' })
+  @ApiQuery({ name: 'branchId', required: false, type: Number })
+  @ApiQuery({ name: 'startDate', required: false, type: String })
+  @ApiQuery({ name: 'endDate', required: false, type: String })
+  @ApiQuery({ name: 'year', required: false, type: Number })
+  @ApiQuery({ name: 'month', required: false, type: Number })
+  async getSellerStatistics(
+    @Query('branchId') branchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    const parsedBranchId = branchId ? parseInt(branchId, 10) : undefined;
+    const parsedYear = year ? parseInt(year, 10) : undefined;
+    const parsedMonth = month ? parseInt(month, 10) : undefined;
+
+    return this.statisticsService.getSellerStatistics(
+      parsedBranchId,
+      startDate,
+      endDate,
+      parsedYear,
+      parsedMonth,
+    );
+  }
+
+  @Post('sellers/target')
+  @ApiOperation({ summary: 'Set or update monthly sales plan for a seller' })
+  async setSellerTarget(
+    @Body() body: { sellerId: number; targetAmount: number; year?: number; month?: number },
+  ) {
+    if (!body.sellerId || body.targetAmount === undefined) {
+      throw new BadRequestException('sellerId ва targetAmount полилари талаб қилинади.');
+    }
+    return this.statisticsService.setSellerTarget(
+      Number(body.sellerId),
+      Number(body.targetAmount),
+      body.year ? Number(body.year) : undefined,
+      body.month ? Number(body.month) : undefined,
+    );
+  }
 
   @Get()
   @ApiOperation({ summary: 'Dashboard/statistics metrics and aggregations' })

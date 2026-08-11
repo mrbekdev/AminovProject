@@ -75,8 +75,14 @@ export class CashReconciliationService {
     if (status) where.status = status as ReconciliationStatus;
     if (startDate || endDate) {
       where.reportDate = {};
-      if (startDate) where.reportDate.gte = new Date(startDate);
-      if (endDate) where.reportDate.lte = new Date(endDate);
+      if (startDate) {
+        const sStr = typeof startDate === 'string' ? startDate.split('T')[0] : '';
+        where.reportDate.gte = sStr ? new Date(`${sStr}T00:00:00.000Z`) : new Date(startDate);
+      }
+      if (endDate) {
+        const eStr = typeof endDate === 'string' ? endDate.split('T')[0] : '';
+        where.reportDate.lte = eStr ? new Date(`${eStr}T23:59:59.999Z`) : new Date(endDate);
+      }
     }
 
     return this.prisma.cashReconciliation.findMany({

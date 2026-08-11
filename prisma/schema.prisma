@@ -110,6 +110,7 @@ enum UserRole {
   OPERATORCALL
   HISOBCHI
   REVIZOR
+  DEBTCASHIER
 }
 
 enum BranchType {
@@ -164,6 +165,7 @@ model Branch {
   attendanceEvents AttendanceEvent[]
   reconciliations  CashReconciliation[]
   incomingReports  IncomingStockReport[]  @relation("BranchIncomingReports")
+  debtCashierReports DebtCashierReport[]
 
   @@index([name])
 }
@@ -212,13 +214,33 @@ model User {
   cashierReconciliations       CashReconciliation[]           @relation("CashierReconciliations")
   approvedReconciliations      CashReconciliation[]           @relation("ApprovedReconciliations")
   uploadedReconciliationAttachments CashReconciliationAttachment[] @relation("ReconciliationUploadedAttachments")
+  debtCashierReports           DebtCashierReport[]            @relation("DebtCashierReports")
+  approvedDebtReports          DebtCashierReport[]            @relation("DebtCashierReportApprover")
   createdIncomingReports            IncomingStockReport[]          @relation("UserCreatedIncomingReports")
   approvedIncomingReports           IncomingStockReport[]          @relation("UserApprovedIncomingReports")
   incomingStockAuditLogs            IncomingStockAuditLog[]        @relation("UserIncomingAuditLogs")
   notifications                     Notification[]                 @relation("UserNotifications")
+  sellerTargets                     SellerTarget[]
 
   @@index([phone])
   @@index([branchId])
+}
+
+model SellerTarget {
+  id           Int      @id @default(autoincrement())
+  sellerId     Int
+  targetAmount Float    @default(0)
+  year         Int
+  month        Int
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  seller       User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, year, month])
+  @@index([sellerId])
+  @@index([year, month])
 }
 
 model UserBranchAccess {
@@ -956,4 +978,50 @@ model Notification {
   user        User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+enum DebtReportStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model DebtCashierReport {
+  id                      Int              @id @default(autoincrement())
+  cashierId               Int
+  branchId                Int
+  reportDate              DateTime         @db.Date
+  cashAmount              Float            @default(0)
+  click9905Amount         Float            @default(0)
+  bankAccountAmount       Float            @default(0)
+  onlineAmount            Float            @default(0)
+  terminalAmount          Float            @default(0)
+  discountAmount          Float            @default(0)
+  discountNote            String?
+  mibAmount               Float            @default(0)
+  mibNote                 String?
+  contractsCount          Int              @default(0)
+  contractsAmount         Float            @default(0)
+  notes                   String?
+  status                  DebtReportStatus @default(PENDING)
+  acceptedCashAmount      Float?
+  acceptedClick9905Amount Float?
+  acceptedBankAccountAmount Float?
+  acceptedOnlineAmount    Float?
+  acceptedTerminalAmount  Float?
+  acceptedMibAmount       Float?
+  accountantNotes         String?
+  approvedBy              Int?
+  approvedAt              DateTime?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  cashier  User   @relation("DebtCashierReports", fields: [cashierId], references: [id], onDelete: Cascade)
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  approver User?  @relation("DebtCashierReportApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  @@unique([cashierId, branchId, reportDate])
+  @@index([cashierId])
+  @@index([branchId])
+  @@index([reportDate])
 }
