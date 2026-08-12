@@ -891,6 +891,7 @@ enum IncomingStockItemStatus {
   PENDING
   APPROVED
   REJECTED
+  CONFIRMED
 }
 
 enum IncomingStockAuditAction {
