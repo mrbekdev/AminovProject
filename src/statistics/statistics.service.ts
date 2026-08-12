@@ -2665,6 +2665,22 @@ export class StatisticsService {
         .map(([date, data]) => ({ date, total: data.total, count: data.count }))
         .sort((a, b) => b.date.localeCompare(a.date));
 
+      // Calculate Daily Plan (Kuнлик План) with carry-over
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const currentDay = now.getDate();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+      const todayTxList = sellerSales.filter((tx) => new Date(tx.createdAt) >= startOfToday);
+      const todaySales = todayTxList.reduce((sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0), 0);
+      const salesBeforeToday = totalSales - todaySales;
+
+      const dailyBaseTarget = targetAmount > 0 ? Math.round(targetAmount / daysInMonth) : 0;
+      const totalRequiredUpToToday = dailyBaseTarget * currentDay;
+      const todayTarget = targetAmount > 0 ? Math.max(0, totalRequiredUpToToday - salesBeforeToday) : 0;
+      const todayRemaining = Math.max(0, todayTarget - todaySales);
+      const todayCompletionPercentage =
+        todayTarget > 0 ? Number(((todaySales / todayTarget) * 100).toFixed(2)) : (todaySales > 0 ? 100 : 0);
+
       // Detailed transactions list with product items
       const transactions = sellerSales.map((tx) => ({
         id: tx.id,
@@ -2695,6 +2711,13 @@ export class StatisticsService {
         totalSales,
         remainingAmount,
         completionPercentage,
+        dailyBaseTarget,
+        todayTarget,
+        todaySales,
+        todayRemaining,
+        todayCompletionPercentage,
+        daysInMonth,
+        currentDay,
         salesCount,
         dailySales,
         transactions,
@@ -2756,6 +2779,108 @@ export class StatisticsService {
         targetAmount: Number(targetAmount),
       },
     });
+  }
+
+  async getMySellerPlan(sellerId: number) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const currentDay = now.getDate();
+
+    const startOfMonth = new Date(year, now.getMonth(), 1, 0, 0, 0, 0);
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+    const seller = await this.prisma.user.findUnique({
+      where: { id: sellerId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        role: true,
+        branchId: true,
+        branch: { select: { id: true, name: true } },
+      },
+    });
+
+    if (!seller) {
+      throw new NotFoundException('Сотувчи топилмади');
+    }
+
+    const targetRecord = await this.prisma.sellerTarget.findUnique({
+      where: {
+        sellerId_year_month: {
+          sellerId,
+          year,
+          month,
+        },
+      },
+    });
+
+    const targetAmount = targetRecord?.targetAmount || 0;
+
+    const salesTransactions = await this.prisma.transaction.findMany({
+      where: {
+        type: TransactionType.SALE,
+        status: { not: TransactionStatus.CANCELLED },
+        createdAt: {
+          gte: startOfMonth,
+          lte: now,
+        },
+        OR: [
+          { soldByUserId: sellerId },
+          { soldByUserId: null, userId: sellerId },
+        ],
+      },
+      select: {
+        id: true,
+        finalTotal: true,
+        total: true,
+        createdAt: true,
+      },
+    });
+
+    const totalSales = salesTransactions.reduce(
+      (sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0),
+      0,
+    );
+    const salesCount = salesTransactions.length;
+    const remainingAmount = Math.max(0, targetAmount - totalSales);
+    const completionPercentage =
+      targetAmount > 0 ? Number(((totalSales / targetAmount) * 100).toFixed(2)) : 0;
+
+    // Daily plan calculation for today with overflow carryover
+    const todayTxList = salesTransactions.filter((tx) => new Date(tx.createdAt) >= startOfToday);
+    const todaySales = todayTxList.reduce((sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0), 0);
+    const salesBeforeToday = totalSales - todaySales;
+
+    const dailyBaseTarget = targetAmount > 0 ? Math.round(targetAmount / daysInMonth) : 0;
+    const totalRequiredUpToToday = dailyBaseTarget * currentDay;
+    const todayTarget = targetAmount > 0 ? Math.max(0, totalRequiredUpToToday - salesBeforeToday) : 0;
+    const todayRemaining = Math.max(0, todayTarget - todaySales);
+    const todayCompletionPercentage =
+      todayTarget > 0 ? Number(((todaySales / todayTarget) * 100).toFixed(2)) : (todaySales > 0 ? 100 : 0);
+
+    return {
+      sellerId: seller.id,
+      sellerName: [seller.firstName, seller.lastName].filter(Boolean).join(' ') || seller.username,
+      year,
+      month,
+      daysInMonth,
+      currentDay,
+      targetAmount,
+      totalSales,
+      remainingAmount,
+      completionPercentage,
+      dailyBaseTarget,
+      todayTarget,
+      todaySales,
+      todayRemaining,
+      todayCompletionPercentage,
+      salesCount,
+      branchName: seller.branch?.name || '',
+    };
   }
 }
 

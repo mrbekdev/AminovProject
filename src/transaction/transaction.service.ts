@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { Prisma, TransactionType, TransactionStatus, PaymentType } from '@prisma/client';
+import { Prisma, TransactionType, TransactionStatus, PaymentType, UserStatus } from '@prisma/client';
 import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
 import { BonusService } from '../bonus/bonus.service';
 import { TaskService } from '../task/task.service';
@@ -829,6 +829,7 @@ export class TransactionService {
 
     const users = await this.prisma.user.findMany({
       where: {
+        status: { not: UserStatus.DELETED },
         role: {
           in: ['ADMIN', 'MANAGER', 'CASHIER', 'MARKETING']
         }
@@ -839,6 +840,7 @@ export class TransactionService {
         lastName: true,
         username: true,
         role: true,
+        status: true,
       }
     });
 
@@ -848,14 +850,14 @@ export class TransactionService {
     for (const u of users) {
       const name = [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.username || `User ${u.id}`;
 
-      // Marketing xodimlari barcha ro'llar uchun asosan "Sotuvchi" vazifasini bajaradi
+      // Marketing xodimlari barcha ro'llar учун asosan "Sotuvchi" vazifasini bajaradi
       if (['MARKETING', 'ADMIN', 'MANAGER'].includes(u.role)) {
-        sellersMap.set(u.id, { id: u.id, name, role: u.role });
+        sellersMap.set(u.id, { id: u.id, name, role: u.role, status: u.status });
       }
 
       // Cashier vazifasini bajaruvchilar yoki hamma "Kassir" bo'lishi mumkin
       if (['CASHIER', 'ADMIN', 'MANAGER', 'MARKETING'].includes(u.role)) {
-        cashiersMap.set(u.id, { id: u.id, name, role: u.role });
+        cashiersMap.set(u.id, { id: u.id, name, role: u.role, status: u.status });
       }
     }
 

@@ -29,9 +29,25 @@ export class DefectiveLogService {
       });
     }
 
-    // Get all items (both remaining and returned) to calculate original proportions
+    // Fetch return defective logs for this transaction to calculate remaining item quantities
+    const returnLogs = await this.prisma.defectiveLog.findMany({
+      where: { transactionId, actionType: 'RETURN' }
+    });
+
+    const getReturnedQty = (pid?: number | null) => {
+      if (!pid) return 0;
+      return returnLogs
+        .filter(l => l.productId === pid)
+        .reduce((sum, l) => sum + Number(l.quantity || 0), 0);
+    };
+
     const allItems = transaction.items;
-    const remainingItems = allItems.filter(item => item.quantity > 0);
+    const remainingItems = allItems
+      .map(item => ({
+        ...item,
+        remainingQuantity: Math.max(0, item.quantity - getReturnedQty(item.productId))
+      }))
+      .filter(item => item.remainingQuantity > 0);
     
     if (remainingItems.length === 0) {
       return; // No items left, no need for schedules
@@ -45,7 +61,7 @@ export class DefectiveLogService {
 
     // First pass: calculate original totals (including returned items)
     for (const item of allItems) {
-      const originalQuantity = item.quantity + (item.status === 'RETURNED' ? 0 : 0); // Get original quantity before returns
+      const originalQuantity = item.quantity;
       const principal = (item.price || 0) * originalQuantity;
       originalTotalPrincipal += principal;
       if (item.creditPercent) {
@@ -63,7 +79,7 @@ export class DefectiveLogService {
     let remainingPercentWeightBase = 0;
 
     for (const item of remainingItems) {
-      const principal = (item.price || 0) * (item.quantity || 0);
+      const principal = (item.price || 0) * item.remainingQuantity;
       remainingTotalPrincipal += principal;
       if (item.creditPercent) {
         remainingWeightedPercentSum += principal * (item.creditPercent || 0);
@@ -282,27 +298,13 @@ export class DefectiveLogService {
 
             if (actionType === 'RETURN' || actionType === 'EXCHANGE') {
               const remainingQty = Math.max(0, Number(orig.quantity) - Number(quantity));
-              if (remainingQty === 0) {
-                // Instead of deleting, mark as returned with status (if column exists)
-                await prisma.transactionItem.update({
-                  where: { id: orig.id },
-                  data: {
-                    quantity: 0,
-                    total: 0,
-                    // status column must exist in DB; ensure migration applied
-                    status: 'RETURNED'
-                  }
-                });
-              } else {
-                const unitPrice = (orig.sellingPrice ?? orig.price) || 0;
-                await prisma.transactionItem.update({
-                  where: { id: orig.id },
-                  data: {
-                    quantity: remainingQty,
-                    total: remainingQty * unitPrice
-                  }
-                });
-              }
+              await prisma.transactionItem.update({
+                where: { id: orig.id },
+                data: {
+                  status: remainingQty === 0 ? 'RETURNED' : 'PARTIALLY_RETURNED'
+                }
+              });
+            }
 
               // BONUS REVERSAL: Return all bonus products given for this transaction and delete related bonus rows
               if (actionType === 'RETURN') {
@@ -333,7 +335,6 @@ export class DefectiveLogService {
                   data: { extraProfit: newProfit } 
                 });
               }
-            }
 
             if (actionType === 'EXCHANGE') {
               const replacementQty = Math.max(1, Number(replacementQuantity || quantity) || quantity);

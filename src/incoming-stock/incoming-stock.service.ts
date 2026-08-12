@@ -329,19 +329,22 @@ export class IncomingStockService {
           throw new NotFoundException(`Mahsulot (ID: ${item.productId}) topilmadi.`);
         }
 
-        // Increment stock
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            quantity: {
-              increment: item.quantity,
+        // Update stock only if item quantity is non-zero and not CONFIRMED (To'g'ri kelgan)
+        const qty = Number(item.quantity || 0);
+        if (qty !== 0 && (item.status as string) !== 'CONFIRMED' && (report.status as string) !== 'CONFIRMED') {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              quantity: {
+                increment: qty,
+              },
             },
-          },
-        });
+          });
+        }
 
         transactionItemsData.push({
           productId: item.productId,
-          quantity: item.quantity,
+          quantity: qty,
           price: 0,
           total: 0,
         });
@@ -573,7 +576,7 @@ export class IncomingStockService {
           status: 'CONFIRMED' as any,
           note: confirmNote,
           totalItems: 1,
-          totalQuantity: product.quantity,
+          totalQuantity: 0,
           submittedAt: new Date(),
           approvedAt: new Date(),
           approvedBy: userId,
@@ -581,9 +584,9 @@ export class IncomingStockService {
             create: [{
               productId: product.id,
               barcode: product.barcode || `PROD-${product.id}`,
-              quantity: product.quantity,
+              quantity: 0,
               note: confirmNote,
-              status: 'APPROVED' as any,
+              status: 'CONFIRMED' as any,
             }],
           },
         },
@@ -633,13 +636,16 @@ export class IncomingStockService {
         const transactionItemsData: any[] = [];
 
         for (const item of itemsToApprove) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { quantity: { increment: item.quantity } },
-          });
+          const qty = Number(item.quantity || 0);
+          if (qty !== 0 && (item.status as string) !== 'CONFIRMED' && (report.status as string) !== 'CONFIRMED') {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { quantity: { increment: qty } },
+            });
+          }
           transactionItemsData.push({
             productId: item.productId,
-            quantity: item.quantity,
+            quantity: qty,
             price: 0,
             total: 0,
           });
@@ -784,7 +790,8 @@ export class IncomingStockService {
         report: where
       },
       include: {
-        product: { select: { id: true, price: true } }
+        product: { select: { id: true, price: true } },
+        report: { select: { id: true, status: true } }
       }
     });
 
@@ -815,10 +822,17 @@ export class IncomingStockService {
     for (const item of allReportItems) {
       const price = Number(item.product?.price || 0);
       const qty = Number(item.quantity || 0);
-      if (qty >= 0) {
+      const isConfirmed = item.status === ('CONFIRMED' as any) || item.report?.status === ('CONFIRMED' as any);
+
+      // Matching items (To'g'ri kelganlar) have 0 quantity delta or CONFIRMED status — skip from Kirim/Kamomad sums
+      if (qty === 0 || isConfirmed) {
+        continue;
+      }
+
+      if (qty > 0) {
         kirimTotalQty += qty;
         kirimTotalAmount += qty * price;
-      } else {
+      } else if (qty < 0) {
         const absQty = Math.abs(qty);
         kamomadTotalQty += absQty;
         kamomadTotalAmount += absQty * price;

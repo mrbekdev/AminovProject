@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Param, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, UseGuards, BadRequestException, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { StatisticsService } from './statistics.service';
@@ -9,6 +9,16 @@ import { StatisticsService } from './statistics.service';
 @ApiBearerAuth()
 export class StatisticsController {
   constructor(private readonly statisticsService: StatisticsService) {}
+
+  @Get('my-plan')
+  @ApiOperation({ summary: 'Get current logged-in seller monthly target plan & progress' })
+  async getMySellerPlan(@Request() req, @Query('sellerId') sellerIdQuery?: string) {
+    const userId = sellerIdQuery ? parseInt(sellerIdQuery, 10) : (req.user?.id || req.user?.sub);
+    if (!userId) {
+      throw new BadRequestException('Фойдаланувчи ID аниқланмади.');
+    }
+    return this.statisticsService.getMySellerPlan(Number(userId));
+  }
 
   @Get('sellers')
   @ApiOperation({ summary: 'Get sales targets and progress statistics for all sellers' })
