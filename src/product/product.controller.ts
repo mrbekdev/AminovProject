@@ -205,6 +205,6 @@ export class ProductController {
     if (req.user.role === 'REVIZOR') {
       throw new ForbiddenException('Revizor mahsulotlarni o\'chirish huquqiga ega emas.');
     }
-    return this.productService.removeMany(body.ids);
+    return this.productService.removeMany(body.ids, req.user.id || req.user.userId);
   }
 }

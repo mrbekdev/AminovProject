@@ -584,24 +584,36 @@ export class TransactionService {
     if (search && String(search).trim()) {
       const term = String(search).trim();
       const cleanTerm = term.replace(/^#/, '').trim();
-      const searchConditions: any[] = [
-        { customer: { fullName: { contains: term, mode: 'insensitive' } } },
-        { customer: { phone: { contains: term, mode: 'insensitive' } } },
-        { receiptId: { contains: term, mode: 'insensitive' } },
-        { description: { contains: term, mode: 'insensitive' } },
-        { items: { some: { product: { name: { contains: term, mode: 'insensitive' } } } } },
-        { items: { some: { product: { model: { contains: term, mode: 'insensitive' } } } } },
-        { items: { some: { product: { barcode: { contains: term, mode: 'insensitive' } } } } },
-        { soldBy: { firstName: { contains: term, mode: 'insensitive' } } },
-        { soldBy: { lastName: { contains: term, mode: 'insensitive' } } },
-        { user: { firstName: { contains: term, mode: 'insensitive' } } },
-        { user: { lastName: { contains: term, mode: 'insensitive' } } },
-      ];
       const numericId = parseInt(cleanTerm);
-      if (!isNaN(numericId) && numericId > 0) {
-        searchConditions.push({ id: numericId });
+      const isPureNumeric = !isNaN(numericId) && String(numericId) === cleanTerm;
+
+      if (isPureNumeric && numericId > 0) {
+        andConditions.push({
+          OR: [
+            { id: numericId },
+            { customer: { phone: { contains: cleanTerm, mode: 'insensitive' } } },
+            { items: { some: { product: { barcode: { contains: cleanTerm, mode: 'insensitive' } } } } },
+          ],
+        });
+      } else if (term.length >= 2) {
+        const searchConditions: any[] = [
+          { customer: { fullName: { contains: term, mode: 'insensitive' } } },
+          { customer: { phone: { contains: term, mode: 'insensitive' } } },
+          { receiptId: { contains: term, mode: 'insensitive' } },
+          { description: { contains: term, mode: 'insensitive' } },
+          { items: { some: { product: { name: { contains: term, mode: 'insensitive' } } } } },
+          { items: { some: { product: { model: { contains: term, mode: 'insensitive' } } } } },
+          { items: { some: { product: { barcode: { contains: term, mode: 'insensitive' } } } } },
+          { soldBy: { firstName: { contains: term, mode: 'insensitive' } } },
+          { soldBy: { lastName: { contains: term, mode: 'insensitive' } } },
+          { user: { firstName: { contains: term, mode: 'insensitive' } } },
+          { user: { lastName: { contains: term, mode: 'insensitive' } } },
+        ];
+        if (!isNaN(numericId) && numericId > 0) {
+          searchConditions.push({ id: numericId });
+        }
+        andConditions.push({ OR: searchConditions });
       }
-      andConditions.push({ OR: searchConditions });
     }
 
     if (sellerUserId && sellerUserId !== 'ALL' && !isNaN(parseInt(sellerUserId))) {
@@ -800,6 +812,16 @@ export class TransactionService {
         tasks: {
           include: {
             auditor: true,
+          },
+        },
+        bonusProducts: {
+          include: {
+            product: {
+              include: {
+                category: true,
+                branch: true,
+              },
+            },
           },
         },
       },
@@ -1007,7 +1029,17 @@ export class TransactionService {
             auditor: true,
             uydanCollectedBy: true,
           }
-        }
+        },
+        bonusProducts: {
+          include: {
+            product: {
+              include: {
+                category: true,
+                branch: true,
+              },
+            },
+          },
+        },
       }
     });
 
@@ -1846,7 +1878,17 @@ export class TransactionService {
               }
             }
           }
-        }
+        },
+        bonusProducts: {
+          include: {
+            product: {
+              include: {
+                category: true,
+                branch: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' }
     });

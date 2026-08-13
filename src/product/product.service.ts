@@ -371,6 +371,16 @@ async update(
   userId: number,
   prismaClient: PrismaClient | Prisma.TransactionClient = this.prisma,
 ) {
+  if (userId) {
+    const user = await prismaClient.user.findUnique({ where: { id: userId } });
+    if (user && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+      const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
+      if (setting && !setting.skladAllowEdit) {
+        throw new ForbiddenException('Складчиларга маҳсулотларни таҳрирлаш рухсати ўчирилган.');
+      }
+    }
+  }
+
   const product = await prismaClient.product.findUnique({ where: { id } });
   if (!product) {
     throw new NotFoundException('Mahsulot topilmadi');
@@ -827,6 +837,15 @@ async update(
   }
 
 async remove(id: number, userId: number) {
+  if (userId) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (user && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+      const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
+      if (setting && !setting.skladAllowDelete) {
+        throw new ForbiddenException('Складчиларга маҳсулотларни ўчириш рухсати ўчирилган.');
+      }
+    }
+  }
   return this.prisma.$transaction(async (tx) => {
     const product = await tx.product.findUnique({ where: { id } });
     if (!product) {
@@ -909,7 +928,16 @@ return this.prisma.$transaction(async (tx) => {
     }
   }
 
-  async removeMany(ids: number[]) {
+  async removeMany(ids: number[], userId?: number) {
+    if (userId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+        const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
+        if (setting && !setting.skladAllowDelete) {
+          throw new ForbiddenException('Складчиларга маҳсулотларни ўчириш рухсати ўчирилган.');
+        }
+      }
+    }
     const products = await this.prisma.product.findMany({
       where: { id: { in: ids } },
     });

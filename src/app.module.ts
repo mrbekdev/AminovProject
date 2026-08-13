@@ -31,12 +31,14 @@ import { TelegramBackupModule } from './telegram-backup/telegram-backup.module';
 import { CashReconciliationModule } from './cash-reconciliation/cash-reconciliation.module';
 import { IncomingStockModule } from './incoming-stock/incoming-stock.module';
 import { DebtCashierReportModule } from './debt-cashier-report/debt-cashier-report.module';
+import { SystemSettingModule } from './system-setting/system-setting.module';
 
 @Module({
   imports: [
     // Initialize Sentry (configured in src/instrument.ts)
     SentryModule.forRoot(),
     GlobalRateModule,
+    SystemSettingModule,
     ConfigModule.forRoot({ isGlobal: true }),
     BranchModule, 
     UserModule, 

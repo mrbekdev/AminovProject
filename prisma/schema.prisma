@@ -803,6 +803,13 @@ model GlobalRate {
   updatedAt DateTime @updatedAt
 }
 
+model SystemSetting {
+  id               Int      @id @default(1)
+  skladAllowEdit   Boolean  @default(true)
+  skladAllowDelete Boolean  @default(true)
+  updatedAt        DateTime @updatedAt
+}
+
 enum ReconciliationStatus {
   MATCHED
   SHORTAGE
