@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -97,6 +97,7 @@ async create(
   ) {
     const where: Prisma.ProductWhereInput = {
       isDeleted: false,
+      branch: { status: { not: 'DELETED' } },
     };
 
     if (branchId) {
@@ -373,7 +374,7 @@ async update(
 ) {
   if (userId) {
     const user = await prismaClient.user.findUnique({ where: { id: userId } });
-    if (user && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+    if (user && user.role !== 'ADMIN') {
       const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
       if (setting && !setting.skladAllowEdit) {
         throw new ForbiddenException('Складчиларга маҳсулотларни таҳрирлаш рухсати ўчирилган.');
@@ -839,7 +840,7 @@ async update(
 async remove(id: number, userId: number) {
   if (userId) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (user && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+    if (user && user.role !== 'ADMIN') {
       const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
       if (setting && !setting.skladAllowDelete) {
         throw new ForbiddenException('Складчиларга маҳсулотларни ўчириш рухсати ўчирилган.');
@@ -931,7 +932,7 @@ return this.prisma.$transaction(async (tx) => {
   async removeMany(ids: number[], userId?: number) {
     if (userId) {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
-      if (user && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+      if (user && user.role !== 'ADMIN') {
         const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
         if (setting && !setting.skladAllowDelete) {
           throw new ForbiddenException('Складчиларга маҳсулотларни ўчириш рухсати ўчирилган.');

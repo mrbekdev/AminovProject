@@ -1640,12 +1640,76 @@ export class TransactionService {
       }
     })).sort((a, b) => b.outstanding - a.outstanding);
 
+    // Calculate summary statistics
+    const now = new Date();
+    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0);
+    const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999);
+
+    const yesterdayUydanTx = await this.prisma.transaction.findMany({
+      where: {
+        status: { not: TransactionStatus.CANCELLED },
+        createdAt: { gte: startOfYesterday, lte: endOfYesterday },
+        payments: { some: { method: 'UYDAN' } }
+      },
+      select: {
+        finalTotal: true,
+        total: true,
+        payments: { select: { method: true, amount: true } }
+      }
+    });
+
+    let yesterdayUydanSales = 0;
+    yesterdayUydanTx.forEach(t => {
+      const uydanPayments = (t.payments || []).filter(p => String(p.method || '').toUpperCase() === 'UYDAN');
+      if (uydanPayments.length > 0) {
+        yesterdayUydanSales += uydanPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+      } else {
+        yesterdayUydanSales += Number(t.finalTotal || t.total || 0);
+      }
+    });
+
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    const todayCreditRepayments = await this.prisma.creditRepayment.aggregate({
+      where: {
+        OR: [
+          { paidAt: { gte: startOfToday, lte: endOfToday } },
+          { createdAt: { gte: startOfToday, lte: endOfToday } }
+        ]
+      },
+      _sum: { amount: true }
+    });
+
+    const todayDailyRepayments = await this.prisma.dailyRepayment.aggregate({
+      where: {
+        OR: [
+          { paidAt: { gte: startOfToday, lte: endOfToday } },
+          { createdAt: { gte: startOfToday, lte: endOfToday } }
+        ]
+      },
+      _sum: { amount: true }
+    });
+
+    const todayRepayments = (todayCreditRepayments._sum.amount || 0) + (todayDailyRepayments._sum.amount || 0);
+
+    const totalCustomers = customers.length;
+    const debtorsCount = customers.filter(c => c.outstanding > 0).length;
+    const totalOutstanding = customers.reduce((sum, c) => sum + (c.outstanding || 0), 0);
+
     // Apply pagination
     const total = customers.length;
     const paginatedCustomers = customers.slice(skip, skip + limit);
 
     return {
       customers: paginatedCustomers,
+      summary: {
+        totalCustomers,
+        debtorsCount,
+        totalOutstanding,
+        yesterdayUydanSales,
+        todayRepayments,
+      },
       pagination: {
         page,
         limit,

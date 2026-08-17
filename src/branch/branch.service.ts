@@ -33,8 +33,12 @@ export class BranchService {
         cashBalance: true,
         createdAt: true,
         updatedAt: true,
-        products: true,
-        users: true,
+        products: {
+          where: { isDeleted: false },
+        },
+        users: {
+          where: { status: { not: 'DELETED' } },
+        },
       },
     });
   }
@@ -51,8 +55,12 @@ export class BranchService {
         cashBalance: true,
         createdAt: true,
         updatedAt: true,
-        products: true,
-        users: true,
+        products: {
+          where: { isDeleted: false },
+        },
+        users: {
+          where: { status: { not: 'DELETED' } },
+        },
       },
     });
   }
@@ -75,6 +83,10 @@ async update(id: number, updateBranchDto: UpdateBranchDto) {
   async remove(id: number) {
     const findBranch = await this.prisma.branch.findUnique({ where: { id } });
     if (!findBranch) throw new Error('Branch not found');
+    await this.prisma.product.updateMany({
+      where: { branchId: id },
+      data: { isDeleted: true, updatedAt: new Date() },
+    });
     return this.prisma.branch.update({
       where: { id },
       data: { status: 'DELETED', updatedAt: new Date() },

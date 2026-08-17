@@ -32,18 +32,14 @@ export class UserService {
       updatedAt: new Date(),
     };
 
-    // Check for existing users by username or phone
-    const orConditions: any[] = [];
-    if (userData.username) orConditions.push({ username: userData.username });
-    if (userData.phone) orConditions.push({ phone: userData.phone });
-
-    if (orConditions.length > 0) {
-      const existingUsers = await this.prisma.user.findMany({ where: { OR: orConditions } });
+    // Check for existing users by username
+    if (userData.username) {
+      const existingUsers = await this.prisma.user.findMany({ where: { username: userData.username } });
       if (existingUsers.length > 0) {
         // If any existing user is ACTIVE -> conflict
         const activeUser = existingUsers.find(u => u.status === 'ACTIVE');
         if (activeUser) {
-          throw new ConflictException('Username or phone already exists and is ACTIVE');
+          throw new ConflictException('Username already exists and is ACTIVE');
         }
 
         // All matches are DELETED. Suffix them to free up the unique identifiers.
@@ -53,7 +49,6 @@ export class UserService {
             where: { id: deletedUser.id },
             data: {
               username: `${deletedUser.username}_deleted_${timestamp}_${deletedUser.id}`,
-              phone: deletedUser.phone ? `${deletedUser.phone}_deleted_${timestamp}_${deletedUser.id}` : null,
             }
           });
         }
@@ -200,22 +195,18 @@ export class UserService {
     if (userData.branchId !== undefined && userData.role !== 'MARKETING') updateData.branchId = userData.branchId;
     if (data.password) updateData.password = data.password;
 
-    // Check for conflicts if username or phone is changing
-    if (userData.username || userData.phone) {
-      const conflictOr: any[] = [];
-      if (userData.username) conflictOr.push({ username: userData.username });
-      if (userData.phone) conflictOr.push({ phone: userData.phone });
-
+    // Check for conflicts if username is changing
+    if (userData.username) {
       const conflicts = await this.prisma.user.findMany({
         where: {
-          OR: conflictOr,
+          username: userData.username,
           id: { not: id },
           status: 'ACTIVE'
         }
       });
 
       if (conflicts.length > 0) {
-        throw new ConflictException('Username or phone already taken by another ACTIVE user');
+        throw new ConflictException('Username already taken by another ACTIVE user');
       }
     }
 

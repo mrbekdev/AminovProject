@@ -21,7 +21,12 @@ export class CategoryService {
   async findOne(id: number) {
     return this.prisma.category.findUnique({
       where: { id },
-      include: { products: true },
+      include: {
+        products: {
+          where: { isDeleted: false },
+        },
+        branch: true,
+      },
     });
   }
 
@@ -29,7 +34,18 @@ export class CategoryService {
     return this.prisma.category.findMany({
       skip,
       take,
-      include: { products: true },
+      where: {
+        OR: [
+          { branchId: null },
+          { branch: { status: { not: 'DELETED' } } },
+        ],
+      },
+      include: {
+        products: {
+          where: { isDeleted: false },
+        },
+        branch: true,
+      },
     });
   }
 
@@ -41,6 +57,10 @@ export class CategoryService {
   }
 
   async remove(id: number) {
+    await this.prisma.product.updateMany({
+      where: { categoryId: id },
+      data: { isDeleted: true },
+    });
     return this.prisma.category.delete({ where: { id } });
   }
 }
