@@ -2,10 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionBonusProductDto } from './dto/create-transaction-bonus-product.dto';
 import { UpdateTransactionBonusProductDto } from './dto/update-transaction-bonus-product.dto';
+import { ProductHistoryService } from '../product-history/product-history.service';
 
 @Injectable()
 export class TransactionBonusProductService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private historyService: ProductHistoryService,
+  ) {}
 
   private async getUsdToUzsRate(branchId?: number): Promise<number> {
     // Read latest active USD->UZS rate. If branchId-specific rate exists, prefer it; otherwise fallback to global
@@ -118,6 +122,19 @@ export class TransactionBonusProductService {
           },
           select: { id: true, name: true, quantity: true }
         });
+
+        try {
+          await this.historyService.createLog({
+            productId: bonusProduct.productId,
+            actionType: 'BONUS_GIFT',
+            description: `Sotuv (#${transactionId}) davomida mijozga bonus sovg'a sifatida berildi (-${bonusProduct.quantity} dona). Qolgan qoldiq: ${updatedProduct.quantity} dona.`,
+            quantityChange: -bonusProduct.quantity,
+            oldValues: { quantity: product.quantity },
+            newValues: { quantity: updatedProduct.quantity },
+          });
+        } catch (err) {
+          console.error('Error logging BONUS_GIFT product history:', err);
+        }
 
 
         createdBonusProducts.push(createdBonusProduct);

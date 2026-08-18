@@ -6,6 +6,7 @@ import { Prisma, TransactionType, TransactionStatus, PaymentType, UserStatus } f
 import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
 import { BonusService } from '../bonus/bonus.service';
 import { TaskService } from '../task/task.service';
+import { ProductHistoryService } from '../product-history/product-history.service';
 
 @Injectable()
 export class TransactionService {
@@ -14,6 +15,7 @@ export class TransactionService {
     private currencyExchangeRateService: CurrencyExchangeRateService,
     private bonusService: BonusService,
     private taskService: TaskService,
+    private historyService: ProductHistoryService,
   ) { }
 
   async create(createTransactionDto: CreateTransactionDto, userId?: number) {
@@ -477,6 +479,30 @@ export class TransactionService {
             status: newStatus
           }
         });
+
+        if (transaction.type === 'SALE') {
+          try {
+            const isBonusGift = Boolean(item.isBonus || item.isGift || Number(item.price || 0) === 0);
+            const actionType = isBonusGift ? 'BONUS_GIFT' : 'SALE';
+            const custName = transaction.customer?.fullName || transaction.customerName || 'Mijoz';
+            const desc = isBonusGift
+              ? `Mijoz (${custName})ga bonus sovg'a sifatida berildi (-${item.quantity} dona). Tranzaksiya #${transaction.id}`
+              : `Mijoz (${custName})ga sotildi (-${item.quantity} dona, $${item.price}/dona). Tranzaksiya #${transaction.id}`;
+
+            await this.historyService.createLog({
+              productId: item.productId,
+              actionType,
+              performedById: transaction.soldByUserId || transaction.userId,
+              description: desc,
+              quantityChange: -item.quantity,
+              priceChange: item.price,
+              oldValues: { quantity: product.quantity },
+              newValues: { quantity: newQuantity },
+            });
+          } catch (err) {
+            console.error('Error logging SALE product history:', err);
+          }
+        }
       }
     }
   }
@@ -581,39 +607,37 @@ export class TransactionService {
       where.items = { some: itemsConditions };
     }
 
+    let searchingById: number | null = null;
+
     if (search && String(search).trim()) {
       const term = String(search).trim();
       const cleanTerm = term.replace(/^#/, '').trim();
-      const numericId = parseInt(cleanTerm);
-      const isPureNumeric = !isNaN(numericId) && String(numericId) === cleanTerm;
+      const numericId = parseInt(cleanTerm, 10);
+      const isNumeric = !isNaN(numericId) && numericId > 0;
 
-      if (isPureNumeric && numericId > 0) {
-        andConditions.push({
-          OR: [
-            { id: numericId },
-            { customer: { phone: { contains: cleanTerm, mode: 'insensitive' } } },
-            { items: { some: { product: { barcode: { contains: cleanTerm, mode: 'insensitive' } } } } },
-          ],
-        });
-      } else if (term.length >= 2) {
-        const searchConditions: any[] = [
-          { customer: { fullName: { contains: term, mode: 'insensitive' } } },
-          { customer: { phone: { contains: term, mode: 'insensitive' } } },
-          { receiptId: { contains: term, mode: 'insensitive' } },
-          { description: { contains: term, mode: 'insensitive' } },
-          { items: { some: { product: { name: { contains: term, mode: 'insensitive' } } } } },
-          { items: { some: { product: { model: { contains: term, mode: 'insensitive' } } } } },
-          { items: { some: { product: { barcode: { contains: term, mode: 'insensitive' } } } } },
-          { soldBy: { firstName: { contains: term, mode: 'insensitive' } } },
-          { soldBy: { lastName: { contains: term, mode: 'insensitive' } } },
-          { user: { firstName: { contains: term, mode: 'insensitive' } } },
-          { user: { lastName: { contains: term, mode: 'insensitive' } } },
-        ];
-        if (!isNaN(numericId) && numericId > 0) {
-          searchConditions.push({ id: numericId });
-        }
-        andConditions.push({ OR: searchConditions });
+      if (isNumeric) {
+        searchingById = numericId;
       }
+
+      const searchConditions: any[] = [
+        { customer: { fullName: { contains: cleanTerm, mode: 'insensitive' } } },
+        { customer: { phone: { contains: cleanTerm, mode: 'insensitive' } } },
+        { receiptId: { contains: cleanTerm, mode: 'insensitive' } },
+        { description: { contains: cleanTerm, mode: 'insensitive' } },
+        { items: { some: { product: { name: { contains: cleanTerm, mode: 'insensitive' } } } } },
+        { items: { some: { product: { model: { contains: cleanTerm, mode: 'insensitive' } } } } },
+        { items: { some: { product: { barcode: { contains: cleanTerm, mode: 'insensitive' } } } } },
+        { soldBy: { firstName: { contains: cleanTerm, mode: 'insensitive' } } },
+        { soldBy: { lastName: { contains: cleanTerm, mode: 'insensitive' } } },
+        { user: { firstName: { contains: cleanTerm, mode: 'insensitive' } } },
+        { user: { lastName: { contains: cleanTerm, mode: 'insensitive' } } },
+      ];
+
+      if (isNumeric) {
+        searchConditions.push({ id: numericId });
+      }
+
+      andConditions.push({ OR: searchConditions });
     }
 
     if (sellerUserId && sellerUserId !== 'ALL' && !isNaN(parseInt(sellerUserId))) {
@@ -676,14 +700,14 @@ export class TransactionService {
     }
 
     if (startDate || endDate) {
-      where.createdAt = {};
+      const dateCond: any = {};
       if (startDate) {
         const start = new Date(startDate);
         const isUTC = String(startDate).endsWith('Z') || String(startDate).includes('+');
         if (!isUTC) {
           start.setUTCHours(start.getUTCHours() - 5);
         }
-        where.createdAt.gte = start;
+        dateCond.gte = start;
       }
       if (endDate) {
         const end = new Date(endDate);
@@ -693,7 +717,18 @@ export class TransactionService {
           end.setUTCHours(end.getUTCHours() - 5);
           end.setTime(end.getTime() - 1);
         }
-        where.createdAt.lte = end;
+        dateCond.lte = end;
+      }
+
+      if (searchingById) {
+        andConditions.push({
+          OR: [
+            { id: searchingById },
+            { createdAt: dateCond }
+          ]
+        });
+      } else {
+        where.createdAt = dateCond;
       }
     }
 

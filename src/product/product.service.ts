@@ -5,12 +5,14 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { Prisma, PrismaClient, ProductStatus } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { CurrencyExchangeRateService } from '../currency-exchange-rate/currency-exchange-rate.service';
+import { ProductHistoryService } from '../product-history/product-history.service';
 
 @Injectable()
 export class ProductService {
   constructor(
     private prisma: PrismaService,
     private currencyExchangeRateService: CurrencyExchangeRateService,
+    private historyService: ProductHistoryService,
   ) {}
 private async generateUniqueBarcode(tx: any): Promise<string> {
   // mavjud counterni olamiz yoki 0 yaratib qo'yamiz
@@ -23,13 +25,31 @@ private async generateUniqueBarcode(tx: any): Promise<string> {
   } else {
     counterRecord = await tx.barcodeCounter.update({
       where: { id: counterRecord.id },
-      data: {
-        counter: { increment: 1 }, 
-      },
+      data: { counter: counterRecord.counter + 1n },
     });
   }
 
-  return counterRecord.counter.toString();
+  // 13 xonali EAN-13 shtrix kod hosil qilish
+  // Masalan: 2000000000001
+  const prefix = '20';
+  const numberStr = counterRecord.counter.toString().padStart(10, '0');
+  const rawCode = `${prefix}${numberStr}`;
+
+  // EAN-13 uchun Check Digit (nazorat raqami) hisoblash
+  let sumOdd = 0;
+  let sumEven = 0;
+  for (let i = 0; i < 12; i++) {
+    const digit = parseInt(rawCode[i], 10);
+    if (i % 2 === 0) {
+      sumOdd += digit;
+    } else {
+      sumEven += digit;
+    }
+  }
+  const totalSum = sumOdd + sumEven * 3;
+  const checkDigit = (10 - (totalSum % 10)) % 10;
+
+  return `${rawCode}${checkDigit}`;
 }
 
 async create(
@@ -79,6 +99,29 @@ async create(
         total: 0,
       },
     });
+  }
+
+  // Tovar yaratilish tarixini saqlash
+  try {
+    await this.historyService.createLog({
+      productId: product.id,
+      actionType: 'CREATED',
+      performedById: userId,
+      description: `Yangi tovar yaratildi: "${product.name}"${product.model ? ` (${product.model})` : ''}. Boshlang'ich miqdor: ${product.quantity} dona. Narx: $${product.price}${product.marketPrice ? `, Kirim narx: $${product.marketPrice}` : ''}`,
+      newValues: {
+        name: product.name,
+        model: product.model,
+        price: product.price,
+        marketPrice: product.marketPrice,
+        quantity: product.quantity,
+        barcode: product.barcode,
+        branchId: product.branchId,
+      },
+      quantityChange: product.quantity,
+      priceChange: product.price,
+    });
+  } catch (err) {
+    console.error('Error logging CREATED product history:', err);
   }
 
   return product;
@@ -439,6 +482,68 @@ async update(
     'UZS',
     updatedProduct.branchId,
   );
+
+  // Log update history
+  try {
+    const changes: string[] = [];
+    if (updateProductDto.name && updateProductDto.name !== product.name) {
+      changes.push(`Nomi: "${product.name}" ➔ "${updateProductDto.name}"`);
+    }
+    if (updateProductDto.model !== undefined && updateProductDto.model !== product.model) {
+      changes.push(`Model: "${product.model || '—'}" ➔ "${updateProductDto.model || '—'}"`);
+    }
+    if (updateProductDto.price !== undefined && updateProductDto.price !== product.price) {
+      changes.push(`Sotish narxi: $${product.price} ➔ $${updateProductDto.price}`);
+    }
+    if (updateProductDto.marketPrice !== undefined && updateProductDto.marketPrice !== product.marketPrice) {
+      changes.push(`Kirim narxi: $${product.marketPrice || 0} ➔ $${updateProductDto.marketPrice}`);
+    }
+    if (updateProductDto.quantity !== undefined && updateProductDto.quantity !== product.quantity) {
+      changes.push(`Miqdori: ${product.quantity} dona ➔ ${updateProductDto.quantity} dona`);
+    }
+    if (updateProductDto.bonusPercentage !== undefined && updateProductDto.bonusPercentage !== product.bonusPercentage) {
+      changes.push(`Bonus foizi: ${product.bonusPercentage || 0}% ➔ ${updateProductDto.bonusPercentage}%`);
+    }
+    if (updateProductDto.status && updateProductDto.status !== product.status) {
+      changes.push(`Holati: "${product.status}" ➔ "${updateProductDto.status}"`);
+    }
+
+    const desc = changes.length > 0
+      ? `Tovar ma'lumotlari tahrirlandi:\n• ` + changes.join('\n• ')
+      : `Tovar tahrirlandi`;
+
+    const qtyDiff = updateProductDto.quantity !== undefined ? updateProductDto.quantity - product.quantity : 0;
+    const priceDiff = updateProductDto.price !== undefined ? updateProductDto.price - product.price : 0;
+
+    await this.historyService.createLog({
+      productId: id,
+      actionType: 'UPDATED',
+      performedById: userId,
+      description: desc,
+      oldValues: {
+        name: product.name,
+        model: product.model,
+        price: product.price,
+        marketPrice: product.marketPrice,
+        quantity: product.quantity,
+        bonusPercentage: product.bonusPercentage,
+        status: product.status,
+      },
+      newValues: {
+        name: updatedProduct.name,
+        model: updatedProduct.model,
+        price: updatedProduct.price,
+        marketPrice: updatedProduct.marketPrice,
+        quantity: updatedProduct.quantity,
+        bonusPercentage: updatedProduct.bonusPercentage,
+        status: updatedProduct.status,
+      },
+      quantityChange: qtyDiff,
+      priceChange: priceDiff,
+    });
+  } catch (err) {
+    console.error('Error logging UPDATED product history:', err);
+  }
 
   return {
     ...updatedProduct,
@@ -865,6 +970,19 @@ async remove(id: number, userId: number) {
         quantity: 0,
       },
     });
+
+    try {
+      await this.historyService.createLog({
+        productId: id,
+        actionType: 'DELETED',
+        performedById: userId,
+        description: `Tovar o'chirildi (Soft Delete): "${product.name}"${product.model ? ` (${product.model})` : ''}. Oldingi qoldiq: ${product.quantity} dona.`,
+        oldValues: { name: product.name, model: product.model, quantity: product.quantity, price: product.price },
+        quantityChange: -product.quantity,
+      });
+    } catch (err) {
+      console.error('Error logging DELETED product history:', err);
+    }
 
     return deletedProduct;
   });

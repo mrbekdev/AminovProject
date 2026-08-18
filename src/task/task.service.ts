@@ -54,7 +54,15 @@ export class TaskService {
         uydanAmount,
       },
       include: {
-        transaction: { include: { customer: true, items: true, payments: true, soldBy: true } },
+        transaction: {
+          include: {
+            customer: true,
+            items: { include: { product: true } },
+            bonusProducts: { include: { product: true } },
+            payments: true,
+            soldBy: true
+          }
+        },
         auditor: true,
         uydanCollectedBy: true,
       },
@@ -103,6 +111,7 @@ export class TaskService {
           include: { 
             customer: true, 
             items: { include: { product: true } },
+            bonusProducts: { include: { product: true } },
             payments: true,
             soldBy: true 
           } 
@@ -143,6 +152,7 @@ export class TaskService {
           include: { 
             customer: true, 
             items: { include: { product: true } },
+            bonusProducts: { include: { product: true } },
             payments: true,
             soldBy: true 
           } 
@@ -166,6 +176,7 @@ export class TaskService {
           include: { 
             customer: true, 
             items: { include: { product: true } },
+            bonusProducts: { include: { product: true } },
             payments: true,
             soldBy: true 
           } 
@@ -188,7 +199,18 @@ export class TaskService {
     const updated = await (this.prisma as any).task.update({
       where: { id: numericId },
       data: { status: 'ACCEPTED', auditorId: auditorId ?? task.auditorId ?? null },
-      include: { transaction: true, auditor: true },
+      include: {
+        transaction: {
+          include: {
+            customer: true,
+            items: { include: { product: true } },
+            bonusProducts: { include: { product: true } },
+            payments: true,
+            soldBy: true
+          }
+        },
+        auditor: true
+      },
     });
     try { this.gateway.emitUpdated({ type: 'accepted', id: updated.id }); } catch {}
     return updated;
@@ -204,7 +226,18 @@ export class TaskService {
     const delivered = await (this.prisma as any).task.update({
       where: { id: numericId },
       data: { status: 'DELIVERED' },
-      include: { transaction: true, auditor: true },
+      include: {
+        transaction: {
+          include: {
+            customer: true,
+            items: { include: { product: true } },
+            bonusProducts: { include: { product: true } },
+            payments: true,
+            soldBy: true
+          }
+        },
+        auditor: true
+      },
     });
     try { this.gateway.emitUpdated({ type: 'delivered', id: delivered.id }); } catch {}
     return delivered;
@@ -220,7 +253,18 @@ export class TaskService {
     const canceled = await (this.prisma as any).task.update({
       where: { id: Number(id) },
       data: { status: 'PENDING', auditorId: null },
-      include: { transaction: { include: { customer: true, items: true } }, auditor: true },
+      include: {
+        transaction: {
+          include: {
+            customer: true,
+            items: { include: { product: true } },
+            bonusProducts: { include: { product: true } },
+            payments: true,
+            soldBy: true
+          }
+        },
+        auditor: true
+      },
     });
     try { this.gateway.emitUpdated({ type: 'canceled', id: canceled.id }); } catch {}
     return canceled;
@@ -272,7 +316,15 @@ export class TaskService {
           uydanCollectNote: note ? String(note).trim() : null
         },
         include: {
-          transaction: { include: { customer: true, items: { include: { product: true } }, payments: true, soldBy: true } },
+          transaction: {
+            include: {
+              customer: true,
+              items: { include: { product: true } },
+              bonusProducts: { include: { product: true } },
+              payments: true,
+              soldBy: true
+            }
+          },
           auditor: true,
           uydanCollectedBy: true
         }
@@ -293,7 +345,15 @@ export class TaskService {
           uydanCollectNote: legacyNote
         },
         include: {
-          transaction: { include: { customer: true, items: { include: { product: true } }, payments: true, soldBy: true } },
+          transaction: {
+            include: {
+              customer: true,
+              items: { include: { product: true } },
+              bonusProducts: { include: { product: true } },
+              payments: true,
+              soldBy: true
+            }
+          },
           auditor: true,
           uydanCollectedBy: true
         }

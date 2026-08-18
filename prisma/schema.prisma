@@ -221,6 +221,7 @@ model User {
   incomingStockAuditLogs            IncomingStockAuditLog[]        @relation("UserIncomingAuditLogs")
   notifications                     Notification[]                 @relation("UserNotifications")
   sellerTargets                     SellerTarget[]
+  productHistories                  ProductHistory[]               @relation("ProductHistoryPerformedBy")
 
   @@index([phone])
   @@index([branchId])
@@ -323,6 +324,7 @@ model Product {
   ProductTransfer   ProductTransfer[]
   bonusProducts     TransactionBonusProduct[]
   incomingStockItems IncomingStockItem[]       @relation("ProductIncomingItems")
+  history           ProductHistory[]
 
   @@unique([barcode, branchId], name: "barcode_branchId")
   @@index([isDeleted])
@@ -1033,3 +1035,25 @@ model DebtCashierReport {
   @@index([branchId])
   @@index([reportDate])
 }
+
+model ProductHistory {
+  id              Int      @id @default(autoincrement())
+  productId       Int
+  actionType      String   // CREATED, UPDATED, SALE, BONUS_GIFT, INCOMING_STOCK, REVIZOR_ADJUSTMENT, DELETED, etc.
+  performedById   Int?
+  performedByName String?
+  description     String   @db.Text
+  oldValues       Json?
+  newValues       Json?
+  quantityChange  Float?
+  priceChange     Float?
+  createdAt       DateTime @default(now())
+
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  performedBy User?   @relation("ProductHistoryPerformedBy", fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([actionType])
+  @@index([createdAt])
+}
+

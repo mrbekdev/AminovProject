@@ -3,10 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateIncomingStockReportDto, IncomingReportStatusDto } from './dto/create-report.dto';
 import { IncomingStockReportStatus, IncomingStockAuditAction, IncomingStockItemStatus, UserRole, TransactionType, TransactionStatus } from '@prisma/client';
 import * as XLSX from 'xlsx';
+import { ProductHistoryService } from '../product-history/product-history.service';
 
 @Injectable()
 export class IncomingStockService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly historyService: ProductHistoryService,
+  ) {}
 
   // ─── Excel File Validation & Preview ───────────────────────────────────────
   async validateExcel(file: Express.Multer.File, branchId: number) {
@@ -332,6 +336,7 @@ export class IncomingStockService {
         // Update stock only if item quantity is non-zero and not CONFIRMED (To'g'ri kelgan)
         const qty = Number(item.quantity || 0);
         if (qty !== 0 && item.status !== IncomingStockItemStatus.CONFIRMED && report.status !== IncomingStockReportStatus.CONFIRMED) {
+          const oldQty = product.quantity;
           const newQty = Math.max(0, product.quantity + qty);
           await tx.product.update({
             where: { id: item.productId },
@@ -339,6 +344,25 @@ export class IncomingStockService {
               quantity: newQty,
             },
           });
+
+          try {
+            const isIncrease = qty > 0;
+            const desc = isIncrease
+              ? `Kirim hisoboti (#${report.reportNumber || report.id}) admin tomonidan tasdiqlandi: Tovar qoldig'i +${qty} dona oshirildi (${oldQty} ➔ ${newQty} dona).`
+              : `Kamomad / Reviziya hisoboti (#${report.reportNumber || report.id}) admin tomonidan tasdiqlandi: Tovar qoldig'i ${qty} dona kamaytirildi (${oldQty} ➔ ${newQty} dona).`;
+
+            await this.historyService.createLog({
+              productId: item.productId,
+              actionType: isIncrease ? 'INCOMING_STOCK' : 'REVIZOR_ADJUSTMENT',
+              performedById: userId,
+              description: desc,
+              quantityChange: qty,
+              oldValues: { quantity: oldQty },
+              newValues: { quantity: newQty },
+            });
+          } catch (historyErr) {
+            console.error('Error logging INCOMING_STOCK product history:', historyErr);
+          }
         }
 
         transactionItemsData.push({
@@ -638,11 +662,31 @@ export class IncomingStockService {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           const qty = Number(item.quantity || 0);
           if (product && qty !== 0 && item.status !== IncomingStockItemStatus.CONFIRMED && report.status !== IncomingStockReportStatus.CONFIRMED) {
+            const oldQty = product.quantity;
             const newQty = Math.max(0, product.quantity + qty);
             await tx.product.update({
               where: { id: item.productId },
               data: { quantity: newQty },
             });
+
+            try {
+              const isIncrease = qty > 0;
+              const desc = isIncrease
+                ? `Kirim hisoboti (#${report.reportNumber || report.id}) avto-tasdiqlandi: Tovar qoldig'i +${qty} dona oshirildi (${oldQty} ➔ ${newQty} dona).`
+                : `Kamomad / Reviziya hisoboti (#${report.reportNumber || report.id}) avto-tasdiqlandi: Tovar qoldig'i ${qty} dona kamaytirildi (${oldQty} ➔ ${newQty} dona).`;
+
+              await this.historyService.createLog({
+                productId: item.productId,
+                actionType: isIncrease ? 'INCOMING_STOCK' : 'REVIZOR_ADJUSTMENT',
+                performedById: userId,
+                description: desc,
+                quantityChange: qty,
+                oldValues: { quantity: oldQty },
+                newValues: { quantity: newQty },
+              });
+            } catch (historyErr) {
+              console.error('Error logging INCOMING_STOCK auto-approve history:', historyErr);
+            }
           }
           transactionItemsData.push({
             productId: item.productId,

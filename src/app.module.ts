@@ -32,6 +32,7 @@ import { CashReconciliationModule } from './cash-reconciliation/cash-reconciliat
 import { IncomingStockModule } from './incoming-stock/incoming-stock.module';
 import { DebtCashierReportModule } from './debt-cashier-report/debt-cashier-report.module';
 import { SystemSettingModule } from './system-setting/system-setting.module';
+import { ProductHistoryModule } from './product-history/product-history.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { SystemSettingModule } from './system-setting/system-setting.module';
     CashReconciliationModule,
     IncomingStockModule,
     DebtCashierReportModule,
+    ProductHistoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
