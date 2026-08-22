@@ -222,6 +222,7 @@ model User {
   notifications                     Notification[]                 @relation("UserNotifications")
   sellerTargets                     SellerTarget[]
   productHistories                  ProductHistory[]               @relation("ProductHistoryPerformedBy")
+  transactionNotes                  TransactionNote[]
 
   @@index([phone])
   @@index([branchId])
@@ -444,6 +445,7 @@ model Transaction {
   // Per-transaction payment breakdown (cash/card/terminal for simple sales)
   payments         TransactionPayment[]
   driverRatings    DriverRating[]
+  notes            TransactionNote[]
 
   @@index([customerId])
   @@index([userId])
@@ -1054,6 +1056,21 @@ model ProductHistory {
 
   @@index([productId])
   @@index([actionType])
+  @@index([createdAt])
+}
+
+model TransactionNote {
+  id            Int         @id @default(autoincrement())
+  transactionId Int
+  userId        Int?
+  note          String      @db.Text
+  createdAt     DateTime    @default(now())
+
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([transactionId])
+  @@index([userId])
   @@index([createdAt])
 }
 

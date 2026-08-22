@@ -1075,6 +1075,20 @@ export class TransactionService {
             },
           },
         },
+        notes: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                username: true,
+                role: true,
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' }
+        },
       }
     });
 
@@ -3271,5 +3285,48 @@ export class TransactionService {
     XLSX.utils.book_append_sheet(wb, ws, 'Kredit mijozlari');
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     return buffer;
+  }
+
+  async addTransactionNote(transactionId: number, note: string, userId?: number) {
+    if (!transactionId || !note || !note.trim()) {
+      throw new BadRequestException('Transaction ID and note text are required');
+    }
+
+    return this.prisma.transactionNote.create({
+      data: {
+        transactionId: Number(transactionId),
+        note: note.trim(),
+        userId: userId ? Number(userId) : null,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            role: true,
+          }
+        }
+      }
+    });
+  }
+
+  async getTransactionNotes(transactionId: number) {
+    return this.prisma.transactionNote.findMany({
+      where: { transactionId: Number(transactionId) },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            role: true,
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 }

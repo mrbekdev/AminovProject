@@ -254,4 +254,26 @@ export class TransactionController {
   rejectTransfer(@Param('id') id: string) {
     return this.transactionService.rejectTransfer(+id);
   }
+
+  @Post(':id/notes')
+  addNote(
+    @Param('id') id: string,
+    @Body() body: { note: string; userId?: number },
+    @CurrentUser() user: any
+  ) {
+    return this.transactionService.addTransactionNote(+id, body.note, body.userId || user?.id);
+  }
+
+  @Get(':id/notes')
+  getNotes(@Param('id') id: string) {
+    return this.transactionService.getTransactionNotes(+id);
+  }
+
+  @Post('notes/create')
+  createNote(
+    @Body() body: { transactionId: number; note: string; userId?: number },
+    @CurrentUser() user: any
+  ) {
+    return this.transactionService.addTransactionNote(body.transactionId, body.note, body.userId || user?.id);
+  }
 }
