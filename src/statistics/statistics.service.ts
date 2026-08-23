@@ -227,52 +227,38 @@ export class StatisticsService {
     }
 
     // 3. Query Top Employee (Топовой ходим)
-    const employeeSales = await this.prisma.transaction.groupBy({
-      by: ['soldByUserId'],
+    // 3. Query Top Sellers (топовой сотувчилар - ALL active users with role MARKETING)
+    const marketingSellers = await this.prisma.user.findMany({
       where: {
-        ...transactionWhere,
-        type: TransactionType.SALE,
-        soldByUserId: { not: null },
+        role: UserRole.MARKETING,
+        status: { not: UserStatus.DELETED },
+        ...(branchId ? { branchId } : {}),
       },
-      _sum: {
-        finalTotal: true,
-        extraProfit: true,
-      },
-      _count: {
-        id: true,
-      },
-      orderBy: {
-        _sum: {
-          finalTotal: 'desc',
-        },
-      },
-      take: 10,
-    });
-
-    const employeeIds = employeeSales.map(es => es.soldByUserId).filter((id): id is number => id !== null);
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: employeeIds } },
       select: {
         id: true,
         firstName: true,
         lastName: true,
         username: true,
         phone: true,
+        status: true,
       },
+      orderBy: { id: 'asc' },
     });
 
-    // Fetch transactions for the top employees within date range (and optionally branchId)
-    // exactly like getUserReport (checking both soldByUserId and userId)
-    const employeeTransactions = await this.prisma.transaction.findMany({
+    const sellerIds = marketingSellers.map((s) => s.id);
+
+    // Fetch transactions for all marketing sellers within date range
+    const sellerTransactions = await this.prisma.transaction.findMany({
       where: {
         OR: [
-          { soldByUserId: { in: employeeIds } },
-          { userId: { in: employeeIds } },
+          { soldByUserId: { in: sellerIds } },
+          { userId: { in: sellerIds } },
         ],
         createdAt: {
           gte: start,
           lte: end,
         },
+        type: TransactionType.SALE,
         ...(branchId ? {
           AND: [
             {
@@ -289,15 +275,15 @@ export class StatisticsService {
         soldByUserId: true,
         userId: true,
         finalTotal: true,
+        total: true,
         extraProfit: true,
       },
     });
 
-    // Fetch bonuses (KPI) for the top employees within date range (and branchId if set)
-    // exactly like getUserReport
-    const employeeBonuses = await this.prisma.bonus.findMany({
+    // Fetch bonuses (KPI) for all marketing sellers within date range
+    const sellerBonuses = await this.prisma.bonus.findMany({
       where: {
-        userId: { in: employeeIds },
+        userId: { in: sellerIds },
         createdAt: {
           gte: start,
           lte: end,
@@ -311,22 +297,22 @@ export class StatisticsService {
       },
     });
 
-    const topEmployees = employeeSales.map(es => {
-      const uId = es.soldByUserId as number;
-      const user = users.find(u => u.id === uId);
-      const name = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Unknown';
-      
-      // Filter transactions for this specific employee to compute salesCount
-      const userTxs = employeeTransactions.filter(tx => tx.soldByUserId === uId || tx.userId === uId);
+    const topEmployees = marketingSellers.map((seller) => {
+      const uId = seller.id;
+      const name = `${seller.firstName || ''} ${seller.lastName || ''}`.trim() || seller.username;
+
+      // Filter transactions for this seller
+      const userTxs = sellerTransactions.filter((tx) => tx.soldByUserId === uId || (!tx.soldByUserId && tx.userId === uId));
       const salesCount = userTxs.length;
 
-      // Filter bonuses for this specific employee
-      const userBonuses = employeeBonuses.filter(b => b.userId === uId);
+      // Filter bonuses for this seller
+      const userBonuses = sellerBonuses.filter((b) => b.userId === uId);
       const totalBonuses = userBonuses.reduce((sum, b) => sum + (b.amount || 0), 0);
 
-      // Parse Sotish narxi and Sof ortiqcha from bonuses to compute totalSales and totalProfit
+      // Calculate total sales volume and net profit
       let totalSales = 0;
       let totalProfit = 0;
+
       for (const b of userBonuses) {
         if (b.description) {
           const matchSales = b.description.match(/Sotish narxi:\s*([\d,.-]+)/i);
@@ -342,11 +328,18 @@ export class StatisticsService {
         }
       }
 
+      if (totalSales === 0 && userTxs.length > 0) {
+        totalSales = userTxs.reduce((sum, tx) => sum + Number(tx.finalTotal || tx.total || 0), 0);
+      }
+      if (totalProfit === 0 && userTxs.length > 0) {
+        totalProfit = userTxs.reduce((sum, tx) => sum + Number(tx.extraProfit || 0), 0);
+      }
+
       return {
         userId: uId,
         fullName: name,
-        username: user?.username || '',
-        phone: user?.phone || '',
+        username: seller.username || '',
+        phone: seller.phone || '',
         salesVolume: totalSales,
         salesCount: salesCount,
         kpi: totalBonuses,
@@ -354,8 +347,7 @@ export class StatisticsService {
       };
     });
 
-    // Sort by salesVolume descending to ensure they are ranked correctly based on the new logic
-    topEmployees.sort((a, b) => b.salesVolume - a.salesVolume);
+    topEmployees.sort((a, b) => (b.salesVolume || 0) - (a.salesVolume || 0));
 
     // 4. Query Top Product (топовой тавар)
     const productSales = await this.prisma.transactionItem.groupBy({
@@ -546,13 +538,14 @@ export class StatisticsService {
 
     const driverIds = driverDeliveries.map(dd => dd.auditorId).filter((id): id is number => id !== null);
     const drivers = await this.prisma.user.findMany({
-      where: { id: { in: driverIds } },
+      where: { id: { in: driverIds }, status: { not: UserStatus.DELETED } },
       select: {
         id: true,
         firstName: true,
         lastName: true,
         username: true,
         phone: true,
+        status: true,
       },
     });
 
@@ -564,7 +557,10 @@ export class StatisticsService {
 
     const topDrivers = driverDeliveries.map(dd => {
       const driver = drivers.find(d => d.id === dd.auditorId);
-      const name = driver ? `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || driver.username : 'Unknown';
+      if (!driver || driver.status === UserStatus.DELETED || driver.username?.includes('_deleted_')) {
+        return null;
+      }
+      const name = `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || driver.username;
       const ratingInfo = driverRatings.find(dr => dr.driverId === dd.auditorId);
       return {
         driverId: dd.auditorId,
@@ -575,7 +571,7 @@ export class StatisticsService {
         averageRating: ratingInfo?._avg.rating ? Number(ratingInfo._avg.rating.toFixed(1)) : 5.0,
         ratingCount: ratingInfo?._count.id || 0,
       };
-    });
+    }).filter(Boolean);
 
     // --- NEW DETAILED DELIVERY STATS ---
     const tasks = await this.prisma.task.findMany({
@@ -702,13 +698,16 @@ export class StatisticsService {
     });
 
     for (const task of allCompletedTasks) {
+      if (!task.auditor || task.auditor.status === UserStatus.DELETED || task.auditor.username?.includes('_deleted_')) {
+        continue;
+      }
       const durationMs = task.updatedAt.getTime() - task.createdAt.getTime();
       const durationMin = Math.max(0, durationMs / (1000 * 60));
 
       if (!auditorSpeedMap.has(task.auditorId as number)) {
         auditorSpeedMap.set(task.auditorId as number, {
           id: task.auditorId as number,
-          fullName: task.auditor ? `${task.auditor.firstName || ''} ${task.auditor.lastName || ''}`.trim() || task.auditor.username : 'Unknown',
+          fullName: `${task.auditor.firstName || ''} ${task.auditor.lastName || ''}`.trim() || task.auditor.username,
           totalMinutes: 0,
           count: 0,
         });
@@ -745,6 +744,9 @@ export class StatisticsService {
     });
 
     for (const task of allAuditorTasks) {
+      if (!task.auditor || task.auditor.status === UserStatus.DELETED || task.auditor.username?.includes('_deleted_')) {
+        continue;
+      }
       const dateStr = task.createdAt.toISOString().split('T')[0];
       const itemsCount = task.status === 'DELIVERED' && task.transaction
         ? task.transaction.items.reduce((sum, item) => sum + (item.quantity || 0), 0)

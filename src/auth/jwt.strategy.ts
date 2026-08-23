@@ -14,12 +14,23 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     async validate(payload: any) {
-        if (payload.role === 'MARKETING') {
-            const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
-            if (!user) {
-                throw new UnauthorizedException('User not found');
+        const user = await this.prisma.user.findUnique({
+            where: { id: payload.sub },
+            include: {
+                branch: true,
+                allowedBranches: {
+                    include: {
+                        branch: true
+                    }
+                }
             }
+        });
 
+        if (!user || user.status === 'DELETED') {
+            throw new UnauthorizedException('User not found');
+        }
+
+        if (user.role === 'MARKETING') {
             const now = new Date();
             const currentTime = now.getHours() * 60 + now.getMinutes();
 
@@ -35,6 +46,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
                 }
             }
         }
-        return { userId: payload.sub, username: payload.username, role: payload.role };
+
+        return {
+            id: user.id,
+            userId: user.id,
+            username: user.username,
+            role: user.role,
+            branchId: user.branchId,
+            branch: user.branch,
+            allowedBranches: user.allowedBranches,
+        };
     }
-} 
+}

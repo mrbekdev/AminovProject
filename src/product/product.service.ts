@@ -144,7 +144,15 @@ async create(
     };
 
     if (branchId) {
-      where.branchId = Number(branchId);
+      const bStr = String(branchId);
+      if (bStr.includes(',')) {
+        const ids = bStr.split(',').map(n => Number(n.trim())).filter(n => !isNaN(n));
+        if (ids.length > 0) {
+          where.branchId = { in: ids };
+        }
+      } else {
+        where.branchId = Number(branchId);
+      }
     }
 
     if (categoryId) {

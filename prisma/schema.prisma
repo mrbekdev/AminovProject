@@ -111,6 +111,7 @@ enum UserRole {
   HISOBCHI
   REVIZOR
   DEBTCASHIER
+  NAZORATCHI
 }
 
 enum BranchType {

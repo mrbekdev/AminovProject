@@ -32,9 +32,18 @@ export class UserService {
       updatedAt: new Date(),
     };
 
-    // Check for existing users by username
+    // Check for existing users by username (case-insensitive)
     if (userData.username) {
-      const existingUsers = await this.prisma.user.findMany({ where: { username: userData.username } });
+      const cleanUsername = userData.username.trim();
+      const existingUsers = await this.prisma.user.findMany({
+        where: {
+          username: {
+            equals: cleanUsername,
+            mode: 'insensitive',
+          },
+        },
+      });
+
       if (existingUsers.length > 0) {
         // If any existing user is ACTIVE -> conflict
         const activeUser = existingUsers.find(u => u.status === 'ACTIVE');
@@ -42,15 +51,17 @@ export class UserService {
           throw new ConflictException('Username already exists and is ACTIVE');
         }
 
-        // All matches are DELETED. Suffix them to free up the unique identifiers.
+        // All matches are DELETED or INACTIVE. Suffix them to free up unique identifier constraints.
         for (const deletedUser of existingUsers) {
           const timestamp = Date.now();
-          await this.prisma.user.update({
-            where: { id: deletedUser.id },
-            data: {
-              username: `${deletedUser.username}_deleted_${timestamp}_${deletedUser.id}`,
-            }
-          });
+          if (!deletedUser.username.includes('_deleted_')) {
+            await this.prisma.user.update({
+              where: { id: deletedUser.id },
+              data: {
+                username: `${deletedUser.username}_deleted_${timestamp}_${deletedUser.id}`,
+              },
+            });
+          }
         }
       }
     }
@@ -195,18 +206,47 @@ export class UserService {
     if (userData.branchId !== undefined && userData.role !== 'MARKETING') updateData.branchId = userData.branchId;
     if (data.password) updateData.password = data.password;
 
-    // Check for conflicts if username is changing
     if (userData.username) {
+      const cleanUsername = userData.username.trim();
       const conflicts = await this.prisma.user.findMany({
         where: {
-          username: userData.username,
+          username: {
+            equals: cleanUsername,
+            mode: 'insensitive',
+          },
           id: { not: id },
-          status: 'ACTIVE'
-        }
+        },
       });
 
       if (conflicts.length > 0) {
-        throw new ConflictException('Username already taken by another ACTIVE user');
+        const activeConflict = conflicts.find(u => u.status === 'ACTIVE');
+        if (activeConflict) {
+          throw new ConflictException('Username already taken by another ACTIVE user');
+        }
+
+        // Rename non-active matching users to free up constraint
+        for (const oldUser of conflicts) {
+          const timestamp = Date.now();
+          if (!oldUser.username.includes('_deleted_')) {
+            await this.prisma.user.update({
+              where: { id: oldUser.id },
+              data: {
+                username: `${oldUser.username}_deleted_${timestamp}_${oldUser.id}`,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    if (userData.isActive === false) {
+      const targetUser = await this.prisma.user.findUnique({ where: { id } });
+      if (targetUser && !targetUser.username.includes('_deleted_')) {
+        const timestamp = Date.now();
+        updateData.username = `${targetUser.username}_deleted_${timestamp}_${id}`;
+        if (targetUser.phone) {
+          updateData.phone = `${targetUser.phone}_deleted_${timestamp}_${id}`;
+        }
       }
     }
 
