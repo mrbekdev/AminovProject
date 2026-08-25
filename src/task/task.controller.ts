@@ -20,10 +20,19 @@ export class TaskController {
     @Query('auditorId') auditorId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const aid = auditorId != null ? Number(auditorId) : undefined;
-    console.log('TaskController.findAll query params:', { status, auditorId, aid, startDate, endDate });
-    return this.taskService.findAll(status as any, aid, startDate, endDate);
+    console.log('TaskController.findAll query params:', { status, auditorId, aid, startDate, endDate, page, limit });
+    return this.taskService.findAll(
+      status as any,
+      aid,
+      startDate,
+      endDate,
+      page ? Number(page) : undefined,
+      limit ? Number(limit) : undefined
+    );
   }
 
   @Get('auditor/:auditorId')

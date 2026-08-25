@@ -699,36 +699,42 @@ export class TransactionService {
       }
     }
 
-    if (startDate || endDate) {
+    if ((startDate && String(startDate).trim() !== '') || (endDate && String(endDate).trim() !== '')) {
       const dateCond: any = {};
-      if (startDate) {
+      if (startDate && String(startDate).trim() !== '') {
         const start = new Date(startDate);
-        const isUTC = String(startDate).endsWith('Z') || String(startDate).includes('+');
-        if (!isUTC) {
-          start.setUTCHours(start.getUTCHours() - 5);
+        if (!isNaN(start.getTime())) {
+          const isUTC = String(startDate).endsWith('Z') || String(startDate).includes('+');
+          if (!isUTC) {
+            start.setUTCHours(start.getUTCHours() - 5);
+          }
+          dateCond.gte = start;
         }
-        dateCond.gte = start;
       }
-      if (endDate) {
+      if (endDate && String(endDate).trim() !== '') {
         const end = new Date(endDate);
-        const isUTC = String(endDate).endsWith('Z') || String(endDate).includes('+');
-        if (!isUTC) {
-          end.setUTCDate(end.getUTCDate() + 1);
-          end.setUTCHours(end.getUTCHours() - 5);
-          end.setTime(end.getTime() - 1);
+        if (!isNaN(end.getTime())) {
+          const isUTC = String(endDate).endsWith('Z') || String(endDate).includes('+');
+          if (!isUTC) {
+            end.setUTCDate(end.getUTCDate() + 1);
+            end.setUTCHours(end.getUTCHours() - 5);
+            end.setTime(end.getTime() - 1);
+          }
+          dateCond.lte = end;
         }
-        dateCond.lte = end;
       }
 
-      if (searchingById) {
-        andConditions.push({
-          OR: [
-            { id: searchingById },
-            { createdAt: dateCond }
-          ]
-        });
-      } else {
-        where.createdAt = dateCond;
+      if (Object.keys(dateCond).length > 0) {
+        if (searchingById) {
+          andConditions.push({
+            OR: [
+              { id: searchingById },
+              { createdAt: dateCond }
+            ]
+          });
+        } else {
+          where.createdAt = dateCond;
+        }
       }
     }
 
@@ -884,6 +890,7 @@ export class TransactionService {
               },
             },
           },
+        },
         defectiveLogs: true,
       },
       orderBy: { createdAt: 'desc' },

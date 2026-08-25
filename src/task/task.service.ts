@@ -2,6 +2,38 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { TaskGateway } from './task.gateway';
 
+const TASK_INCLUDE = {
+  transaction: {
+    include: {
+      customer: true,
+      items: {
+        include: {
+          product: {
+            include: {
+              branch: true,
+            },
+          },
+        },
+      },
+      bonusProducts: {
+        include: {
+          product: {
+            include: {
+              branch: true,
+            },
+          },
+        },
+      },
+      payments: true,
+      soldBy: true,
+      fromBranch: true,
+      toBranch: true,
+    },
+  },
+  auditor: true,
+  uydanCollectedBy: true,
+};
+
 @Injectable()
 export class TaskService {
   constructor(private prisma: PrismaService, private readonly gateway: TaskGateway) {}
@@ -19,15 +51,19 @@ export class TaskService {
     let start: Date | undefined;
     let end: Date | undefined;
 
-    if (startDate) {
+    if (startDate && String(startDate).trim() !== '') {
       start = new Date(startDate);
-      if (!startDate.endsWith('Z') && !startDate.includes('+')) {
+      if (isNaN(start.getTime())) {
+        start = undefined;
+      } else if (!startDate.endsWith('Z') && !startDate.includes('+')) {
         start.setUTCHours(start.getUTCHours() - 5);
       }
     }
-    if (endDate) {
+    if (endDate && String(endDate).trim() !== '') {
       end = new Date(endDate);
-      if (!endDate.endsWith('Z') && !endDate.includes('+')) {
+      if (isNaN(end.getTime())) {
+        end = undefined;
+      } else if (!endDate.endsWith('Z') && !endDate.includes('+')) {
         end.setUTCDate(end.getUTCDate() + 1);
         end.setUTCHours(end.getUTCHours() - 5);
         end.setTime(end.getTime() - 1);
@@ -53,25 +89,20 @@ export class TaskService {
         status: data.status ?? 'PENDING',
         uydanAmount,
       },
-      include: {
-        transaction: {
-          include: {
-            customer: true,
-            items: { include: { product: true } },
-            bonusProducts: { include: { product: true } },
-            payments: true,
-            soldBy: true
-          }
-        },
-        auditor: true,
-        uydanCollectedBy: true,
-      },
+      include: TASK_INCLUDE,
     });
     try { this.gateway.emitUpdated({ type: 'created', id: created.id }); } catch {}
     return created;
   }
 
-  async findAll(status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED', auditorId?: number, startDate?: string, endDate?: string) {
+  async findAll(
+    status?: 'PENDING' | 'ACCEPTED' | 'DELIVERED',
+    auditorId?: number,
+    startDate?: string,
+    endDate?: string,
+    page?: number,
+    limit?: number,
+  ) {
     let where: any;
 
     if (auditorId != null && !status && !startDate && !endDate) {
@@ -100,25 +131,18 @@ export class TaskService {
       }
     }
 
-    const take = (status === 'DELIVERED' && !startDate && !endDate) ? 50 : undefined;
+    const parsedPage = page && !isNaN(page) && page > 0 ? page : 1;
+    const parsedLimit = limit && !isNaN(limit) && limit > 0 ? limit : undefined;
+
+    const take = parsedLimit ? parsedLimit : ((status === 'DELIVERED' && !startDate && !endDate) ? 50 : undefined);
+    const skip = parsedLimit ? (parsedPage - 1) * parsedLimit : undefined;
 
     console.log('TaskService.findAll Prisma where:', JSON.stringify(where, null, 2));
     const tasks = await (this.prisma as any).task.findMany({
       where,
       take,
-      include: { 
-        transaction: { 
-          include: { 
-            customer: true, 
-            items: { include: { product: true } },
-            bonusProducts: { include: { product: true } },
-            payments: true,
-            soldBy: true 
-          } 
-        }, 
-        auditor: true,
-        uydanCollectedBy: true,
-      },
+      skip,
+      include: TASK_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
     console.log(`TaskService.findAll found ${tasks.length} tasks.`);
@@ -147,19 +171,7 @@ export class TaskService {
     return (this.prisma as any).task.findMany({
       where,
       take,
-      include: { 
-        transaction: { 
-          include: { 
-            customer: true, 
-            items: { include: { product: true } },
-            bonusProducts: { include: { product: true } },
-            payments: true,
-            soldBy: true 
-          } 
-        }, 
-        auditor: true,
-        uydanCollectedBy: true,
-      },
+      include: TASK_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -171,19 +183,7 @@ export class TaskService {
     }
     const task = await (this.prisma as any).task.findUnique({ 
       where: { id: numericId }, 
-      include: { 
-        transaction: { 
-          include: { 
-            customer: true, 
-            items: { include: { product: true } },
-            bonusProducts: { include: { product: true } },
-            payments: true,
-            soldBy: true 
-          } 
-        }, 
-        auditor: true,
-        uydanCollectedBy: true,
-      } 
+      include: TASK_INCLUDE
     });
     if (!task) throw new NotFoundException('Task not found');
     return task;
@@ -199,18 +199,7 @@ export class TaskService {
     const updated = await (this.prisma as any).task.update({
       where: { id: numericId },
       data: { status: 'ACCEPTED', auditorId: auditorId ?? task.auditorId ?? null },
-      include: {
-        transaction: {
-          include: {
-            customer: true,
-            items: { include: { product: true } },
-            bonusProducts: { include: { product: true } },
-            payments: true,
-            soldBy: true
-          }
-        },
-        auditor: true
-      },
+      include: TASK_INCLUDE,
     });
     try { this.gateway.emitUpdated({ type: 'accepted', id: updated.id }); } catch {}
     return updated;
@@ -226,18 +215,7 @@ export class TaskService {
     const delivered = await (this.prisma as any).task.update({
       where: { id: numericId },
       data: { status: 'DELIVERED' },
-      include: {
-        transaction: {
-          include: {
-            customer: true,
-            items: { include: { product: true } },
-            bonusProducts: { include: { product: true } },
-            payments: true,
-            soldBy: true
-          }
-        },
-        auditor: true
-      },
+      include: TASK_INCLUDE,
     });
     try { this.gateway.emitUpdated({ type: 'delivered', id: delivered.id }); } catch {}
     return delivered;
@@ -253,18 +231,7 @@ export class TaskService {
     const canceled = await (this.prisma as any).task.update({
       where: { id: Number(id) },
       data: { status: 'PENDING', auditorId: null },
-      include: {
-        transaction: {
-          include: {
-            customer: true,
-            items: { include: { product: true } },
-            bonusProducts: { include: { product: true } },
-            payments: true,
-            soldBy: true
-          }
-        },
-        auditor: true
-      },
+      include: TASK_INCLUDE,
     });
     try { this.gateway.emitUpdated({ type: 'canceled', id: canceled.id }); } catch {}
     return canceled;
@@ -273,7 +240,7 @@ export class TaskService {
   async collectUydan(id: number, userId: number, amount: number, note?: string) {
     const task = await (this.prisma as any).task.findUnique({
       where: { id: Number(id) },
-      include: { transaction: { include: { payments: true } }, auditor: true }
+      include: TASK_INCLUDE
     });
     if (!task) throw new NotFoundException('Task not found');
 
@@ -315,23 +282,9 @@ export class TaskService {
           uydanCollectedById: Number(userId),
           uydanCollectNote: note ? String(note).trim() : null
         },
-        include: {
-          transaction: {
-            include: {
-              customer: true,
-              items: { include: { product: true } },
-              bonusProducts: { include: { product: true } },
-              payments: true,
-              soldBy: true
-            }
-          },
-          auditor: true,
-          uydanCollectedBy: true
-        }
+        include: TASK_INCLUDE
       });
     } catch (e: any) {
-      // Backward compatibility: if Prisma client/schema is not regenerated yet
-      // and `uydanCollectedAmount` column is unknown, still mark as collected.
       const msg = String(e?.message || '');
       if (!msg.includes('uydanCollectedAmount')) throw e;
       const noteText = note ? String(note).trim() : '';
@@ -344,19 +297,7 @@ export class TaskService {
           uydanCollectedById: Number(userId),
           uydanCollectNote: legacyNote
         },
-        include: {
-          transaction: {
-            include: {
-              customer: true,
-              items: { include: { product: true } },
-              bonusProducts: { include: { product: true } },
-              payments: true,
-              soldBy: true
-            }
-          },
-          auditor: true,
-          uydanCollectedBy: true
-        }
+        include: TASK_INCLUDE
       });
     }
     try { this.gateway.emitUpdated({ type: 'uydan_collected', id: updated.id }); } catch {}
@@ -383,7 +324,6 @@ export class TaskService {
       ];
     }
 
-    // 1. Group tasks by auditorId and status
     const taskGroups = await (this.prisma as any).task.groupBy({
       by: ['auditorId', 'status'],
       where: {
@@ -395,7 +335,6 @@ export class TaskService {
       },
     });
 
-    // 2. Count total pending tasks for the date range
     const pendingCount = await (this.prisma as any).task.count({
       where: {
         ...taskWhere,
@@ -403,7 +342,6 @@ export class TaskService {
       },
     });
 
-    // 3. Fetch all AUDITOR role users (couriers / delivery drivers)
     const auditors = await this.prisma.user.findMany({
       where: {
         role: 'AUDITOR',
@@ -416,7 +354,6 @@ export class TaskService {
       },
     });
 
-    // 4. Group driver ratings by driverId
     let opRatingMap = new Map<number, { avg: number; count: number }>();
     try {
       const operatorRatings = await (this.prisma as any).driverRating.groupBy({
@@ -437,7 +374,6 @@ export class TaskService {
       console.warn('Could not group driver ratings:', e);
     }
 
-    // Process per auditor statistics
     const statsMap = new Map<number, { assigned: number; completed: number }>();
     taskGroups.forEach((g: any) => {
       const aid = Number(g.auditorId);
@@ -458,7 +394,6 @@ export class TaskService {
       const total = assigned + completed;
       const successRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-      // Score: completed * 2 + successRate * 0.5 + assigned * 0.25
       const score = completed * 2 + successRate * 0.5 + assigned * 0.25;
 
       const fullName = [aud.firstName, aud.lastName].filter(Boolean).join(' ');
@@ -480,7 +415,6 @@ export class TaskService {
       });
     });
 
-    // Sort leaderboard by score desc, completed desc, successRate desc
     leaderboard.sort((a, b) => b.score - a.score || b.completed - a.completed || b.successRate - a.successRate);
 
     const topScore = leaderboard[0]?.score || 0;
@@ -495,7 +429,6 @@ export class TaskService {
       item.rating = Math.round(finalRating * 10) / 10;
     });
 
-    // Current driver stats
     const myStat = leaderboard.find((x) => Number(x.auditorId) === Number(currentAuditorId)) || {
       auditorId: currentAuditorId,
       name: 'Siz',
