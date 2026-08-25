@@ -88,7 +88,7 @@ export class StatisticsService {
     };
 
     // 2. Query Cash Register (Kassa)
-    // Fetch all active SALE transactions with their payments breakdown
+    // Fetch all active SALE transactions with their payments breakdown and items
     const activeSales = await this.prisma.transaction.findMany({
       where: {
         ...transactionWhere,
@@ -96,8 +96,19 @@ export class StatisticsService {
       },
       include: {
         payments: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
       },
     });
+
+    const activeRate = await this.prisma.currencyExchangeRate.findFirst({
+      where: { fromCurrency: 'USD', toCurrency: 'UZS', isActive: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const currentExchangeRate = activeRate?.rate || 12600;
 
     let cashSales = 0;
     let cardSales = 0;
@@ -108,6 +119,7 @@ export class StatisticsService {
     let thirdPartySales = 0;
     let tovarSales = 0;
     let totalSales = 0;
+    let totalCostPrice = 0;
 
     const normalizePaymentType = (raw?: string | null) => {
       const t = String(raw || '').toUpperCase().trim();
@@ -126,6 +138,19 @@ export class StatisticsService {
     activeSales.forEach(t => {
       const finalTotal = t.finalTotal || t.total || 0;
       totalSales += finalTotal;
+
+      if (Array.isArray(t.items)) {
+        t.items.forEach((item: any) => {
+          const qty = Number(item.quantity || 1);
+          let unitCost = Number(item.product?.price ?? item.originalPrice ?? item.price ?? 0);
+          if (unitCost > 0) {
+            if (unitCost < 10000) {
+              unitCost = unitCost * currentExchangeRate;
+            }
+            totalCostPrice += unitCost * qty;
+          }
+        });
+      }
 
       const hasSplitPayments = Array.isArray(t.payments) && t.payments.length > 0;
 
@@ -1239,6 +1264,7 @@ export class StatisticsService {
           thirdParty: thirdPartySales,
           tovar: tovarSales,
           total: totalSales,
+          totalCostPrice: Math.round(totalCostPrice),
         },
         repayments: {
           cash: totalRepaymentsCash,

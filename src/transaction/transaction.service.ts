@@ -766,18 +766,42 @@ export class TransactionService {
         upfrontPaymentType: true,
         payments: {
           select: { method: true, amount: true }
+        },
+        items: {
+          select: { quantity: true, price: true, originalPrice: true, product: { select: { price: true } } }
         }
       }
     });
 
+    const activeRate = await this.prisma.currencyExchangeRate.findFirst({
+      where: { fromCurrency: 'USD', toCurrency: 'UZS', isActive: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const currentExchangeRate = activeRate?.rate || 12600;
+
+    let costOfSoldGoods = 0;
+
     const result = {
       cash: 0, card: 0, terminal: 0, credit: 0, installment: 0,
-      uydan: 0, thirdParty: 0, tovar: 0, totalSales: 0, count: transactions.length
+      uydan: 0, thirdParty: 0, tovar: 0, totalSales: 0, costOfSoldGoods: 0, count: transactions.length
     };
 
     transactions.forEach(t => {
       const finalTotal = Number(t.finalTotal || 0);
       result.totalSales += finalTotal;
+
+      if (Array.isArray(t.items)) {
+        t.items.forEach((item: any) => {
+          const qty = Number(item.quantity || 1);
+          let unitCost = Number(item.product?.price ?? item.originalPrice ?? item.price ?? 0);
+          if (unitCost > 0) {
+            if (unitCost < 10000) {
+              unitCost = unitCost * currentExchangeRate;
+            }
+            costOfSoldGoods += unitCost * qty;
+          }
+        });
+      }
 
       const hasPayments = Array.isArray(t.payments) && t.payments.length > 0;
       if (hasPayments) {
@@ -806,6 +830,8 @@ export class TransactionService {
         else if (norm === 'TOVAR') result.tovar += finalTotal;
       }
     });
+
+    result.costOfSoldGoods = Math.round(costOfSoldGoods);
 
     return result;
   }
@@ -858,7 +884,7 @@ export class TransactionService {
               },
             },
           },
-        },
+        defectiveLogs: true,
       },
       orderBy: { createdAt: 'desc' },
       skip: parsedLimit ? (parsedPage - 1) * parsedLimit : 0,
