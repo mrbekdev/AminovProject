@@ -430,7 +430,7 @@ export class DefectiveLogService {
         { transaction: { soldByUserId: Number(cashierId) } }
       ]
     };
-    if (query?.branchId) {
+    if (query?.branchId && query.branchId !== 'all' && query.branchId !== 'ALL' && !isNaN(parseInt(query.branchId))) {
       where.branchId = Number(query.branchId);
     }
     if (query?.actionType) {
@@ -506,7 +506,7 @@ export class DefectiveLogService {
     
     const where: any = {};
     
-    if (branchId) {
+    if (branchId && branchId !== 'all' && branchId !== 'ALL' && !isNaN(parseInt(branchId))) {
       where.branchId = parseInt(branchId);
     }
     

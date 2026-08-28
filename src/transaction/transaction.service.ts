@@ -55,6 +55,18 @@ export class TransactionService {
         if (typeof customer.address === 'string' && customer.address !== existingCustomer.address) {
           updateData.address = customer.address;
         }
+        if (customer.regionId !== undefined && customer.regionId !== existingCustomer.regionId) {
+          updateData.regionId = customer.regionId;
+        }
+        if (customer.districtId !== undefined && customer.districtId !== existingCustomer.districtId) {
+          updateData.districtId = customer.districtId;
+        }
+        if (customer.regionName !== undefined && customer.regionName !== existingCustomer.regionName) {
+          updateData.regionName = customer.regionName;
+        }
+        if (customer.districtName !== undefined && customer.districtName !== existingCustomer.districtName) {
+          updateData.districtName = customer.districtName;
+        }
         if (Object.keys(updateData).length > 0) {
           await this.prisma.customer.update({
             where: { id: existingCustomer.id },
@@ -69,6 +81,10 @@ export class TransactionService {
             passportSeries: customer.passportSeries || null,
             jshshir: customer.jshshir || null,
             address: customer.address || null,
+            regionId: customer.regionId || null,
+            districtId: customer.districtId || null,
+            regionName: customer.regionName || null,
+            districtName: customer.districtName || null,
           }
         });
         customerId = newCustomer.id;

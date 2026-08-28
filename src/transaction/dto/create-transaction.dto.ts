@@ -25,6 +25,22 @@ export class CustomerDto {
   @IsOptional()
   @IsString()
   jshshir?: string; 
+
+  @IsOptional()
+  @IsNumber()
+  regionId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  districtId?: number;
+
+  @IsOptional()
+  @IsString()
+  regionName?: string;
+
+  @IsOptional()
+  @IsString()
+  districtName?: string;
 }
 
 export class TransactionItemDto {
@@ -179,6 +195,22 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   source?: string; // Instagram, Telegram, Youtube, Tanishimdan
+
+  @IsOptional()
+  @IsNumber()
+  regionId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  districtId?: number;
+
+  @IsOptional()
+  @IsString()
+  regionName?: string;
+
+  @IsOptional()
+  @IsString()
+  districtName?: string;
 
   @IsOptional()
   @ValidateNested()
