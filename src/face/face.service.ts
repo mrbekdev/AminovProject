@@ -40,7 +40,7 @@ export class FaceService {
 
   private async callPythonAi(file: Express.Multer.File) {
     const formData = new FormData();
-    const blob = new Blob([file.buffer], { type: file.mimetype || 'image/jpeg' });
+    const blob = new Blob([new Uint8Array(file.buffer)], { type: file.mimetype || 'image/jpeg' });
     formData.append('image', blob, file.originalname || 'face.jpg');
 
     try {
