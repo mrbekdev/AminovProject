@@ -32,7 +32,9 @@ import { CashReconciliationModule } from './cash-reconciliation/cash-reconciliat
 import { IncomingStockModule } from './incoming-stock/incoming-stock.module';
 import { DebtCashierReportModule } from './debt-cashier-report/debt-cashier-report.module';
 import { SystemSettingModule } from './system-setting/system-setting.module';
+import { StoreModule } from './store/store.module';
 import { ProductHistoryModule } from './product-history/product-history.module';
+import { FaceModule } from './face/face.module';
 
 @Module({
   imports: [
@@ -42,6 +44,7 @@ import { ProductHistoryModule } from './product-history/product-history.module';
     SystemSettingModule,
     ConfigModule.forRoot({ isGlobal: true }),
     BranchModule, 
+    StoreModule,
     UserModule, 
     CategoryModule, 
     ProductModule, 
@@ -59,6 +62,7 @@ import { ProductHistoryModule } from './product-history/product-history.module';
     TransactionBonusProductModule, 
     WorkScheduleModule, 
     AttendanceModule,
+    FaceModule,
     UserBranchAccessModule,
     TaskModule,
     DailyExpenseModule,

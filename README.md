@@ -1,98 +1,171 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Production Face ID Attendance System (NestJS + Python InsightFace AI)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Ushbu loyiha **Senior Clean Architecture** tamoyillari asosida qurilgan **Production-Grade Face ID Davomat Moduli** hisoblanadi.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## 🚀 Texnologik Stak
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+* **Backend API**: NestJS (TypeScript, Multer, Prisma ORM)
+* **AI Engine Service**: Python FastAPI + **InsightFace (`buffalo_l`)** + SCRFD Face Detector + ArcFace Embedder
+* **Database**: PostgreSQL (`pgvector` support) + Prisma ORM
+* **Caching**: Redis
+* **Containerization**: Docker Compose
 
-## Project setup
+---
 
-```bash
-$ yarn install
+## 📁 Loyiha Strukturasi
+
+```
+AminovProject-main/
+├── apps/
+│   └── nest-api/                 # NestJS API Service
+├── python-ai/                    # Python FastAPI InsightFace Service
+│   ├── main.py
+│   ├── requirements.txt
+│   └── Dockerfile
+├── prisma/
+│   └── schema.prisma             # PostgreSQL schema (FaceTemplate & AttendanceDay)
+├── uploads/                      # Biometrik yuz rasmlari
+├── docker-compose.yml            # Production Multi-container orchestration
+└── Dockerfile                    # NestJS API Docker Image
 ```
 
-## Compile and run the project
+---
 
+## ⚡ Asosiy Imkoniyatlar & Xavfsizlik
+
+1. **Background / Orqa Fon Tasir Qilmaydi**:
+   - InsightFace `buffalo_l` va ArcFace neyron modellari orqa fon (devor, xona, kiyim, yoritish) piksellarini 100% inobatga olmaydi.
+   - 512-o'lchamli biometrik embedding (`512 float vector`) va yuz landmarklari orqali qaror chiqaradi.
+
+2. **Yuz Tekshiruvi Qoidalari**:
+   - `0 yuz`: `HTTP 400` -> `{"success": false, "message": "Yuz topilmadi"}`
+   - `>1 yuz`: `HTTP 400` -> `{"success": false, "message": "Faqat bitta yuz bo'lishi kerak"}`
+   - Soxta yuz (Photo attack / Liveness check failed): `HTTP 400` -> `{"success": false, "message": "Haqiqiy yuz tasdiqlanmadi"}`
+   - Noma'lum inson (Cosine Similarity < 0.65): `HTTP 400` -> `{"success": false, "message": "Bu odam tizimda mavjud emas"}`
+
+3. **Davomat Mantiqi (Attendance Rules)**:
+   - Bugun kelmagan bo'lsa -> Status: `"Keldi"`
+   - Bugun kelgan lekin ketmagan bo me bo'lsa -> Status: `"Ketdi"`
+   - Bugun kelgan va ketgan bo'lsa -> Yangi record ochilmaydi, status: `"Ketdi"`
+
+---
+
+## 🛠 O'rnatish va Ishga Tushirish (Docker Compose)
+
+### 1. Docker Compose orqali barcha servislarni ishga tushirish:
 ```bash
-# development
-$ yarn run start
-
-# watch mode
-$ yarn run start:dev
-
-# production mode
-$ yarn run start:prod
+docker-compose up --build -d
 ```
 
-## Run tests
+### 2. Mahalliy (Local) tartibda ishga tushirish:
+
+#### Python AI Service:
+```bash
+cd python-ai
+pip install -r requirements.txt
+python main.py
+```
+*(Server http://localhost:5000 manzilida ishga tushadi)*
+
+#### NestJS API Service:
+```bash
+npm install --legacy-peer-deps
+npx prisma generate
+npm run start:dev
+```
+*(Server http://localhost:4000 manzilida ishga tushadi)*
+
+---
+
+## 📡 REST API Hujjatlari & cURL Misollari
+
+### 1. Employee FaceID Ro'yxatdan o'tkazish (`POST /face/register`)
+
+Multi-part shaklda xodim uchun bir nechta rasm yuboriladi va 512-float vektorlar bazaga yoziladi:
 
 ```bash
-# unit tests
-$ yarn run test
-
-# e2e tests
-$ yarn run test:e2e
-
-# test coverage
-$ yarn run test:cov
+curl -X POST "http://localhost:4000/face/register" \
+  -F "employeeId=49" \
+  -F "images=@/path/to/photo1.jpg" \
+  -F "images=@/path/to/photo2.jpg"
 ```
 
-## Deployment
+**Javob:**
+```json
+{
+  "success": true,
+  "message": "FaceID muvaffaqiyatli ro'yxatdan o'tkazildi",
+  "registered_count": 2
+}
+```
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+---
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### 2. FaceID Verifikatsiya va Avto-Davomat (`POST /face/verify`)
 
 ```bash
-$ yarn install -g mau
-$ mau deploy
+curl -X POST "http://localhost:4000/face/verify" \
+  -F "image=@/path/to/webcam_scan.jpg"
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+**Javob (Kelganda):**
+```json
+{
+  "success": true,
+  "employee": "AZIZ ATABEKOV",
+  "status": "Keldi"
+}
+```
 
-## Resources
+**Javob (Ketganda):**
+```json
+{
+  "success": true,
+  "employee": "AZIZ ATABEKOV",
+  "status": "Ketdi"
+}
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+**Xatolik Javoblari (Strict Requirement Standard):**
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+- *Yuz aniqlanmasa:*
+  ```json
+  {
+    "success": false,
+    "message": "Yuz topilmadi"
+  }
+  ```
 
-## Support
+- *Bir nechta yuz bo'lsa:*
+  ```json
+  {
+    "success": false,
+    "message": "Faqat bitta yuz bo'lishi kerak"
+  }
+  ```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+- *Tizimda mavjud bo'lmagan shaxs (Similarity < 0.65):*
+  ```json
+  {
+    "success": false,
+    "message": "Bu odam tizimda mavjud emas"
+  }
+  ```
 
-## Stay in touch
+---
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### 3. Bugungi Davomat (`GET /attendance/today`)
 
-## License
+```bash
+curl -s "http://localhost:4000/attendance/today"
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+---
+
+### 4. Xodimning Davomat Tarixi (`GET /attendance/history/:employeeId`)
+
+```bash
+curl -s "http://localhost:4000/attendance/history/49"
+```

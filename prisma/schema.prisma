@@ -24,26 +24,33 @@ enum AttendanceStatus {
 }
 
 model AttendanceDay {
-  id           Int               @id @default(autoincrement())
-  userId       Int
-  branchId     Int?
-  date         DateTime
-  checkInAt    DateTime?
-  checkOutAt   DateTime?
-  totalMinutes Int?              @default(0)
-  status       AttendanceStatus? @default(PRESENT)
-  deviceId     String?           @db.VarChar(100)
-  notes        String?           @db.VarChar(255)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id                Int               @id @default(autoincrement())
+  userId            Int
+  branchId          Int?
+  storeId           Int?
+  date              DateTime
+  checkInAt         DateTime?
+  checkOutAt        DateTime?
+  totalMinutes      Int?              @default(0)
+  lateMinutes       Int?              @default(0)
+  earlyLeaveMinutes Int?              @default(0)
+  penaltyAmount     Float?            @default(0)
+  bonusAmount       Float?            @default(0)
+  status            AttendanceStatus? @default(PRESENT)
+  deviceId          String?           @db.VarChar(100)
+  notes             String?           @db.VarChar(255)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   branch Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  store  Store?            @relation(fields: [storeId], references: [id], onDelete: SetNull)
   events AttendanceEvent[]
 
   @@unique([userId, date])
   @@index([userId])
   @@index([branchId])
+  @@index([storeId])
   @@index([date])
 }
 
@@ -167,6 +174,7 @@ model Branch {
   reconciliations  CashReconciliation[]
   incomingReports  IncomingStockReport[]  @relation("BranchIncomingReports")
   debtCashierReports DebtCashierReport[]
+  stores           Store[]
 
   @@index([name])
 }
@@ -180,6 +188,7 @@ model User {
   password             String?
   role                 UserRole
   branchId             Int?
+  storeId              Int?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   status               UserStatus             @default(ACTIVE)
@@ -187,7 +196,10 @@ model User {
   workStartTime        String?                @db.VarChar(5)
   workEndTime          String?                @db.VarChar(5)
   workShift            String?                @default("DAY")
+  position             String?
+  monthlySalary        Float?                 @map("monthly_salary") @default(5000000)
   branch               Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  store                Store?                 @relation("UserStore", fields: [storeId], references: [id], onDelete: SetNull)
   createdTransactions  Transaction[]          @relation("TransactionsCreatedBy")
   soldTransactions     Transaction[]          @relation("TransactionsSoldBy")
   initiatedTransfers   ProductTransfer[]      @relation("InitiatedTransfers")
@@ -226,6 +238,34 @@ model User {
   transactionNotes                  TransactionNote[]
 
   @@index([phone])
+  @@index([branchId])
+  @@index([storeId])
+}
+
+model Store {
+  id                        Int             @id @default(autoincrement())
+  storeName                 String          @map("store_name")
+  address                   String?
+  latitude                  Float           @default(41.311081)
+  longitude                 Float           @default(69.240562)
+  radiusMeters              Float           @default(150)
+  workingDays               String          @default("Monday,Tuesday,Wednesday,Thursday,Friday,Saturday")
+  timezone                  String          @default("Asia/Tashkent")
+  lateToleranceMin          Int             @default(15)
+  earlyLeaveToleranceMin    Int             @default(15)
+  latePenaltyPerMin         Float           @default(500)
+  earlyBonusPerMin          Float           @default(500)
+  overtimePolicy            String          @default("Standard 1.5x Hourly Rate")
+  faceConfidenceThreshold   Float           @default(0.75)
+  branchId                  Int?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  branch                    Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  users                     User[]          @relation("UserStore")
+  attendanceDays            AttendanceDay[]
+
+  @@index([storeName])
   @@index([branchId])
 }
 

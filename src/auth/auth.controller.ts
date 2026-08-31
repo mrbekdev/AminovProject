@@ -27,4 +27,15 @@ export class AuthController {
     getProfile(@CurrentUser() user: any) {
         return user;
     }
+
+    @Get('me')
+    @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Foydalanuvchi va xodim maʼlumotlari' })
+    async getMe(@CurrentUser() user: any) {
+        return {
+            ...user,
+            employee: user,
+        };
+    }
 } 
