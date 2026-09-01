@@ -14,6 +14,7 @@ enum AttendanceEventType {
   CHECK_IN
   CHECK_OUT
   MANUAL_ADJUST
+  OUT_OF_BOUNDS
 }
 
 enum AttendanceStatus {
@@ -104,6 +105,7 @@ enum PaymentType {
   CREDIT
   INSTALLMENT
   THIRD_PARTY
+  PARTNER
 }
 
 enum UserRole {
@@ -458,6 +460,7 @@ model Transaction {
   receiptId             String?
   description           String?
   source                String?           // Instagram, Telegram, Youtube, Tanishimdan
+  partnerName           String?           // Ishonch, Yuksalish, Bir zumda, Limit nasiya
   updatedById           Int?
   // Credit repayment tracking fields
   creditRepaymentAmount Float?            @default(0)

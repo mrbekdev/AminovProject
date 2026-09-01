@@ -174,6 +174,10 @@ export class CreateTransactionDto {
 
   @IsOptional()
   @IsString()
+  partnerName?: string;
+
+  @IsOptional()
+  @IsString()
   upfrontPaymentType?: 'CASH' | 'CARD' | 'TERMINAL'; // CASH, CARD or TERMINAL for upfront payments
 
   @IsOptional()

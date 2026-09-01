@@ -36,6 +36,10 @@ export class UpdateTransactionDto {
 
   @IsString()
   @IsOptional()
+  partnerName?: string;
+
+  @IsString()
+  @IsOptional()
   deliveryMethod?: string;
 
   @IsNumber()

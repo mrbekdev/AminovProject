@@ -359,25 +359,29 @@ export class AttendanceService {
     }
 
     if (isOutOfBounds) {
-      await this.prisma.attendanceEvent.create({
-        data: {
-          userId: matchedUser.id,
-          branchId: matchedUser.branchId,
-          dayId: null,
-          eventType: 'OUT_OF_BOUNDS' as any,
-          similarity: matchSimilarity,
-          payload: {
-            distance_meters: distanceMeters,
-            max_radius: maxAllowedRadius,
-            out_of_bounds: true,
-            status: 'Радиусдан ташқарида',
-            action_attempt: action,
+      try {
+        await this.prisma.attendanceEvent.create({
+          data: {
+            userId: matchedUser.id,
+            branchId: matchedUser.branchId,
+            dayId: null,
+            eventType: 'OUT_OF_BOUNDS',
+            similarity: matchSimilarity,
+            payload: {
+              distance_meters: distanceMeters,
+              max_radius: maxAllowedRadius,
+              out_of_bounds: true,
+              status: 'Радиусдан ташқарида',
+              action_attempt: action,
+            },
           },
-        },
-      });
+        });
+      } catch (dbErr) {
+        console.error('OUT_OF_BOUNDS audit log saqlashda xatolik:', dbErr);
+      }
 
       throw new BadRequestException(
-        `Сиз дўкон гео-зонасидан ташқаридасиз! Аудит лог сақланди, лекин ишга келди/кетди қайд etилмади. (Масофа: ${distanceMeters}м, Макс: ${maxAllowedRadius}м)`,
+        `Сиз дўкон гео-зонасидан ташқаридасиз! (Масофа: ${distanceMeters}м, Рухсат этилган: ${maxAllowedRadius}м). Ишга келди/кетди қайд этилмади.`,
       );
     }
 
@@ -421,6 +425,31 @@ export class AttendanceService {
     const existingDay = await this.prisma.attendanceDay.findUnique({
       where: { userId_date: { userId: matchedUser.id, date: today } },
     });
+
+    // ===== Kuniga 1 marta keldi / 1 marta ketdi cheklovi =====
+    if (isCheckIn && existingDay?.checkInAt) {
+      const checkInTime = new Date(existingDay.checkInAt).toLocaleTimeString('uz-UZ', {
+        hour: '2-digit', minute: '2-digit',
+      });
+      throw new BadRequestException(
+        `Сиз бугун аллақачон ишга келганингизни қайд қилгансиз (${checkInTime}). Кунига фақат 1 марта "Келди" белгилаш мумкин.`,
+      );
+    }
+
+    if (!isCheckIn && existingDay?.checkOutAt) {
+      const checkOutTime = new Date(existingDay.checkOutAt).toLocaleTimeString('uz-UZ', {
+        hour: '2-digit', minute: '2-digit',
+      });
+      throw new BadRequestException(
+        `Сиз бугун аллақачон ишдан кетганингизни қайд қилгансиз (${checkOutTime}). Кунига фақат 1 марта "Кетди" белгилаш мумкин.`,
+      );
+    }
+
+    if (!isCheckIn && !existingDay?.checkInAt) {
+      throw new BadRequestException(
+        `Аввал "Ишга келди" ни белгилашингиз керак. Кетишдан олдин келишни қайд этинг.`,
+      );
+    }
 
     const calculatedTotalMinutes =
       !isCheckIn && existingDay && existingDay.checkInAt
@@ -658,6 +687,7 @@ export class AttendanceService {
           store_name: d.store?.storeName || d.branch?.name || 'Bosh Do\'kon',
           check_in_time: d.checkInAt ? d.checkInAt.toISOString() : null,
           check_out_time: d.checkOutAt ? d.checkOutAt.toISOString() : null,
+          total_minutes: d.totalMinutes || 0,
           work_hours: d.totalMinutes ? Math.round((d.totalMinutes / 60) * 100) / 100 : 0,
           late_minutes: d.lateMinutes || 0,
           early_leave_minutes: d.earlyLeaveMinutes || 0,
@@ -670,6 +700,8 @@ export class AttendanceService {
           'Сана': dateFormatted,
           'Келиш вақти': checkInFormatted ? `${dateFormatted} ${checkInFormatted}` : '',
           'Кетиш вақти': checkOutFormatted ? `${dateFormatted} ${checkOutFormatted}` : '',
+          'Ишланган вақт (дақиқа)': d.totalMinutes || 0,
+          'Ишланган соат': d.totalMinutes ? Math.round((d.totalMinutes / 60) * 100) / 100 : 0,
           'Кечикиш (дақиқа)': d.lateMinutes || 0,
           'Эрта кетиш (дақиқа)': d.earlyLeaveMinutes || 0,
           'Вақтли келиш (дақиқа)': d.bonusAmount ? Math.round(d.bonusAmount / 500) : 0,

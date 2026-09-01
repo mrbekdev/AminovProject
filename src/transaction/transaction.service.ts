@@ -136,7 +136,7 @@ export class TransactionService {
           months: Number((p as any).months) > 0 ? Number((p as any).months) : undefined,
           days: Number((p as any).days) > 0 ? Number((p as any).days) : undefined,
         }))
-        .filter((p) => p.amount > 0 && ['CASH', 'CARD', 'TERMINAL', 'TOVAR', 'UYDAN', 'INSTALLMENT', 'THIRD_PARTY'].includes(p.method));
+        .filter((p) => p.amount > 0 && ['CASH', 'CARD', 'TERMINAL', 'TOVAR', 'UYDAN', 'INSTALLMENT', 'THIRD_PARTY', 'PARTNER'].includes(p.method));
       console.log('Processed paymentsData:', JSON.stringify(paymentsData, null, 2));
 
       const totalPayments = paymentsData.reduce((sum, p) => sum + p.amount, 0);
@@ -543,10 +543,15 @@ export class TransactionService {
       deliveryStatus,
       categoryId,
       source,
+      partnerName,
     } = query;
 
     const where: any = {};
     const andConditions: any[] = [];
+
+    if (partnerName && partnerName !== 'ALL') {
+      where.partnerName = partnerName;
+    }
 
     if (source && source !== 'ALL') {
       if (source === 'Boshqa') {
@@ -597,10 +602,11 @@ export class TransactionService {
         'INSTALLMENT': ['INSTALLMENT', 'BOLOB', "BO'LIB"],
         'THIRD_PARTY': ['THIRD_PARTY', '3RD', 'THIRDPARTY'],
         'UYDAN': ['UYDAN', 'HOME'],
+        'PARTNER': ['PARTNER', 'HAMKOR', 'HAMKORLAR'],
       };
       const matchedKey = Object.keys(paymentTypeMapping).find(k => paymentTypeMapping[k].includes(normalizedType)) || normalizedType;
       
-      const validPaymentTypeEnums = ['CASH', 'CARD', 'TERMINAL', 'CREDIT', 'INSTALLMENT', 'THIRD_PARTY'];
+      const validPaymentTypeEnums = ['CASH', 'CARD', 'TERMINAL', 'CREDIT', 'INSTALLMENT', 'THIRD_PARTY', 'PARTNER'];
       const isEnumVal = validPaymentTypeEnums.includes(matchedKey);
 
       andConditions.push({
@@ -610,6 +616,9 @@ export class TransactionService {
           ...(matchedKey === 'UYDAN' ? [
             { payments: { some: { method: 'UYDAN' } } },
             { description: { contains: 'UYDAN', mode: 'insensitive' } }
+          ] : []),
+          ...(matchedKey === 'PARTNER' ? [
+            { partnerName: { not: null } }
           ] : []),
         ]
       });
