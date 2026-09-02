@@ -255,7 +255,7 @@ export class TransactionService {
         const termCount = Number(rawTermCount) > 0 ? Number(rawTermCount) : 1;
         console.log('Creating installment schedule:', { amount, isDays, rawTermCount, termCount, months: ip.months, days: ip.days, termUnit: ip.termUnit });
 
-        if (isDays) {
+        if (isDays && termCount > 1) {
           await this.prisma.paymentSchedule.create({
             data: {
               transactionId: transaction.id,
@@ -270,7 +270,7 @@ export class TransactionService {
               installmentType: 'DAILY',
             } as any,
           });
-        } else {
+        } else if (termCount > 1) {
           let remainingBalTotal = amount;
           const monthlyPayment = amount / termCount;
           for (let m = 1; m <= termCount; m++) {
@@ -291,6 +291,22 @@ export class TransactionService {
               } as any,
             });
           }
+        } else {
+          // Oddiy 1 ta bo'lib to'lash jadvali
+          await this.prisma.paymentSchedule.create({
+            data: {
+              transactionId: transaction.id,
+              month: 1,
+              payment: amount,
+              paidAmount: 0,
+              remainingBalance: amount,
+              isPaid: false,
+              isDailyInstallment: false,
+              installmentType: 'INSTALLMENT',
+              totalMonths: 1,
+              remainingMonths: 1
+            } as any,
+          });
         }
       }
     }
@@ -420,23 +436,21 @@ export class TransactionService {
       }
     }
 
-    if (totalPrincipal > 0 && totalMonths > 0) {
+    if (totalPrincipal > 0) {
       // To'g'ri hisoblash: oldindan to'lovni ayirib, keyin foiz qo'shish
       const upfrontPayment = downPayment || 0;
       const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
       const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
 
-
-
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
-      const monthlyPayment = remainingWithInterest / totalMonths;
+      const effectiveMonths = totalMonths > 0 ? totalMonths : 1;
+      const monthlyPayment = remainingWithInterest / effectiveMonths;
       let remainingBalance = remainingWithInterest;
 
-
-      for (let month = 1; month <= totalMonths; month++) {
+      for (let month = 1; month <= effectiveMonths; month++) {
         // For the last month, use the exact remaining balance to avoid floating point errors
-        const currentPayment = month === totalMonths ? remainingBalance : monthlyPayment;
+        const currentPayment = month === effectiveMonths ? remainingBalance : monthlyPayment;
         remainingBalance -= currentPayment;
         schedules.push({
           transactionId,
@@ -445,10 +459,10 @@ export class TransactionService {
           remainingBalance: Math.max(0, remainingBalance),
           isPaid: false,
           paidAmount: 0,
-          // Oylik bo'lib to'lash uchun qo'shimcha ma'lumotlar
-          installmentType: 'MONTHLY', // Oylik bo'lib to'lash turi
-          totalMonths: totalMonths, // Jami oylar soni
-          remainingMonths: totalMonths - month + 1 // Qolgan oylar soni
+          // Oylik bo'lib to'lash yoki 1 ta bo'lib to'lash
+          installmentType: effectiveMonths > 1 ? 'MONTHLY' : 'INSTALLMENT',
+          totalMonths: effectiveMonths,
+          remainingMonths: effectiveMonths - month + 1
         });
       }
     }
@@ -1562,21 +1576,23 @@ export class TransactionService {
     // Build where clause
     const where: any = {
       status: { not: TransactionStatus.CANCELLED },
+      paymentType: { not: PaymentType.INSTALLMENT },
     };
 
-    // Payment type filter - check if it's CREDIT, INSTALLMENT, or has UYDAN/INSTALLMENT payments
+    // Payment type filter - check if it's CREDIT, or has UYDAN payments
+    // NOTE: INSTALLMENT has its own dedicated "Бўлиб тўлаш" section, so it must not appear in Mijozlar (Уйдан келадиган пуллар)
     const paymentTypeConditions = [
-      { paymentType: { in: [PaymentType.CREDIT, PaymentType.INSTALLMENT] } },
-      { payments: { some: { method: { in: ['UYDAN', 'INSTALLMENT'] } } } }
+      { paymentType: PaymentType.CREDIT },
+      { payments: { some: { method: 'UYDAN' } } }
     ];
 
     // Handle payment status filter
     if (paymentStatus === 'UYDAN') {
       // Only show transactions with UYDAN payments
       where.OR = [
-        { payments: { some: { method: { in: ['UYDAN'] } } } }
+        { payments: { some: { method: 'UYDAN' } } }
       ];
-    } else if (paymentStatus === 'HAS_REMAINING' || paymentStatus === 'FULLY_PAID') {
+    } else {
       where.OR = paymentTypeConditions;
     }
 
@@ -1664,11 +1680,16 @@ export class TransactionService {
     const customerMap = new Map<number, any>();
 
     for (const t of transactions) {
+      if (t.paymentType === 'INSTALLMENT') continue;
       const cust = t.customer;
       if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
 
-      const schedules = t.paymentSchedules || [];
+      const schedules = (t.paymentSchedules || []).filter((s: any) => s.installmentType !== 'INSTALLMENT');
       const payments = t.payments || [];
+      const hasUydanPayment = payments.some(p => String(p.method || '').toUpperCase() === 'UYDAN');
+      const isCredit = t.paymentType === 'CREDIT';
+
+      if (!isCredit && !hasUydanPayment && schedules.length === 0) continue;
 
       // Calculate outstanding debt correctly
       let outstanding = 0;
@@ -1683,9 +1704,13 @@ export class TransactionService {
         const creditRepaid = Number((t as any).creditRepaymentAmount || 0);
         const uydanAmount = payments.filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
           .reduce((s, p) => s + Number(p.amount || 0), 0);
-        const isDebtPaymentType = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType || '');
-        outstanding = isDebtPaymentType ? (Math.max(0, baseAmount - downPayment - creditRepaid) + uydanAmount) : uydanAmount;
-        totalPaidOnDebt = creditRepaid;
+        if (isCredit) {
+          outstanding = Math.max(0, baseAmount - downPayment - creditRepaid);
+          totalPaidOnDebt = creditRepaid;
+        } else if (hasUydanPayment) {
+          outstanding = Math.max(0, uydanAmount - creditRepaid);
+          totalPaidOnDebt = creditRepaid;
+        }
       }
 
       // Filter by hasOutstanding if specified
@@ -3109,18 +3134,20 @@ export class TransactionService {
 
     const where: any = {
       status: { not: TransactionStatus.CANCELLED },
+      paymentType: { not: PaymentType.INSTALLMENT },
     };
 
+    // Payment type filter - for Mijozlar (Уйдан келадиган пуллар)
     const paymentTypeConditions = [
-      { paymentType: { in: [PaymentType.CREDIT, PaymentType.INSTALLMENT] } },
-      { payments: { some: { method: { in: ['UYDAN', 'INSTALLMENT'] } } } }
+      { paymentType: PaymentType.CREDIT },
+      { payments: { some: { method: 'UYDAN' } } }
     ];
 
     if (paymentStatus === 'UYDAN') {
       where.OR = [
-        { payments: { some: { method: { in: ['UYDAN'] } } } }
+        { payments: { some: { method: 'UYDAN' } } }
       ];
-    } else if (paymentStatus === 'HAS_REMAINING' || paymentStatus === 'FULLY_PAID') {
+    } else {
       where.OR = paymentTypeConditions;
     }
 

@@ -35,6 +35,7 @@ import { SystemSettingModule } from './system-setting/system-setting.module';
 import { StoreModule } from './store/store.module';
 import { ProductHistoryModule } from './product-history/product-history.module';
 import { FaceModule } from './face/face.module';
+import { HrModule } from './hr/hr.module';
 
 @Module({
   imports: [
@@ -73,8 +74,10 @@ import { FaceModule } from './face/face.module';
     IncomingStockModule,
     DebtCashierReportModule,
     ProductHistoryModule,
+    HrModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule { }
+

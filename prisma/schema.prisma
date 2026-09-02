@@ -1126,3 +1126,30 @@ model TransactionNote {
   @@index([createdAt])
 }
 
+model JobApplication {
+  id               Int       @id @default(autoincrement())
+  fullName         String
+  phone            String
+  age              Int?
+  position         String?
+  experience       String?   @db.Text
+  address          String?
+  expectedSalary   String?
+  about            String?   @db.Text
+  resumeUrl        String?
+  telegramId       String?
+  telegramUsername String?
+  status           String    @default("NEW") // NEW, IN_REVIEW, INTERVIEW, ACCEPTED, REJECTED
+  notes            String?   @db.Text
+  rating           Int?      @default(0)
+  interviewDate    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([phone])
+  @@index([telegramId])
+}
+
+
