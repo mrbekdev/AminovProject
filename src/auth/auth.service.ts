@@ -31,33 +31,31 @@ export class AuthService {
             const minutesUtc = now.getUTCHours() * 60 + now.getUTCMinutes();
             const minutesTashkent = (minutesUtc + 5 * 60) % (24 * 60);
 
-            // 1) Prefer default WorkSchedule window if present
-            const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
+            let startTimeStr = user.workStartTime;
+            let endTimeStr = user.workEndTime;
 
-            let startTime: number | null = null;
-            let endTime: number | null = null;
-
-            if (defaultSchedule?.workStartTime && defaultSchedule?.workEndTime) {
-                const [sH, sM] = String(defaultSchedule.workStartTime).split(':').map((n) => parseInt(n, 10) || 0);
-                const [eH, eM] = String(defaultSchedule.workEndTime).split(':').map((n) => parseInt(n, 10) || 0);
-                startTime = sH * 60 + sM;
-                endTime = eH * 60 + eM;
-            } else if (user.workStartTime && user.workEndTime) {
-                // 2) Fallback to user-specific schedule if default not set
-                const [sH, sM] = String(user.workStartTime).split(':').map((n) => parseInt(n, 10) || 0);
-                const [eH, eM] = String(user.workEndTime).split(':').map((n) => parseInt(n, 10) || 0);
-                startTime = sH * 60 + sM;
-                endTime = eH * 60 + eM;
+            // Fallback to default schedule if user-specific hours not set
+            if (!startTimeStr || !endTimeStr) {
+                const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
+                if (defaultSchedule?.workStartTime && defaultSchedule?.workEndTime) {
+                    startTimeStr = defaultSchedule.workStartTime;
+                    endTimeStr = defaultSchedule.workEndTime;
+                }
             }
 
-            if (startTime !== null && endTime !== null) {
-                // Handle same-day (start < end) and overnight (start > end) windows
+            if (startTimeStr && endTimeStr) {
+                const [sH, sM] = String(startTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
+                const [eH, eM] = String(endTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
+                const startTime = sH * 60 + sM;
+                const endTime = eH * 60 + eM;
+
+                // Handle same-day (start <= end) and overnight (start > end) windows
                 let isWithin = false;
                 if (startTime <= endTime) {
                     // Same-day window, e.g., 08:00-20:00
                     isWithin = minutesTashkent >= startTime && minutesTashkent <= endTime;
                 } else {
-                    // Overnight window, e.g., 20:00-08:00
+                    // Overnight window, e.g., 20:00-08:00 or 08:00-02:00
                     isWithin = minutesTashkent >= startTime || minutesTashkent <= endTime;
                 }
                 if (!isWithin) {
