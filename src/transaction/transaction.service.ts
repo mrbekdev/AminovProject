@@ -2175,37 +2175,57 @@ export class TransactionService {
 
       // 4. Maqsad filialda mahsulotni topish
       let targetProduct: any = null;
+      let shouldCreateNew = false;
 
-      // Barcodeni olish
-      const barcode = (item as any).product?.barcode || sourceProduct.barcode;
+      const barcode = ((item as any).product?.barcode || sourceProduct.barcode || '').trim();
+      const itemName = (item as any).product?.name || sourceProduct.name;
+      const itemModel = (item as any).product?.model || sourceProduct.model || '';
+
+      const normalize = (str?: string | null) => (str || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
       if (barcode) {
-        targetProduct = await tx.product.findFirst({
+        const existingByBarcode = await tx.product.findFirst({
           where: { barcode, branchId: transfer.toBranchId }
         });
-      }
 
-      if (!targetProduct) {
-        // Fallback: name + model bo'yicha topish
-        const name = (item as any).product?.name || sourceProduct.name;
-        const model = (item as any).product?.model || sourceProduct.model || '';
+        if (existingByBarcode) {
+          if (existingByBarcode.isDeleted) {
+            // O'chirilgan holatda bo'lsa: ushbu barcode slotini yangilab aktivlashtiramiz
+            targetProduct = existingByBarcode;
+          } else {
+            // O'chirilmagan (aktiv) holatda bo'lsa: aynan shu tovarmi yoki boshqa tovarmi tekshiramiz
+            const isSameProduct = normalize(existingByBarcode.name) === normalize(itemName) &&
+                                  normalize(existingByBarcode.model) === normalize(itemModel);
+
+            if (isSameProduct) {
+              // Aynan shu tovar: mavjud tovar sonini oshiramiz
+              targetProduct = existingByBarcode;
+            } else {
+              // Boshqa tovar o'chirilmagan holda turibdi: unga tegmaymiz, yangidan yaratamiz!
+              shouldCreateNew = true;
+            }
+          }
+        }
+      } else {
+        // Faqat barcode umuman bo'lmagandagina name + model bo'yicha qidiramiz
         const searchConditions: any = {
           AND: [
             {
               OR: [
-                { name: { equals: name, mode: 'insensitive' } },
-                { name: { contains: name, mode: 'insensitive' } },
-                { name: { contains: name?.trim?.() || name, mode: 'insensitive' } }
+                { name: { equals: itemName, mode: 'insensitive' } },
+                { name: { contains: itemName, mode: 'insensitive' } },
+                { name: { contains: itemName?.trim?.() || itemName, mode: 'insensitive' } }
               ]
             },
             { branchId: transfer.toBranchId }
           ]
         };
-        if (model && model.trim()) {
+        if (itemModel && itemModel.trim()) {
           searchConditions.AND.push({
             OR: [
-              { model: { equals: model, mode: 'insensitive' } },
-              { model: { contains: model, mode: 'insensitive' } },
-              { model: { contains: model.trim(), mode: 'insensitive' } }
+              { model: { equals: itemModel, mode: 'insensitive' } },
+              { model: { contains: itemModel, mode: 'insensitive' } },
+              { model: { contains: itemModel.trim(), mode: 'insensitive' } }
             ]
           });
         } else {
@@ -2214,58 +2234,83 @@ export class TransactionService {
         targetProduct = await tx.product.findFirst({ where: searchConditions });
       }
 
+      // Narxlar va boshqa xususiyatlarni aniqlash
+      const itemPrice = Number((item as any).product?.price ?? sourceProduct.price ?? 0);
+      const itemMarketPrice = Number((item as any).product?.marketPrice ?? sourceProduct.marketPrice ?? 0);
+      const itemBonusPct = (item as any).product?.bonusPercentage ?? sourceProduct?.bonusPercentage ?? 0;
+      const itemMonths = sourceProduct?.months ?? (item as any).product?.months;
+      const itemCategoryId = (item as any).product?.categoryId || sourceProduct.categoryId;
+
       // 5. Maqsad filialga qo'shish yoki yangi yaratish
-      if (targetProduct) {
+      if (targetProduct && !shouldCreateNew) {
         // MUHIM: Eng yangi holatni o'qib, unga qo'shamiz (race condition oldini olish)
         const freshTarget = await tx.product.findUnique({ where: { id: targetProduct.id } });
         const isDeleted = freshTarget?.isDeleted || false;
-        const currentTargetQty = isDeleted ? 0 : (Number(freshTarget?.quantity) || 0);
+        // Agar mahsulot o'chirilgan (isDeleted: true) bo'lsa, avvalgi quantity=0 deb hisoblanadi va yangi transferQty ga aylanadi
+        const currentTargetQty = isDeleted ? 0 : Math.max(0, Number(freshTarget?.quantity) || 0);
         const newQuantity = currentTargetQty + transferQty;
 
         await tx.product.update({
           where: { id: targetProduct.id },
           data: {
+            name: itemName,
+            model: itemModel,
+            barcode: barcode || freshTarget?.barcode,
+            price: isDeleted ? itemPrice : (itemPrice > 0 ? itemPrice : (freshTarget?.price ?? 0)),
+            marketPrice: isDeleted ? itemMarketPrice : (itemMarketPrice > 0 ? itemMarketPrice : (freshTarget?.marketPrice ?? 0)),
+            bonusPercentage: isDeleted ? itemBonusPct : (itemBonusPct || freshTarget?.bonusPercentage || 0),
+            months: isDeleted ? itemMonths : (itemMonths || freshTarget?.months),
+            categoryId: isDeleted ? itemCategoryId : (itemCategoryId || freshTarget?.categoryId),
             quantity: newQuantity,
             status: 'IN_WAREHOUSE',
-            bonusPercentage: sourceProduct?.bonusPercentage ?? targetProduct.bonusPercentage,
             isDeleted: false,
             deletedAt: null
           }
         });
       } else {
         // Yangi mahsulot yaratish
-        const safeBarcode = barcode || `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Agar ayni barcode boshqa aktiv tovar tomonidan egallangan bo'lsa (shouldCreateNew=true), unga tegilmasligi uchun yangi unique barcode beriladi
+        let safeBarcode = barcode;
+        if (!safeBarcode || shouldCreateNew) {
+          safeBarcode = `${barcode ? `${barcode}_` : 'TRANSFER_'}${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+        }
+
         try {
           await tx.product.create({
             data: {
-              name: (item as any).product?.name || sourceProduct.name,
+              name: itemName,
               barcode: safeBarcode,
-              model: (item as any).product?.model || sourceProduct.model,
-              price: (item as any).product?.price || sourceProduct.price,
+              model: itemModel,
+              price: itemPrice,
+              marketPrice: itemMarketPrice,
               quantity: transferQty,
               status: 'IN_WAREHOUSE',
               branchId: transfer.toBranchId,
-              categoryId: (item as any).product?.categoryId || sourceProduct.categoryId,
-              marketPrice: (item as any).product?.marketPrice || sourceProduct.marketPrice,
-              bonusPercentage: sourceProduct?.bonusPercentage ?? (item as any).product?.bonusPercentage ?? 0
+              categoryId: itemCategoryId,
+              bonusPercentage: itemBonusPct,
+              months: itemMonths,
+              isDeleted: false,
+              deletedAt: null
             }
           });
         } catch (error: any) {
           if (error?.code === 'P2002') {
-            // Barcode duplicate — unique barcode bilan qayta yaratish
-            const uniqueBarcode = `TRANSFER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const fallbackBarcode = `${barcode ? `${barcode}_` : 'TRANSFER_'}${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
             await tx.product.create({
               data: {
-                name: (item as any).product?.name || sourceProduct.name,
-                barcode: uniqueBarcode,
-                model: (item as any).product?.model || sourceProduct.model,
-                price: (item as any).product?.price || sourceProduct.price,
+                name: itemName,
+                barcode: fallbackBarcode,
+                model: itemModel,
+                price: itemPrice,
+                marketPrice: itemMarketPrice,
                 quantity: transferQty,
                 status: 'IN_WAREHOUSE',
                 branchId: transfer.toBranchId,
-                categoryId: (item as any).product?.categoryId || sourceProduct.categoryId,
-                marketPrice: (item as any).product?.marketPrice || sourceProduct.marketPrice,
-                bonusPercentage: sourceProduct?.bonusPercentage ?? (item as any).product?.bonusPercentage ?? 0
+                categoryId: itemCategoryId,
+                bonusPercentage: itemBonusPct,
+                months: itemMonths,
+                isDeleted: false,
+                deletedAt: null
               }
             });
           } else {
@@ -2925,16 +2970,15 @@ export class TransactionService {
       }
     });
 
-    // Calculate stats
-    let totalSales = 0;
+    // Calculate stats directly from transactions
+    const txSalesTotal = transactions.reduce(
+      (sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0),
+      0,
+    );
+
     let totalProfit = 0;
     for (const b of bonuses) {
       if (b.description) {
-        const matchSales = b.description.match(/Sotish narxi:\s*([\d,.-]+)/i);
-        if (matchSales) {
-          const valStr = matchSales[1].replace(/,/g, '');
-          totalSales += parseFloat(valStr) || 0;
-        }
         const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
         if (matchProfit) {
           const valStr = matchProfit[1].replace(/,/g, '');
@@ -2951,7 +2995,7 @@ export class TransactionService {
     const salesWithBonuses = bonuses.filter(b => b.reason === 'SALES_BONUS').length;
 
     const stats = {
-      totalSales,
+      totalSales: txSalesTotal,
       totalBonuses,
       bonusProductsValue,
       salesWithBonuses,
@@ -2961,7 +3005,7 @@ export class TransactionService {
     // Calculate earnings summary
     const earningsSummary = {
       [userId]: {
-        totalSalesInSom: totalSales
+        totalSalesInSom: txSalesTotal
       }
     };
 

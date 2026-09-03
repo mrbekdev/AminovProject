@@ -2556,30 +2556,35 @@ export class StatisticsService {
   ) {
     const now = new Date();
 
-    // 1. Calculate default date range: 1st of current month to now
+    // 1. Calculate default date range with Tashkent UTC+5 timezone awareness
     let start: Date;
     let end: Date;
 
     if (startDate) {
       start = new Date(startDate);
-      if (isNaN(start.getTime())) start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+      if (!isUTC) {
+        start.setUTCHours(start.getUTCHours() - 5);
+      }
     } else {
       start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      start.setUTCHours(start.getUTCHours() - 5);
     }
 
     if (endDate) {
       end = new Date(endDate);
-      if (isNaN(end.getTime())) {
-        end = new Date();
-      } else if (!endDate.includes('T')) {
-        end.setHours(23, 59, 59, 999);
+      const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+      if (!isUTC) {
+        end.setUTCDate(end.getUTCDate() + 1);
+        end.setUTCHours(end.getUTCHours() - 5);
+        end.setTime(end.getTime() - 1);
       }
     } else {
       end = new Date();
     }
 
-    const year = yearParam || start.getFullYear();
-    const month = monthParam || (start.getMonth() + 1);
+    const year = yearParam || now.getFullYear();
+    const month = monthParam || (now.getMonth() + 1);
 
     // 2. Fetch active sellers ONLY (users with role MARKETING)
     const userWhere: any = {
@@ -2610,16 +2615,18 @@ export class StatisticsService {
       orderBy: { id: 'asc' },
     });
 
-    // 3. Fetch seller targets for current target year & month
     const targets = await this.prisma.sellerTarget.findMany({
       where: { year, month },
     });
-    const targetMap = new Map<number, number>();
-    targets.forEach((t) => targetMap.set(t.sellerId, t.targetAmount));
+    const targetMap = new Map<number, { targetAmount: number }>();
+    targets.forEach((t) =>
+      targetMap.set(t.sellerId, {
+        targetAmount: t.targetAmount,
+      }),
+    );
 
-    // 4. Fetch sales transactions with items & product details in date range
     const txWhere: any = {
-      type: TransactionType.SALE,
+      type: { in: [TransactionType.SALE, TransactionType.DELIVERY] },
       status: { not: TransactionStatus.CANCELLED },
       createdAt: {
         gte: start,
@@ -2630,24 +2637,11 @@ export class StatisticsService {
       txWhere.fromBranchId = branchId;
     }
 
-    const salesTransactions = await this.prisma.transaction.findMany({
+    const transactionsList = await this.prisma.transaction.findMany({
       where: txWhere,
-      select: {
-        id: true,
-        receiptId: true,
-        soldByUserId: true,
-        userId: true,
-        finalTotal: true,
-        total: true,
-        createdAt: true,
+      include: {
         items: {
-          select: {
-            id: true,
-            productId: true,
-            quantity: true,
-            price: true,
-            sellingPrice: true,
-            total: true,
+          include: {
             product: {
               select: {
                 id: true,
@@ -2662,23 +2656,30 @@ export class StatisticsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // 5. Aggregate metrics per seller
+    const sellerTxMap = new Map<number, typeof transactionsList>();
+    transactionsList.forEach((tx) => {
+      const sId = tx.soldByUserId || tx.userId;
+      if (!sId) return;
+      if (!sellerTxMap.has(sId)) {
+        sellerTxMap.set(sId, []);
+      }
+      sellerTxMap.get(sId)!.push(tx);
+    });
+
     const sellersData = sellers.map((seller) => {
-      const sellerSales = salesTransactions.filter(
-        (tx) => tx.soldByUserId === seller.id || (!tx.soldByUserId && tx.userId === seller.id),
-      );
+      const sellerSales = sellerTxMap.get(seller.id) || [];
 
       const totalSales = sellerSales.reduce(
         (sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0),
         0,
       );
       const salesCount = sellerSales.length;
-      const targetAmount = targetMap.get(seller.id) || 0;
+      const targetInfo = targetMap.get(seller.id);
+      const targetAmount = targetInfo?.targetAmount || 0;
       const remainingAmount = Math.max(0, targetAmount - totalSales);
       const completionPercentage =
         targetAmount > 0 ? Number(((totalSales / targetAmount) * 100).toFixed(2)) : 0;
 
-      // Group seller sales by date (YYYY-MM-DD)
       const dailySalesMap = new Map<string, { total: number; count: number }>();
       sellerSales.forEach((tx) => {
         const dateStr = tx.createdAt.toISOString().split('T')[0];
@@ -2693,23 +2694,19 @@ export class StatisticsService {
         .map(([date, data]) => ({ date, total: data.total, count: data.count }))
         .sort((a, b) => b.date.localeCompare(a.date));
 
-      // Calculate Daily Plan (Kuнлик План) with carry-over
       const daysInMonth = new Date(year, month, 0).getDate();
       const currentDay = now.getDate();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
       const todayTxList = sellerSales.filter((tx) => new Date(tx.createdAt) >= startOfToday);
       const todaySales = todayTxList.reduce((sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0), 0);
-      const salesBeforeToday = totalSales - todaySales;
 
       const dailyBaseTarget = targetAmount > 0 ? Math.round(targetAmount / daysInMonth) : 0;
-      const totalRequiredUpToToday = dailyBaseTarget * currentDay;
-      const todayTarget = targetAmount > 0 ? Math.max(0, totalRequiredUpToToday - salesBeforeToday) : 0;
+      const todayTarget = dailyBaseTarget;
       const todayRemaining = Math.max(0, todayTarget - todaySales);
       const todayCompletionPercentage =
         todayTarget > 0 ? Number(((todaySales / todayTarget) * 100).toFixed(2)) : (todaySales > 0 ? 100 : 0);
 
-      // Detailed transactions list with product items
       const transactions = sellerSales.map((tx) => ({
         id: tx.id,
         receiptId: tx.receiptId || `Чек #${tx.id}`,
@@ -2752,7 +2749,6 @@ export class StatisticsService {
       };
     });
 
-    // 6. Summary aggregations
     const totalTarget = sellersData.reduce((sum, s) => sum + s.targetAmount, 0);
     const totalSales = sellersData.reduce((sum, s) => sum + s.totalSales, 0);
     const totalRemaining = Math.max(0, totalTarget - totalSales);
@@ -2777,7 +2773,12 @@ export class StatisticsService {
     };
   }
 
-  async setSellerTarget(sellerId: number, targetAmount: number, yearParam?: number, monthParam?: number) {
+  async setSellerTarget(
+    sellerId: number,
+    targetAmount: number,
+    yearParam?: number,
+    monthParam?: number,
+  ) {
     const now = new Date();
     const year = yearParam || now.getFullYear();
     const month = monthParam || (now.getMonth() + 1);
@@ -2817,7 +2818,9 @@ export class StatisticsService {
     const currentDay = now.getDate();
 
     const startOfMonth = new Date(year, now.getMonth(), 1, 0, 0, 0, 0);
+    startOfMonth.setUTCHours(startOfMonth.getUTCHours() - 5);
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    startOfToday.setUTCHours(startOfToday.getUTCHours() - 5);
 
     const seller = await this.prisma.user.findUnique({
       where: { id: sellerId },
@@ -2850,7 +2853,7 @@ export class StatisticsService {
 
     const salesTransactions = await this.prisma.transaction.findMany({
       where: {
-        type: TransactionType.SALE,
+        type: { in: [TransactionType.SALE, TransactionType.DELIVERY] },
         status: { not: TransactionStatus.CANCELLED },
         createdAt: {
           gte: startOfMonth,
@@ -2878,14 +2881,11 @@ export class StatisticsService {
     const completionPercentage =
       targetAmount > 0 ? Number(((totalSales / targetAmount) * 100).toFixed(2)) : 0;
 
-    // Daily plan calculation for today with overflow carryover
     const todayTxList = salesTransactions.filter((tx) => new Date(tx.createdAt) >= startOfToday);
     const todaySales = todayTxList.reduce((sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0), 0);
-    const salesBeforeToday = totalSales - todaySales;
 
     const dailyBaseTarget = targetAmount > 0 ? Math.round(targetAmount / daysInMonth) : 0;
-    const totalRequiredUpToToday = dailyBaseTarget * currentDay;
-    const todayTarget = targetAmount > 0 ? Math.max(0, totalRequiredUpToToday - salesBeforeToday) : 0;
+    const todayTarget = dailyBaseTarget;
     const todayRemaining = Math.max(0, todayTarget - todaySales);
     const todayCompletionPercentage =
       todayTarget > 0 ? Number(((todaySales / todayTarget) * 100).toFixed(2)) : (todaySales > 0 ? 100 : 0);

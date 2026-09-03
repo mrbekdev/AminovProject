@@ -1130,20 +1130,32 @@ return this.prisma.$transaction(async (tx) => {
       }
 
       let targetProduct: any = null;
-      const actualBarcode = barcode || sourceProduct?.barcode;
+      const actualBarcode = (barcode || sourceProduct?.barcode || '').trim();
+      const actualName = name || sourceProduct?.name || '';
+      const actualModel = model || sourceProduct?.model || '';
 
-      // Find by barcode
+      const normalize = (str?: string | null) => (str || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+      // 1. Find by barcode (including soft-deleted products)
       if (actualBarcode) {
-        targetProduct = await this.prisma.product.findFirst({
-          where: { barcode: actualBarcode, branchId: toBranchId, isDeleted: false }
+        const found = await this.prisma.product.findFirst({
+          where: { barcode: actualBarcode, branchId: toBranchId }
         });
-      }
 
-      // Fallback: Find by name and model matching
-      if (!targetProduct) {
-        const actualName = name || sourceProduct?.name;
-        const actualModel = model || sourceProduct?.model || '';
-        
+        if (found) {
+          if (found.isDeleted) {
+            targetProduct = found;
+          } else {
+            // Check if same product or different active product
+            const isSame = normalize(found.name) === normalize(actualName) &&
+                           normalize(found.model) === normalize(actualModel);
+            if (isSame) {
+              targetProduct = found;
+            }
+          }
+        }
+      } else {
+        // 2. Only if no barcode at all: Fallback by name and model matching
         if (actualName) {
           const searchConditions: any = {
             AND: [
@@ -1154,7 +1166,7 @@ return this.prisma.$transaction(async (tx) => {
                   { name: { contains: actualName.trim(), mode: 'insensitive' } }
                 ]
               },
-              { branchId: toBranchId, isDeleted: false }
+              { branchId: toBranchId }
             ]
           };
 
@@ -1182,8 +1194,8 @@ return this.prisma.$transaction(async (tx) => {
 
       results.push({
         productId,
-        name: name || sourceProduct?.name,
-        model: model || sourceProduct?.model,
+        name: actualName,
+        model: actualModel,
         barcode: actualBarcode,
         exists: !!targetProduct,
         targetProduct: targetProduct ? {

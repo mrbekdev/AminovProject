@@ -53,7 +53,7 @@ export class StatisticsController {
     @Body() body: { sellerId: number; targetAmount: number; year?: number; month?: number },
   ) {
     if (!body.sellerId || body.targetAmount === undefined) {
-      throw new BadRequestException('sellerId ва targetAmount полилари талаб қилинади.');
+      throw new BadRequestException('sellerId ва targetAmount майдонлари талаб қилинади.');
     }
     return this.statisticsService.setSellerTarget(
       Number(body.sellerId),
