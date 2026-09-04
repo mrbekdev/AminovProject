@@ -25,9 +25,20 @@ export function cosineSimilarity(vectorA: number[], vectorB: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-function startOfDayUTC(date?: Date) {
+function getTashkentDate(date: Date = new Date()): { year: number; month: number; day: number } {
+  const ms = date.getTime() + 5 * 60 * 60 * 1000;
+  const t = new Date(ms);
+  return {
+    year: t.getUTCFullYear(),
+    month: t.getUTCMonth(),
+    day: t.getUTCDate(),
+  };
+}
+
+function startOfDayUTC(date?: Date | string) {
   const d = date ? new Date(date) : new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const { year, month, day } = getTashkentDate(d);
+  return new Date(Date.UTC(year, month, day));
 }
 
 @Injectable()

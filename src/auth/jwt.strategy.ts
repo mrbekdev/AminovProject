@@ -35,34 +35,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             const minutesUtc = now.getUTCHours() * 60 + now.getUTCMinutes();
             const currentTime = (minutesUtc + 5 * 60) % (24 * 60);
 
-            let startTimeStr = user.workStartTime;
-            let endTimeStr = user.workEndTime;
+            const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
+            const startTimeStr = defaultSchedule?.workStartTime || user.workStartTime || '08:00';
+            const endTimeStr = defaultSchedule?.workEndTime || user.workEndTime || '02:00';
 
-            if (!startTimeStr || !endTimeStr) {
-                const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
-                if (defaultSchedule?.workStartTime && defaultSchedule?.workEndTime) {
-                    startTimeStr = defaultSchedule.workStartTime;
-                    endTimeStr = defaultSchedule.workEndTime;
-                }
+            const [startHours, startMinutes] = String(startTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
+            const startTime = startHours * 60 + startMinutes;
+
+            const [endHours, endMinutes] = String(endTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
+            const endTime = endHours * 60 + endMinutes;
+
+            let isWithin = false;
+            if (startTime <= endTime) {
+                isWithin = currentTime >= startTime && currentTime <= endTime;
+            } else {
+                isWithin = currentTime >= startTime || currentTime <= endTime;
             }
 
-            if (startTimeStr && endTimeStr) {
-                const [startHours, startMinutes] = String(startTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
-                const startTime = startHours * 60 + startMinutes;
-
-                const [endHours, endMinutes] = String(endTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
-                const endTime = endHours * 60 + endMinutes;
-
-                let isWithin = false;
-                if (startTime <= endTime) {
-                    isWithin = currentTime >= startTime && currentTime <= endTime;
-                } else {
-                    isWithin = currentTime >= startTime || currentTime <= endTime;
-                }
-
-                if (!isWithin) {
-                    throw new UnauthorizedException('You can only access this resource during your work hours.');
-                }
+            if (!isWithin) {
+                throw new UnauthorizedException('You can only access this resource during your work hours.');
             }
         }
 

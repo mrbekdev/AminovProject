@@ -1,14 +1,27 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-function startOfDayUTC(date?: Date) {
+function getTashkentDate(date: Date = new Date()): { year: number; month: number; day: number; hours: number; minutes: number } {
+  const ms = date.getTime() + 5 * 60 * 60 * 1000;
+  const t = new Date(ms);
+  return {
+    year: t.getUTCFullYear(),
+    month: t.getUTCMonth(),
+    day: t.getUTCDate(),
+    hours: t.getUTCHours(),
+    minutes: t.getUTCMinutes(),
+  };
+}
+
+function startOfDayUTC(date?: Date | string) {
   const d = date ? new Date(date) : new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const { year, month, day } = getTashkentDate(d);
+  return new Date(Date.UTC(year, month, day));
 }
 
 function getFirstDayOfMonthUTC() {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  const { year, month } = getTashkentDate();
+  return new Date(Date.UTC(year, month, 1));
 }
 
 function getDistanceFromLatLonInMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -127,12 +140,12 @@ export class AttendanceService {
     const today = startOfDayUTC(params.when);
     const now = params.when ? new Date(params.when) : new Date();
 
-    // Check work start time for late minutes
+    // Check work start time for late minutes in Uzbekistan (UTC+5) time
     let lateMinutes = 0;
     if (user.workStartTime) {
       const [h, m] = user.workStartTime.split(':').map(Number);
-      const workStart = new Date(today);
-      workStart.setUTCHours(h, m, 0, 0);
+      const { year, month, day: tDay } = getTashkentDate(now);
+      const workStart = new Date(Date.UTC(year, month, tDay, h - 5, m, 0, 0));
       if (now > workStart) {
         lateMinutes = Math.round((+now - +workStart) / 60000);
       }
@@ -390,12 +403,13 @@ export class AttendanceService {
     const now = new Date();
     const today = startOfDayUTC(now);
 
-    const workStartTimeStr = matchedUser.workStartTime || '09:00';
-    const workEndTimeStr = matchedUser.workEndTime || '18:00';
+    const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
+    const workStartTimeStr = matchedUser.workStartTime || defaultSchedule?.workStartTime || '08:00';
+    const workEndTimeStr = matchedUser.workEndTime || defaultSchedule?.workEndTime || '02:00';
 
     const [startH, startM] = workStartTimeStr.split(':').map(Number);
-    const workStart = new Date(today);
-    workStart.setUTCHours(startH, startM, 0, 0);
+    const { year, month, day: tDay } = getTashkentDate(now);
+    const workStart = new Date(Date.UTC(year, month, tDay, startH - 5, startM, 0, 0));
 
     let lateMin = 0;
     let penaltyAmt = 0;

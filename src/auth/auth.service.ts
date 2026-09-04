@@ -24,43 +24,33 @@ export class AuthService {
             throw new UnauthorizedException('Invalid credentials or user is DELETED');
         }
 
-        // Time-based login restriction for MARKETING users
+        // Time-based login restriction ONLY for MARKETING users
         if (user.role === 'MARKETING') {
             // Compute Asia/Tashkent time using UTC+5 to avoid Intl timezone dependency
             const now = new Date();
             const minutesUtc = now.getUTCHours() * 60 + now.getUTCMinutes();
             const minutesTashkent = (minutesUtc + 5 * 60) % (24 * 60);
 
-            let startTimeStr = user.workStartTime;
-            let endTimeStr = user.workEndTime;
+            const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
+            const startTimeStr = defaultSchedule?.workStartTime || user.workStartTime || '08:00';
+            const endTimeStr = defaultSchedule?.workEndTime || user.workEndTime || '02:00';
 
-            // Fallback to default schedule if user-specific hours not set
-            if (!startTimeStr || !endTimeStr) {
-                const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
-                if (defaultSchedule?.workStartTime && defaultSchedule?.workEndTime) {
-                    startTimeStr = defaultSchedule.workStartTime;
-                    endTimeStr = defaultSchedule.workEndTime;
-                }
+            const [sH, sM] = String(startTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
+            const [eH, eM] = String(endTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
+            const startTime = sH * 60 + sM;
+            const endTime = eH * 60 + eM;
+
+            // Handle same-day (start <= end) and overnight (start > end) windows
+            let isWithin = false;
+            if (startTime <= endTime) {
+                // Same-day window, e.g., 08:00-20:00
+                isWithin = minutesTashkent >= startTime && minutesTashkent <= endTime;
+            } else {
+                // Overnight window, e.g., 20:00-08:00 or 08:00-02:00
+                isWithin = minutesTashkent >= startTime || minutesTashkent <= endTime;
             }
-
-            if (startTimeStr && endTimeStr) {
-                const [sH, sM] = String(startTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
-                const [eH, eM] = String(endTimeStr).split(':').map((n) => parseInt(n, 10) || 0);
-                const startTime = sH * 60 + sM;
-                const endTime = eH * 60 + eM;
-
-                // Handle same-day (start <= end) and overnight (start > end) windows
-                let isWithin = false;
-                if (startTime <= endTime) {
-                    // Same-day window, e.g., 08:00-20:00
-                    isWithin = minutesTashkent >= startTime && minutesTashkent <= endTime;
-                } else {
-                    // Overnight window, e.g., 20:00-08:00 or 08:00-02:00
-                    isWithin = minutesTashkent >= startTime || minutesTashkent <= endTime;
-                }
-                if (!isWithin) {
-                    throw new UnauthorizedException('Ish vaqti tugagan');
-                }
+            if (!isWithin) {
+                throw new UnauthorizedException('Ish vaqti tugagan');
             }
         }
 
