@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import * as bcrypt from 'bcrypt';
@@ -76,6 +76,42 @@ export class AuthService {
                 role: user.role,
                 branchId: user.branchId,
             },
+        };
+    }
+
+    async changePassword(userId: number, currentPassword?: string, newPassword?: string) {
+        if (!newPassword || newPassword.trim().length < 4) {
+            throw new BadRequestException('Янги парол камида 4 та белгидан иборат бўлиши керак');
+        }
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId }
+        });
+
+        if (!user) {
+            throw new NotFoundException('Фойдаланувчи топилмади');
+        }
+
+        if (user.role !== 'BIGADMIN') {
+            throw new ForbiddenException('Фақат BigAdmin ўз паролини ўзгартира олади');
+        }
+
+        if (user.password && currentPassword) {
+            const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+            if (!isPasswordValid) {
+                throw new BadRequestException('Ҳозирги парол нотўғри киритилди');
+            }
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { password: hashedPassword, updatedAt: new Date() }
+        });
+
+        return {
+            success: true,
+            message: 'Парол муваффақиятли янгиланди'
         };
     }
 }

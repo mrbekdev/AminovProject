@@ -267,8 +267,8 @@ export class AttendanceController {
   }
 
   @Delete('attendance/:id')
-  remove(@Param('id') id: string) {
-    return this.attendanceService.remove(+id);
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.attendanceService.remove(+id, req?.user?.id);
   }
 
   // ===== Face Registration & Management =====

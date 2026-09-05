@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCreditRepaymentDto } from './dto/create-credit-repayment.dto';
 import { UpdateCreditRepaymentDto } from './dto/update-credit-repayment.dto';
@@ -10,25 +10,78 @@ export class CreditRepaymentService {
   async create(createCreditRepaymentDto: CreateCreditRepaymentDto) {
     const { transactionId, scheduleId, amount, channel, month, monthNumber, paidAt, paidByUserId, branchId } = createCreditRepaymentDto;
     
-    return this.prisma.creditRepayment.create({
+    const created = await this.prisma.creditRepayment.create({
       data: {
         transactionId,
         scheduleId,
         amount,
         channel,
-        month:month?.toString(),
+        month: month?.toString(),
         monthNumber,
         paidAt: new Date(paidAt),
         paidByUserId,
         branchId,
       },
       include: {
-        transaction: true,
+        transaction: {
+          include: {
+            customer: true,
+            items: { include: { product: true } },
+            fromBranch: true,
+          },
+        },
         schedule: true,
         paidBy: true,
         branch: true,
       },
     });
+
+    try {
+      const customer = created.transaction?.customer;
+      const customerName = customer?.fullName || 'Мижоз';
+      const collectorName = created.paidBy
+        ? ([created.paidBy.firstName, created.paidBy.lastName].filter(Boolean).join(' ') || created.paidBy.username || 'Кассир')
+        : 'Кассир / Админ';
+      const targetBranchId = created.branchId || created.transaction?.fromBranchId || null;
+
+      await this.prisma.deletedRecord.create({
+        data: {
+          entityType: 'REPAYMENT',
+          entityId: created.id,
+          title: `Қарз тўлови: ${customerName} - ${Number(amount).toLocaleString('uz-UZ')} сўм (${channel || 'CASH'})`,
+          details: {
+            type: 'REPAYMENT',
+            repaymentType: 'CREDIT',
+            amount: Number(amount),
+            channel: channel || 'CASH',
+            month: month || created.schedule?.month,
+            schedulePayment: created.schedule?.payment,
+            paidAt: created.paidAt,
+            customer: customer || null,
+            transactionId: created.transactionId,
+            branchId: targetBranchId,
+            transaction: {
+              id: created.transaction?.id,
+              finalTotal: created.transaction?.finalTotal,
+              total: created.transaction?.total,
+              remainingBalance: created.transaction?.remainingBalance,
+              creditRepaymentAmount: created.transaction?.creditRepaymentAmount,
+              termUnit: created.transaction?.termUnit,
+              customer: customer || null,
+              items: created.transaction?.items || [],
+            },
+          },
+          deletedById: paidByUserId ? Number(paidByUserId) : null,
+          deletedByName: collectorName,
+          branchId: targetBranchId,
+          reason: `Қарз тўлови қабул қилинди - Ой: ${month || created.schedule?.month || 1}`,
+        },
+      });
+    } catch (e) {
+      console.error('Failed to create DeletedRecord log for CreditRepayment:', e);
+    }
+
+    return created;
   }
 
   async findAll(query: any) {
@@ -237,7 +290,17 @@ export class CreditRepaymentService {
     });
   }
 
-  async remove(id: number) {
+  async remove(id: number, userId?: number) {
+    if (userId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user && user.role !== 'BIGADMIN') {
+        const setting = await this.prisma.systemSetting.findFirst();
+        if (setting && setting.adminAllowDeleteRepayment === false) {
+          throw new ForbiddenException("BigAdmin tomonidan to'lovlarni o'chirish taqiqlangan");
+        }
+      }
+    }
+
     // Perform a transactional revert: delete creditRepayment, remove linked paymentRepayment
     // and adjust paymentSchedule / transaction / branch cash balances accordingly.
     const existing = await this.prisma.creditRepayment.findUnique({ where: { id } });

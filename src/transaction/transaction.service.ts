@@ -1373,10 +1373,17 @@ export class TransactionService {
 
     const transaction = await this.findOne(id);
 
+    const role = currentUser?.role || currentUser?.userRole;
+    if (role !== 'BIGADMIN') {
+      const setting = await this.prisma.systemSetting.findFirst();
+      if (setting && setting.adminAllowDeleteTransaction === false) {
+        throw new BadRequestException("BigAdmin tomonidan tranzaksiyalarni o'chirish taqiqlangan");
+      }
+    }
+
     if (transaction.status === TransactionStatus.COMPLETED) {
       // Faqat ADMIN foydalanuvchiga ruxsat beramiz
-      const role = currentUser?.role || currentUser?.userRole;
-      if (role !== 'ADMIN') {
+      if (!['ADMIN', 'BIGADMIN'].includes(role)) {
         throw new BadRequestException('Completed transactions cannot be deleted');
       }
     }
@@ -1404,6 +1411,48 @@ export class TransactionService {
       // Bog'liq payment schedule va itemlarni o'chirish
       await tx.paymentSchedule.deleteMany({ where: { transactionId: id } });
       await tx.transactionItem.deleteMany({ where: { transactionId: id } });
+
+      // O'chirish audit logini saqlash
+      try {
+        const deletedUserId = currentUser?.id || currentUser?.userId || currentUser?.sub;
+        let deletedUserName = currentUser?.fullName || currentUser?.firstName || currentUser?.name || currentUser?.username;
+        if (!deletedUserName && deletedUserId) {
+          const u = await tx.user.findUnique({ where: { id: Number(deletedUserId) } });
+          if (u) deletedUserName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username;
+        }
+
+        let customer = transaction.customer;
+        if (!customer && transaction.customerId) {
+          customer = await tx.customer.findUnique({ where: { id: transaction.customerId } });
+        }
+
+        let labelInfo = 'Мижозсиз';
+        if (customer) {
+          labelInfo = customer.fullName || customer.name || [customer.firstName, customer.lastName].filter(Boolean).join(' ') || 'Мижоз';
+        } else if (transaction.type === 'TRANSFER' || transaction.transactionType === 'TRANSFER') {
+          labelInfo = `Трансфер: ${transaction.fromBranch?.name || 'Склад'} ➔ ${transaction.toBranch?.name || 'Филиал'}`;
+        }
+
+        const totalAmount = transaction.finalTotal ?? transaction.total ?? 0;
+
+        await tx.deletedRecord.create({
+          data: {
+            entityType: 'TRANSACTION',
+            entityId: id,
+            title: `Транзакция #${id} - ${labelInfo} (${Number(totalAmount).toLocaleString()} сўм)`,
+            details: {
+              ...transaction,
+              customer: customer || transaction.customer || null,
+            },
+            deletedById: deletedUserId ? Number(deletedUserId) : null,
+            deletedByName: deletedUserName || 'Админ',
+            branchId: transaction.fromBranchId || transaction.toBranchId || null,
+            reason: `Транзакциялар бўлимидан ўчирилди (${transaction.type || ''})`,
+          }
+        });
+      } catch (logErr) {
+        console.error('DeletedRecord logging error for transaction:', logErr);
+      }
 
       // Oxirida tranzaksiyani o'chirish
       return tx.transaction.delete({ where: { id } });

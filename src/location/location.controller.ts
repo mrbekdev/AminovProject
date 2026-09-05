@@ -145,7 +145,7 @@ export class LocationController {
     try {
       this.logger.debug(`User info in request: ${JSON.stringify(req.user)}`);
       const role = String(req.user.role || req.user.userRole || '').toUpperCase();
-      const allowedRoles = ['ADMIN', 'OPERATOR', 'OPERATORCALL', 'MANAGER', 'AUDITOR', 'MARKETING', 'CASHIER'];
+      const allowedRoles = ['ADMIN', 'BIGADMIN', 'OPERATOR', 'OPERATORCALL', 'MANAGER', 'AUDITOR', 'MARKETING', 'CASHIER'];
       if (!allowedRoles.includes(role)) {
         this.logger.warn(`User ${req.user.userId || req.user.sub} with role ${role} denied access to getUserLocation`);
         throw new ForbiddenException("Only authorized staff can view other users' locations");
@@ -200,7 +200,7 @@ export class LocationController {
   }> {
     try {
       const role = String(req.user.role || '').toUpperCase();
-      if (role !== 'ADMIN') {
+      if (!['ADMIN', 'BIGADMIN'].includes(role)) {
         throw new ForbiddenException('Only admins can view all online users');
       }
 
@@ -354,7 +354,7 @@ export class LocationController {
   }> {
     try {
       const role = String(req.user.role || '').toUpperCase();
-      if (role !== 'ADMIN') {
+      if (!['ADMIN', 'BIGADMIN'].includes(role)) {
         throw new ForbiddenException('Only admins can view location statistics');
       }
 
@@ -392,7 +392,7 @@ export class LocationController {
   }> {
     try {
       const role = String(req.user.role || '').toUpperCase();
-      if (role !== 'ADMIN') {
+      if (!['ADMIN', 'BIGADMIN'].includes(role)) {
         throw new ForbiddenException('Only admins can cleanup offline locations');
       }
 

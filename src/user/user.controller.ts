@@ -103,9 +103,9 @@ export class UserController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Foydalanuvchini o\'chirish' })
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string, @Req() req: any) {
     try {
-      return await this.userService.remove(+id);
+      return await this.userService.remove(+id, req?.user?.id);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }

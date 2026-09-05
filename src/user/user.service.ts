@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -256,7 +256,16 @@ export class UserService {
     });
   }
 
-  async remove(id: number) {
+  async remove(id: number, actorUserId?: number) {
+    if (actorUserId) {
+      const actor = await this.prisma.user.findUnique({ where: { id: actorUserId } });
+      if (actor && actor.role !== 'BIGADMIN') {
+        const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
+        if (setting && !setting.adminAllowDeleteEmployee) {
+          throw new ForbiddenException('Ходимларни ўчириш BigAdmin томонидан чекланган.');
+        }
+      }
+    }
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
     
@@ -355,7 +364,7 @@ export class UserService {
       createdAt: { gte: start, lte: end }
     };
 
-    if (userRole !== 'ADMIN' && branchId) {
+    if (!['ADMIN', 'BIGADMIN'].includes(userRole) && branchId) {
       transactionWhere.AND.push({
         OR: [
           { fromBranchId: Number(branchId) },

@@ -80,7 +80,16 @@ async update(id: number, updateBranchDto: UpdateBranchDto) {
   });
 }
 
-  async remove(id: number) {
+  async remove(id: number, userId?: number) {
+    if (userId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user && user.role !== 'BIGADMIN') {
+        const setting = await this.prisma.systemSetting.findFirst();
+        if (setting && setting.adminAllowDeleteBranch === false) {
+          throw new Error("BigAdmin tomonidan filiallarni o'chirish taqiqlangan");
+        }
+      }
+    }
     const findBranch = await this.prisma.branch.findUnique({ where: { id } });
     if (!findBranch) throw new Error('Branch not found');
     await this.prisma.product.updateMany({

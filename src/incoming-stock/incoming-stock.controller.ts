@@ -112,7 +112,7 @@ export class IncomingStockController {
     @Body('branchId') branchIdRaw: any,
     @CurrentUser() user: any
   ) {
-    if (user.role !== 'ADMIN') {
+    if (!['ADMIN', 'BIGADMIN'].includes(user.role)) {
       throw new ForbiddenException('Ushbu amalni bajarish uchun sizda huquq yetarli emas.');
     }
     const userId = user.userId || user.id || user.sub;
@@ -127,7 +127,7 @@ export class IncomingStockController {
     @Body('itemIds') itemIds: number[],
     @CurrentUser() user: any
   ) {
-    if (user.role !== 'ADMIN') {
+    if (!['ADMIN', 'BIGADMIN'].includes(user.role)) {
       throw new ForbiddenException('Ushbu amalni bajarish uchun sizda huquq yetarli emas.');
     }
     const userId = user.userId || user.id || user.sub;
@@ -142,7 +142,7 @@ export class IncomingStockController {
     @Body('itemIds') itemIds: number[],
     @CurrentUser() user: any
   ) {
-    if (user.role !== 'ADMIN') {
+    if (!['ADMIN', 'BIGADMIN'].includes(user.role)) {
       throw new ForbiddenException('Ushbu amalni bajarish uchun sizda huquq yetarli emas.');
     }
     const userId = user.userId || user.id || user.sub;

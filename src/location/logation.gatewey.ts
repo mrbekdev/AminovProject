@@ -80,7 +80,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
       this.emitOnlineUsersDebounced();
 
-      if (client.userData?.role === 'ADMIN') {
+      if (['ADMIN', 'BIGADMIN'].includes(client.userData?.role)) {
         const onlineUsers = await this.locationService.getAllOnlineUsers();
         const validUsers = onlineUsers.filter(
           (user) => !this.isTashkentLocation(user.latitude, user.longitude, user.address),
@@ -260,7 +260,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       return this.handleSocketError(client, new UnauthorizedException('User not authenticated'), 'Authentication error');
     }
 
-    if (client.userData?.role !== 'ADMIN') {
+    if (!['ADMIN', 'BIGADMIN'].includes(client.userData?.role as string)) {
       return this.handleSocketError(client, new UnauthorizedException('Only admins can view specific user locations'), 'Authorization error');
     }
 
@@ -288,7 +288,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       return this.handleSocketError(client, new UnauthorizedException('User not authenticated'), 'Authentication error');
     }
 
-    if (client.userData?.role !== 'ADMIN') {
+    if (!['ADMIN', 'BIGADMIN'].includes(client.userData?.role as string)) {
       return this.handleSocketError(client, new UnauthorizedException('Only admins can view all locations'), 'Authorization error');
     }
 
@@ -375,7 +375,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     return Array.from(this.connectedUsers.entries())
       .filter(([_, socketId]) => {
         const socket = this.server.sockets.sockets.get(socketId) as AuthenticatedSocket;
-        return socket?.userData?.role === 'ADMIN';
+        return ['ADMIN', 'BIGADMIN'].includes(socket?.userData?.role as string);
       })
       .map(([_, socketId]) => socketId);
   }

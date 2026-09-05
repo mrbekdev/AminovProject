@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Req } from '@nestjs/common';
 import { CreditRepaymentService } from './credit-repayment.service';
 import { CreateCreditRepaymentDto } from './dto/create-credit-repayment.dto';
 import { UpdateCreditRepaymentDto } from './dto/update-credit-repayment.dto';
@@ -58,7 +58,7 @@ export class CreditRepaymentController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.creditRepaymentService.remove(+id);
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.creditRepaymentService.remove(+id, req?.user?.id);
   }
 }

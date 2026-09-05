@@ -38,4 +38,16 @@ export class AuthController {
             employee: user,
         };
     }
+
+    @Post('change-password')
+    @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Foydalanuvchi oʻz parolini oʻzgartirishi' })
+    async changePassword(
+        @CurrentUser() user: any,
+        @Body() body: { currentPassword?: string; newPassword: string }
+    ) {
+        const userId = user.userId || user.sub || user.id;
+        return this.authService.changePassword(userId, body.currentPassword, body.newPassword);
+    }
 } 

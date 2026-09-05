@@ -75,6 +75,7 @@ function compareBase64Images(b641: string, b642: string): number {
 function getRoleText(role: string): string {
   switch (role) {
     case 'ADMIN': return 'Администратор';
+    case 'BIGADMIN': return 'Бош Администратор (Big Admin)';
     case 'CASHIER': return 'Кассир';
     case 'WAREHOUSE': return 'Складчи';
     case 'AUDITOR': return 'Доставкачи';
@@ -840,7 +841,16 @@ export class AttendanceService {
     return this.prisma.attendanceDay.update({ where: { id }, data });
   }
 
-  async remove(id: number) {
+  async remove(id: number, userId?: number) {
+    if (userId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user && user.role !== 'BIGADMIN') {
+        const setting = await this.prisma.systemSetting.findFirst();
+        if (setting && setting.adminAllowDeleteAttendance === false) {
+          throw new BadRequestException("BigAdmin tomonidan davomatni o'chirish taqiqlangan");
+        }
+      }
+    }
     await this.prisma.attendanceEvent.deleteMany({ where: { dayId: id } });
     return this.prisma.attendanceDay.delete({ where: { id } });
   }

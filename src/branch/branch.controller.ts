@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
-  HttpException, HttpStatus, UseGuards
+  HttpException, HttpStatus, UseGuards, Req
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { BranchService } from './branch.service';
@@ -55,9 +55,9 @@ export class BranchController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Filialni o\'chirish' })
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string, @Req() req: any) {
     try {
-      return await this.branchService.remove(+id);
+      return await this.branchService.remove(+id, req?.user?.id);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }

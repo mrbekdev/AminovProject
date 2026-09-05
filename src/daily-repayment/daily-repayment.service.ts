@@ -10,7 +10,7 @@ export class DailyRepaymentService {
   async create(createDailyRepaymentDto: CreateDailyRepaymentDto) {
     const { transactionId, amount, channel, paidAt, paidByUserId, branchId } = createDailyRepaymentDto;
     
-    return this.prisma.dailyRepayment.create({
+    const created = await this.prisma.dailyRepayment.create({
       data: {
         transactionId,
         amount,
@@ -20,11 +20,62 @@ export class DailyRepaymentService {
         branchId,
       },
       include: {
-        transaction: true,
+        transaction: {
+          include: {
+            customer: true,
+            items: { include: { product: true } },
+            fromBranch: true,
+          },
+        },
         paidBy: true,
         branch: true,
       },
     });
+
+    try {
+      const customer = created.transaction?.customer;
+      const customerName = customer?.fullName || 'Мижоз';
+      const collectorName = created.paidBy
+        ? ([created.paidBy.firstName, created.paidBy.lastName].filter(Boolean).join(' ') || created.paidBy.username || 'Кассир')
+        : 'Кассир / Админ';
+      const targetBranchId = created.branchId || created.transaction?.fromBranchId || null;
+
+      await this.prisma.deletedRecord.create({
+        data: {
+          entityType: 'REPAYMENT',
+          entityId: created.id,
+          title: `Кунлик тўлов: ${customerName} - ${Number(amount).toLocaleString('uz-UZ')} сўм (${channel || 'CASH'})`,
+          details: {
+            type: 'REPAYMENT',
+            repaymentType: 'DAILY',
+            amount: Number(amount),
+            channel: channel || 'CASH',
+            paidAt: created.paidAt,
+            customer: customer || null,
+            transactionId: created.transactionId,
+            branchId: targetBranchId,
+            transaction: {
+              id: created.transaction?.id,
+              finalTotal: created.transaction?.finalTotal,
+              total: created.transaction?.total,
+              remainingBalance: created.transaction?.remainingBalance,
+              creditRepaymentAmount: created.transaction?.creditRepaymentAmount,
+              termUnit: created.transaction?.termUnit,
+              customer: customer || null,
+              items: created.transaction?.items || [],
+            },
+          },
+          deletedById: paidByUserId ? Number(paidByUserId) : null,
+          deletedByName: collectorName,
+          branchId: targetBranchId,
+          reason: `Кунлик қарз тўлови қабул қилинди`,
+        },
+      });
+    } catch (e) {
+      console.error('Failed to create DeletedRecord log for DailyRepayment:', e);
+    }
+
+    return created;
   }
 
   async findAll(query: any) {

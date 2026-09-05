@@ -36,6 +36,7 @@ import { StoreModule } from './store/store.module';
 import { ProductHistoryModule } from './product-history/product-history.module';
 import { FaceModule } from './face/face.module';
 import { HrModule } from './hr/hr.module';
+import { DeletedRecordsModule } from './deleted-records/deleted-records.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { HrModule } from './hr/hr.module';
     DebtCashierReportModule,
     ProductHistoryModule,
     HrModule,
+    DeletedRecordsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

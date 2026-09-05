@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -56,7 +56,16 @@ export class CategoryService {
     });
   }
 
-  async remove(id: number) {
+  async remove(id: number, userId?: number) {
+    if (userId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user && user.role !== 'BIGADMIN') {
+        const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
+        if (setting && !setting.adminAllowDeleteCategory) {
+          throw new ForbiddenException('Категорияларни ўчириш BigAdmin томонидан чекланган.');
+        }
+      }
+    }
     await this.prisma.product.updateMany({
       where: { categoryId: id },
       data: { isDeleted: true },

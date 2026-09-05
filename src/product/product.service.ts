@@ -425,7 +425,7 @@ async update(
 ) {
   if (userId) {
     const user = await prismaClient.user.findUnique({ where: { id: userId } });
-    if (user && user.role !== 'ADMIN') {
+    if (user && !['ADMIN', 'BIGADMIN'].includes(user.role)) {
       const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
       if (setting && !setting.skladAllowEdit) {
         throw new ForbiddenException('Складчиларга маҳсулотларни таҳрирлаш рухсати ўчирилган.');
@@ -953,10 +953,16 @@ async update(
 async remove(id: number, userId: number) {
   if (userId) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (user && user.role !== 'ADMIN') {
+    if (user && user.role !== 'BIGADMIN') {
       const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
-      if (setting && !setting.skladAllowDelete) {
-        throw new ForbiddenException('Складчиларга маҳсулотларни ўчириш рухсати ўчирилган.');
+      if (['ADMIN'].includes(user.role)) {
+        if (setting && !setting.adminAllowDeleteProduct) {
+          throw new ForbiddenException('Товарларни ўчириш BigAdmin томонидан чекланган.');
+        }
+      } else {
+        if (setting && !setting.skladAllowDelete) {
+          throw new ForbiddenException('Складчиларга маҳсулотларни ўчириш рухсати ўчирилган.');
+        }
       }
     }
   }
@@ -988,8 +994,27 @@ async remove(id: number, userId: number) {
         oldValues: { name: product.name, model: product.model, quantity: product.quantity, price: product.price },
         quantityChange: -product.quantity,
       });
+
+      let performerName = 'Админ';
+      if (userId) {
+        const u = await tx.user.findUnique({ where: { id: userId } });
+        if (u) performerName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username;
+      }
+
+      await tx.deletedRecord.create({
+        data: {
+          entityType: 'PRODUCT',
+          entityId: id,
+          title: `Товар: ${product.name}${product.model ? ` (${product.model})` : ''} - ${product.quantity} дона`,
+          details: product,
+          deletedById: userId || null,
+          deletedByName: performerName,
+          branchId: product.branchId || null,
+          reason: 'Инвентар (Склад) бўлимидан ўчирилди',
+        },
+      });
     } catch (err) {
-      console.error('Error logging DELETED product history:', err);
+      console.error('Error logging DELETED product history / DeletedRecord:', err);
     }
 
     return deletedProduct;
@@ -1058,10 +1083,16 @@ return this.prisma.$transaction(async (tx) => {
   async removeMany(ids: number[], userId?: number) {
     if (userId) {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
-      if (user && user.role !== 'ADMIN') {
+      if (user && user.role !== 'BIGADMIN') {
         const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
-        if (setting && !setting.skladAllowDelete) {
-          throw new ForbiddenException('Складчиларга маҳсулотларни ўчириш рухсати ўчирилган.');
+        if (['ADMIN'].includes(user.role)) {
+          if (setting && !setting.adminAllowDeleteProduct) {
+            throw new ForbiddenException('Товарларни ўчириш BigAdmin томонидан чекланган.');
+          }
+        } else {
+          if (setting && !setting.skladAllowDelete) {
+            throw new ForbiddenException('Складчиларга маҳсулотларни ўчириш рухсати ўчирилган.');
+          }
         }
       }
     }

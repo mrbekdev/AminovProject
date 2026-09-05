@@ -110,6 +110,7 @@ enum PaymentType {
 
 enum UserRole {
   ADMIN
+  BIGADMIN
   MANAGER
   CASHIER
   WAREHOUSE
@@ -177,6 +178,7 @@ model Branch {
   incomingReports  IncomingStockReport[]  @relation("BranchIncomingReports")
   debtCashierReports DebtCashierReport[]
   stores           Store[]
+  deletedRecords   DeletedRecord[]        @relation("DeletedRecordBranch")
 
   @@index([name])
 }
@@ -238,6 +240,7 @@ model User {
   sellerTargets                     SellerTarget[]
   productHistories                  ProductHistory[]               @relation("ProductHistoryPerformedBy")
   transactionNotes                  TransactionNote[]
+  deletedRecords                    DeletedRecord[]                @relation("DeletedRecordUser")
 
   @@index([phone])
   @@index([branchId])
@@ -860,10 +863,19 @@ model GlobalRate {
 }
 
 model SystemSetting {
-  id               Int      @id @default(1)
-  skladAllowEdit   Boolean  @default(true)
-  skladAllowDelete Boolean  @default(true)
-  updatedAt        DateTime @updatedAt
+  id                         Int      @id @default(1)
+  skladAllowEdit             Boolean  @default(true)
+  skladAllowDelete           Boolean  @default(true)
+  adminAllowDeleteProduct    Boolean  @default(true)
+  adminAllowDeleteCategory   Boolean  @default(true)
+  adminAllowDeleteEmployee   Boolean  @default(true)
+  adminAllowDeleteAttendance Boolean  @default(true)
+  adminAllowDeleteTransaction Boolean @default(true)
+  adminAllowDeleteRepayment  Boolean  @default(true)
+  adminAllowDeleteBranch     Boolean  @default(true)
+  adminAllowDeleteCustomer   Boolean  @default(true)
+  adminAllowDeleteExpense    Boolean  @default(true)
+  updatedAt                  DateTime @updatedAt
 }
 
 enum ReconciliationStatus {
@@ -1151,5 +1163,26 @@ model JobApplication {
   @@index([phone])
   @@index([telegramId])
 }
+
+model DeletedRecord {
+  id            Int      @id @default(autoincrement())
+  entityType    String   // 'PRODUCT' | 'TRANSACTION'
+  entityId      Int?
+  title         String
+  details       Json
+  deletedById   Int?
+  deletedByName String?
+  branchId      Int?
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  deletedBy     User?    @relation("DeletedRecordUser", fields: [deletedById], references: [id], onDelete: SetNull)
+  branch        Branch?  @relation("DeletedRecordBranch", fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([entityType])
+  @@index([createdAt])
+  @@index([branchId])
+}
+
 
 

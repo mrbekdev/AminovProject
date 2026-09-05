@@ -215,7 +215,16 @@ export class CustomerService {
     });
   }
 
-  async remove(id: number) {
+  async remove(id: number, userId?: number) {
+    if (userId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user && user.role !== 'BIGADMIN') {
+        const setting = await this.prisma.systemSetting.findFirst();
+        if (setting && setting.adminAllowDeleteCustomer === false) {
+          throw new Error("BigAdmin tomonidan mijozlarni o'chirish taqiqlangan");
+        }
+      }
+    }
     return this.prisma.customer.delete({ where: { id } });
   }
 }

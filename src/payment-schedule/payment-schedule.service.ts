@@ -199,6 +199,59 @@ export class PaymentScheduleService {
               data: { cashBalance: { increment: deltaPaid } }
             });
           }
+
+          // Log payment / repayment history into DeletedRecord audit
+          try {
+            const customer = existing.transaction?.customer;
+            const customerName = customer?.fullName || 'Мижоз';
+            let collectorName = 'Кассир / Админ';
+            if (paidByUserId) {
+              const u = await tx.user.findUnique({
+                where: { id: Number(paidByUserId) },
+                select: { firstName: true, lastName: true, username: true },
+              });
+              if (u) {
+                collectorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || 'Кассир';
+              }
+            }
+            const isFullyPaid = updatedSchedule.isPaid || (Number(updatedSchedule.paidAmount) >= Number(updatedSchedule.payment));
+            await tx.deletedRecord.create({
+              data: {
+                entityType: 'REPAYMENT',
+                entityId: updatedSchedule.id,
+                title: `Қарз тўлови: ${customerName} - ${Number(deltaPaid).toLocaleString('uz-UZ')} сўм (${paidChannel || 'CASH'})`,
+                details: {
+                  type: 'REPAYMENT',
+                  amount: Number(deltaPaid),
+                  channel: paidChannel || 'CASH',
+                  isFullyPaid,
+                  month: updatedSchedule.month,
+                  schedulePayment: updatedSchedule.payment,
+                  totalSchedulePaid: updatedSchedule.paidAmount,
+                  paidAt: effectivePaidAt,
+                  customer: customer || null,
+                  transactionId: existing.transactionId,
+                  branchId: targetBranchId || existing.transaction?.fromBranchId || null,
+                  transaction: {
+                    id: existing.transaction?.id,
+                    finalTotal: existing.transaction?.finalTotal,
+                    total: existing.transaction?.total,
+                    remainingBalance: existing.transaction?.remainingBalance,
+                    creditRepaymentAmount: existing.transaction?.creditRepaymentAmount,
+                    termUnit: existing.transaction?.termUnit,
+                    customer: customer || null,
+                    items: existing.transaction?.items || [],
+                  },
+                },
+                deletedById: paidByUserId ? Number(paidByUserId) : null,
+                deletedByName: collectorName,
+                branchId: targetBranchId || existing.transaction?.fromBranchId || null,
+                reason: `Қарз тўлови қабул қилинди (${isFullyPaid ? 'Тўлиқ' : 'Қисман'}) - Ой: ${updatedSchedule.month || 1}`,
+              },
+            });
+          } catch (e) {
+            console.error('Failed to create DeletedRecord audit in PaymentScheduleService:', e);
+          }
         }
 
         // Handle unpay/refund (deltaPaid < 0) - decrement branch cash
@@ -235,14 +288,38 @@ export class PaymentScheduleService {
               });
             }
           } else {
-            // For regular schedules, update creditRepaymentAmount
+            // For regular schedules, update creditRepaymentAmount and recalculate transaction remainingBalance
+            const allSchedules = await tx.paymentSchedule.findMany({
+              where: { transactionId: existing.transactionId }
+            });
+            const totalSchedPayment = allSchedules.reduce((sum, s) => sum + Number(s.payment || 0), 0);
+            const totalSchedPaid = allSchedules.reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
+            const parentTx = await tx.transaction.findUnique({
+              where: { id: existing.transactionId },
+              select: { finalTotal: true, total: true, downPayment: true }
+            });
+            const baseDebt = totalSchedPayment > 0
+              ? totalSchedPayment
+              : Math.max(0, Number(parentTx?.finalTotal ?? parentTx?.total ?? 0) - Number(parentTx?.downPayment || 0));
+            const newRemaining = Math.max(0, baseDebt - totalSchedPaid);
+
             await tx.transaction.update({
               where: { id: existing.transactionId },
               data: {
                 lastRepaymentDate: effectivePaidAt as any,
+                remainingBalance: newRemaining,
                 creditRepaymentAmount: { increment: deltaPaid }
               }
             });
+
+            if (newRemaining <= 0 && baseDebt > 0) {
+              await tx.transaction.update({
+                where: { id: existing.transactionId },
+                data: {
+                  status: 'COMPLETED' as any
+                }
+              });
+            }
           }
         } catch (_) {}
 

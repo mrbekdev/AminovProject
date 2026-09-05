@@ -1024,7 +1024,7 @@ export class IncomingStockService {
   // ─── Helper: Send Admin Notifications ──────────────────────────────────────
   private async notifyAdmins(tx: any, title: string, message: string) {
     const admins = await tx.user.findMany({
-      where: { role: UserRole.ADMIN, status: 'ACTIVE' },
+      where: { role: { in: [UserRole.ADMIN, UserRole.BIGADMIN] }, status: 'ACTIVE' },
       select: { id: true },
     });
 
