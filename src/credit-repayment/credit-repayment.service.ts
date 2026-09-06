@@ -37,6 +37,39 @@ export class CreditRepaymentService {
     });
 
     try {
+      if (transactionId) {
+        const txRec = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
+        if (txRec) {
+          const currentCredit = Number(txRec.creditRepaymentAmount || 0);
+          const newCredit = currentCredit + Number(amount || 0);
+          const baseAmount = Number(txRec.finalTotal || txRec.total || 0);
+          const down = Number(txRec.downPayment || 0);
+          const newRemaining = Math.max(0, baseAmount - down - newCredit);
+          await this.prisma.transaction.update({
+            where: { id: txRec.id },
+            data: {
+              creditRepaymentAmount: newCredit,
+              remainingBalance: newRemaining,
+              lastRepaymentDate: new Date(paidAt || Date.now()),
+            },
+          });
+        }
+
+        const effectiveBranchId = branchId || created.transaction?.fromBranchId || null;
+        if (effectiveBranchId && String(channel || 'CASH').toUpperCase() === 'CASH') {
+          try {
+            await this.prisma.branch.update({
+              where: { id: effectiveBranchId },
+              data: { cashBalance: { increment: Number(amount || 0) } },
+            });
+          } catch (_) {}
+        }
+      }
+    } catch (txErr) {
+      console.error('Failed to update transaction/branch balances for CreditRepayment:', txErr);
+    }
+
+    try {
       const customer = created.transaction?.customer;
       const customerName = customer?.fullName || 'Мижоз';
       const collectorName = created.paidBy

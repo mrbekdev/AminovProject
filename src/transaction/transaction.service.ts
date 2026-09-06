@@ -931,6 +931,10 @@ export class TransactionService {
           },
         },
         defectiveLogs: true,
+        creditRepayments: {
+          include: { paidBy: true },
+          orderBy: { paidAt: 'desc' }
+        },
       },
       orderBy: { createdAt: 'desc' },
       skip: parsedLimit ? (parsedPage - 1) * parsedLimit : 0,
@@ -1160,6 +1164,10 @@ export class TransactionService {
             }
           },
           orderBy: { createdAt: 'desc' }
+        },
+        creditRepayments: {
+          include: { paidBy: true },
+          orderBy: { paidAt: 'desc' }
         },
       }
     });
