@@ -37,6 +37,7 @@ import { ProductHistoryModule } from './product-history/product-history.module';
 import { FaceModule } from './face/face.module';
 import { HrModule } from './hr/hr.module';
 import { DeletedRecordsModule } from './deleted-records/deleted-records.module';
+import { SalaryPaymentModule } from './salary-payment/salary-payment.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { DeletedRecordsModule } from './deleted-records/deleted-records.module';
     ProductHistoryModule,
     HrModule,
     DeletedRecordsModule,
+    SalaryPaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

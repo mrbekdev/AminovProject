@@ -3,10 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateDefectiveLogDto } from './dto/create-defective-log.dto';
 import { UpdateDefectiveLogDto } from './dto/update-defective-log.dto';
 import { ProductStatus } from '@prisma/client';
+import { TaskGateway } from '../task/task.gateway';
 
 @Injectable()
 export class DefectiveLogService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private taskGateway: TaskGateway
+  ) {}
 
   // Helper method to recalculate payment schedules for a transaction
   private async recalculatePaymentSchedules(transactionId: number) {
@@ -18,9 +22,7 @@ export class DefectiveLogService {
       }
     });
 
-    if (!transaction || (transaction.paymentType !== 'CREDIT' && transaction.paymentType !== 'INSTALLMENT')) {
-      return; // Only recalculate for credit/installment transactions
-    }
+    if (!transaction) return;
 
     // Delete existing payment schedules
     if (transaction.paymentSchedules.length > 0) {
@@ -50,7 +52,42 @@ export class DefectiveLogService {
       .filter(item => item.remainingQuantity > 0);
     
     if (remainingItems.length === 0) {
-      return; // No items left, no need for schedules
+      // No items left, cancel transaction, clear balances, delete tasks
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          status: 'CANCELLED',
+          remainingBalance: 0,
+          total: 0,
+          finalTotal: 0,
+          extraProfit: 0,
+        }
+      });
+      await (this.prisma as any).task.deleteMany({
+        where: { transactionId }
+      });
+      try {
+        this.taskGateway.emitUpdated({ type: 'deleted', transactionId });
+      } catch (_) {}
+      return;
+    }
+
+    if (transaction.paymentType !== 'CREDIT' && transaction.paymentType !== 'INSTALLMENT') {
+      let remainingTotalPrincipal = 0;
+      for (const item of remainingItems) {
+        remainingTotalPrincipal += (item.sellingPrice ?? item.price ?? 0) * item.remainingQuantity;
+      }
+      const paid = Number(transaction.amountPaid || transaction.downPayment || 0);
+      const remainingBalance = Math.max(0, remainingTotalPrincipal - paid);
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          total: remainingTotalPrincipal,
+          finalTotal: remainingTotalPrincipal,
+          remainingBalance: remainingBalance,
+        }
+      });
+      return;
     }
 
     // Calculate original transaction totals
@@ -62,7 +99,7 @@ export class DefectiveLogService {
     // First pass: calculate original totals (including returned items)
     for (const item of allItems) {
       const originalQuantity = item.quantity;
-      const principal = (item.price || 0) * originalQuantity;
+      const principal = (item.sellingPrice ?? item.price ?? 0) * originalQuantity;
       originalTotalPrincipal += principal;
       if (item.creditPercent) {
         originalWeightedPercentSum += principal * (item.creditPercent || 0);
@@ -79,7 +116,7 @@ export class DefectiveLogService {
     let remainingPercentWeightBase = 0;
 
     for (const item of remainingItems) {
-      const principal = (item.price || 0) * item.remainingQuantity;
+      const principal = (item.sellingPrice ?? item.price ?? 0) * item.remainingQuantity;
       remainingTotalPrincipal += principal;
       if (item.creditPercent) {
         remainingWeightedPercentSum += principal * (item.creditPercent || 0);
@@ -96,12 +133,10 @@ export class DefectiveLogService {
       const remainingPrincipal = Math.max(0, remainingTotalPrincipal - proportionalUpfront);
       const effectivePercent = remainingPercentWeightBase > 0 ? (remainingWeightedPercentSum / remainingPercentWeightBase) : 0;
       
-      
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
       const monthlyPayment = remainingWithInterest / totalMonths;
       let remainingBalance = remainingWithInterest;
-      
 
       const schedules: { transactionId: number; month: number; payment: number; remainingBalance: number; isPaid: boolean; paidAmount: number; }[] = [];
       for (let month = 1; month <= totalMonths; month++) {
@@ -129,7 +164,8 @@ export class DefectiveLogService {
         where: { id: transactionId },
         data: { 
           total: remainingTotalPrincipal,
-          finalTotal: remainingWithInterest
+          finalTotal: remainingWithInterest,
+          remainingBalance: remainingWithInterest
         }
       });
     }
@@ -242,6 +278,7 @@ export class DefectiveLogService {
     // Recalc trigger flags (to run AFTER transaction completes)
     let shouldRecalculate = false;
     let recalcForTxId: number | null = null;
+    let taskDeletedTxId: number | null = null;
 
     // Use transaction to ensure data consistency (keep it short)
     const result = await this.prisma.$transaction(async (prisma) => {
@@ -285,7 +322,7 @@ export class DefectiveLogService {
       if (isFromSale && transactionId) {
         const tx = await prisma.transaction.findUnique({
           where: { id: Number(transactionId) },
-          include: { items: true }
+          include: { items: true, payments: true }
         });
         if (tx) {
           // Find the original item for productId
@@ -306,35 +343,101 @@ export class DefectiveLogService {
               });
             }
 
-              // BONUS REVERSAL: Return all bonus products given for this transaction and delete related bonus rows
-              if (actionType === 'RETURN') {
-                // Restock all transaction bonus products back to inventory once
-                const txBonusProducts = await prisma.transactionBonusProduct.findMany({ where: { transactionId: tx.id } });
-                if (txBonusProducts.length > 0) {
-                  for (const bp of txBonusProducts) {
-                    try {
-                      await prisma.product.update({
-                        where: { id: bp.productId },
-                        data: { quantity: { increment: Number(bp.quantity || 0) } }
-                      });
-                    } catch (_) { /* ignore single product failures to avoid blocking whole return */ }
-                  }
-                  // Remove TransactionBonusProduct rows to prevent double-restock on subsequent returns
-                  await prisma.transactionBonusProduct.deleteMany({ where: { transactionId: tx.id } });
+            // BONUS REVERSAL: Return all bonus products given for this transaction and delete related bonus rows
+            if (actionType === 'RETURN') {
+              // Restock all transaction bonus products back to inventory once
+              const txBonusProducts = await prisma.transactionBonusProduct.findMany({ where: { transactionId: tx.id } });
+              if (txBonusProducts.length > 0) {
+                for (const bp of txBonusProducts) {
+                  try {
+                    await prisma.product.update({
+                      where: { id: bp.productId },
+                      data: { quantity: { increment: Number(bp.quantity || 0) } }
+                    });
+                  } catch (_) { /* ignore single product failures to avoid blocking whole return */ }
                 }
-
-                // Delete all bonuses tied to this transaction (sales bonus, penalty, updates)
-                await (prisma as any).bonus.deleteMany({ where: { transactionId: tx.id } });
-                // Adjust extraProfit proportionally based on returned quantity
-                const originalProfit = tx.extraProfit || 0;
-                const originalQty = Number(orig.quantity) + Number(quantity);
-                const proportionalProfit = originalProfit * (Number(quantity) / originalQty);
-                const newProfit = Math.max(0, originalProfit - proportionalProfit);
-                await prisma.transaction.update({ 
-                  where: { id: tx.id }, 
-                  data: { extraProfit: newProfit } 
-                });
+                // Remove TransactionBonusProduct rows to prevent double-restock on subsequent returns
+                await prisma.transactionBonusProduct.deleteMany({ where: { transactionId: tx.id } });
               }
+
+              // Delete all bonuses tied to this transaction (sales bonus, penalty, updates)
+              await (prisma as any).bonus.deleteMany({ where: { transactionId: tx.id } });
+              // Adjust extraProfit proportionally based on returned quantity
+              const originalProfit = tx.extraProfit || 0;
+              const originalQty = Number(orig.quantity) + Number(quantity);
+              const proportionalProfit = originalProfit * (Number(quantity) / originalQty);
+              const newProfit = Math.max(0, originalProfit - proportionalProfit);
+              await prisma.transaction.update({ 
+                where: { id: tx.id }, 
+                data: { extraProfit: newProfit } 
+              });
+
+              // Check if ALL items in this transaction are now RETURNED
+              const allTxItems = await prisma.transactionItem.findMany({
+                where: { transactionId: tx.id }
+              });
+              const allReturned = allTxItems.every(item => {
+                if (item.id === orig.id) {
+                  const remQty = Math.max(0, Number(item.quantity) - Number(quantity));
+                  return remQty === 0;
+                }
+                return item.status === 'RETURNED';
+              });
+
+              if (allReturned) {
+                // 1. Mark transaction as CANCELLED with 0 balances
+                await prisma.transaction.update({
+                  where: { id: tx.id },
+                  data: {
+                    status: 'CANCELLED',
+                    total: 0,
+                    finalTotal: 0,
+                    remainingBalance: 0,
+                    extraProfit: 0,
+                  }
+                });
+
+                // 2. Delete payment schedules
+                await prisma.paymentSchedule.deleteMany({
+                  where: { transactionId: tx.id }
+                });
+
+                // 3. Delete delivery tasks
+                await (prisma as any).task.deleteMany({
+                  where: { transactionId: tx.id }
+                });
+                taskDeletedTxId = tx.id;
+              } else {
+                // Partial return
+                if (tx.paymentType === 'CREDIT' || tx.paymentType === 'INSTALLMENT') {
+                  shouldRecalculate = true;
+                  recalcForTxId = tx.id;
+                } else {
+                  // Non-credit/installment: calculate remaining total and update remainingBalance
+                  let remainingTotal = 0;
+                  for (const it of allTxItems) {
+                    let itQty = Number(it.quantity);
+                    if (it.id === orig.id) {
+                      itQty = Math.max(0, Number(it.quantity) - Number(quantity));
+                    } else if (it.status === 'RETURNED') {
+                      itQty = 0;
+                    }
+                    const price = Number((it.sellingPrice ?? it.price) || 0);
+                    remainingTotal += itQty * price;
+                  }
+                  const paid = Number(tx.amountPaid || tx.downPayment || 0);
+                  const newRemaining = Math.max(0, remainingTotal - paid);
+                  await prisma.transaction.update({
+                    where: { id: tx.id },
+                    data: {
+                      total: remainingTotal,
+                      finalTotal: remainingTotal,
+                      remainingBalance: newRemaining,
+                    }
+                  });
+                }
+              }
+            }
 
             if (actionType === 'EXCHANGE') {
               const replacementQty = Math.max(1, Number(replacementQuantity || quantity) || quantity);
@@ -383,14 +486,11 @@ export class DefectiveLogService {
                 where: { id: repl.id },
                 data: { quantity: Math.max(0, repl.quantity - replacementQty) }
               });
-            }
-            
-            // Recalculate totals (fast query)
 
-            // Set recalc flag (run after transaction)
-            if (tx.paymentType === 'CREDIT' || tx.paymentType === 'INSTALLMENT') {
-              shouldRecalculate = true;
-              recalcForTxId = tx.id;
+              if (tx.paymentType === 'CREDIT' || tx.paymentType === 'INSTALLMENT') {
+                shouldRecalculate = true;
+                recalcForTxId = tx.id;
+              }
             }
           }
         }
@@ -410,6 +510,12 @@ export class DefectiveLogService {
 
       return defectiveLog;
     }, { timeout: 15000 });
+
+    if (taskDeletedTxId) {
+      try {
+        this.taskGateway.emitUpdated({ type: 'deleted', transactionId: taskDeletedTxId });
+      } catch (_) {}
+    }
 
     // Perform schedule recalculation OUTSIDE of transaction to avoid timeouts
     if (shouldRecalculate && recalcForTxId) {

@@ -131,6 +131,9 @@ export class TaskService {
       }
     }
 
+    if (!where.transaction) where.transaction = {};
+    where.transaction.status = { not: 'CANCELLED' };
+
     const parsedPage = page && !isNaN(page) && page > 0 ? page : 1;
     const parsedLimit = limit && !isNaN(limit) && limit > 0 ? limit : undefined;
 
@@ -153,10 +156,10 @@ export class TaskService {
     const where: any = {
       auditorId: Number(auditorId),
       ...(status ? { status } : {}),
+      transaction: { status: { not: 'CANCELLED' } }
     };
 
     if (startDate || endDate) {
-      where.transaction = {};
       const { start, end } = this.parseDateRange(startDate, endDate);
       if (start) {
         where.transaction.createdAt = { ...where.transaction.createdAt, gte: start };

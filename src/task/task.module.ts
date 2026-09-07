@@ -8,6 +8,6 @@ import { TaskGateway } from './task.gateway';
   imports: [PrismaModule],
   controllers: [TaskController],
   providers: [TaskService, TaskGateway],
-  exports: [TaskService],
+  exports: [TaskService, TaskGateway],
 })
 export class TaskModule {}

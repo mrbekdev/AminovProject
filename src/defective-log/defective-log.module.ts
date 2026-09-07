@@ -3,8 +3,10 @@ import { DefectiveLogService } from './defective-log.service';
 import { DefectiveLogController } from './defective-log.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
+import { TaskModule } from '../task/task.module';
+
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, TaskModule],
   controllers: [DefectiveLogController],
   providers: [DefectiveLogService],
   exports: [DefectiveLogService],

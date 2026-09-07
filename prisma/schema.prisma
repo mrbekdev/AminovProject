@@ -178,6 +178,7 @@ model Branch {
   incomingReports  IncomingStockReport[]  @relation("BranchIncomingReports")
   debtCashierReports DebtCashierReport[]
   stores           Store[]
+  salaryPayments   SalaryPayment[]
   deletedRecords   DeletedRecord[]        @relation("DeletedRecordBranch")
 
   @@index([name])
@@ -240,6 +241,8 @@ model User {
   sellerTargets                     SellerTarget[]
   productHistories                  ProductHistory[]               @relation("ProductHistoryPerformedBy")
   transactionNotes                  TransactionNote[]
+  salaryPayments       SalaryPayment[]        @relation("UserSalaryPayments")
+  createdSalaryPayments SalaryPayment[]       @relation("SalaryPaymentCreatedBy")
   deletedRecords                    DeletedRecord[]                @relation("DeletedRecordUser")
 
   @@index([phone])
@@ -750,6 +753,28 @@ model Bonus {
   @@index([branchId])
   @@index([bonusDate])
   @@index([transactionId])
+}
+
+model SalaryPayment {
+  id          Int      @id @default(autoincrement())
+  userId      Int      // Employee receiving salary payment
+  amount      Float    // Amount paid
+  paymentDate DateTime @default(now()) // Date of payment
+  paymentType String?  @default("CASH") // CASH, CARD, BANK, etc.
+  notes       String?  // Optional description or note
+  createdById Int      // Admin/Manager who paid
+  branchId    Int?     // Branch where payment was made
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User    @relation("UserSalaryPayments", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("SalaryPaymentCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  branch    Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdById])
+  @@index([paymentDate])
+  @@index([branchId])
 }
 
 model TransactionBonusProduct {
