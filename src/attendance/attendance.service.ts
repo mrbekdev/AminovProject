@@ -135,22 +135,41 @@ export class AttendanceService {
     }
     if (!userId) throw new BadRequestException('userId or faceTemplateId is required');
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { store: true, branch: true },
+    });
     if (!user) throw new NotFoundException('User not found');
 
     const today = startOfDayUTC(params.when);
     const now = params.when ? new Date(params.when) : new Date();
 
-    // Check work start time for late minutes in Uzbekistan (UTC+5) time
+    const store = user.store;
+    const toleranceMin = store?.lateToleranceMin ?? 15;
+    const latePenaltyPerMin = store?.latePenaltyPerMin ?? 500;
+    const earlyBonusPerMin = store?.earlyBonusPerMin ?? 500;
+
     let lateMinutes = 0;
-    if (user.workStartTime) {
-      const [startH, startM] = user.workStartTime.split(':').map(Number);
-      const { year, month, day: tDay } = getTashkentDate(now);
-      const tashkentMidnightUTC = Date.UTC(year, month, tDay, 0, 0, 0, 0) - 5 * 60 * 60 * 1000;
-      const workStartMs = tashkentMidnightUTC + (startH * 60 + startM) * 60 * 1000;
-      const workStart = new Date(workStartMs);
-      if (now > workStart) {
-        lateMinutes = Math.round((+now - +workStart) / 60000);
+    let penaltyAmount = 0;
+    let bonusAmount = 0;
+
+    const workStartTimeStr = user.workStartTime || '09:00';
+    const [startH, startM] = workStartTimeStr.split(':').map(Number);
+    const { year, month, day: tDay } = getTashkentDate(now);
+    const tashkentMidnightUTC = Date.UTC(year, month, tDay, 0, 0, 0, 0) - 5 * 60 * 60 * 1000;
+    const workStartMs = tashkentMidnightUTC + (startH * 60 + startM) * 60 * 1000;
+    const workStart = new Date(workStartMs);
+
+    if (now > workStart) {
+      const diff = Math.round((+now - +workStart) / 60000);
+      if (diff > toleranceMin) {
+        lateMinutes = diff;
+        penaltyAmount = lateMinutes * latePenaltyPerMin;
+      }
+    } else {
+      const earlyDiff = Math.round((+workStart - +now) / 60000);
+      if (earlyDiff > 0 && earlyDiff <= 180) {
+        bonusAmount = earlyDiff * earlyBonusPerMin;
       }
     }
 
@@ -163,13 +182,17 @@ export class AttendanceService {
         date: today,
         checkInAt: now,
         lateMinutes,
-        status: lateMinutes > 15 ? 'LATE' : 'PRESENT',
+        penaltyAmount,
+        bonusAmount,
+        status: lateMinutes > 0 ? 'LATE' : 'PRESENT',
         deviceId,
       },
       update: {
         checkInAt: now,
         lateMinutes,
-        status: lateMinutes > 15 ? 'LATE' : 'PRESENT',
+        penaltyAmount,
+        bonusAmount,
+        status: lateMinutes > 0 ? 'LATE' : 'PRESENT',
         branchId: branchId ?? user.branchId ?? null,
         storeId: storeId ?? user.storeId ?? null,
         deviceId,
@@ -201,11 +224,43 @@ export class AttendanceService {
     }
     if (!userId) throw new BadRequestException('userId or faceTemplateId is required');
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { store: true, branch: true },
+    });
     if (!user) throw new NotFoundException('User not found');
 
     const today = startOfDayUTC(params.when);
     const now = params.when ? new Date(params.when) : new Date();
+
+    const store = user.store;
+    const earlyLeaveTol = store?.earlyLeaveToleranceMin ?? 15;
+    const latePenaltyPerMin = store?.latePenaltyPerMin ?? 500;
+    const earlyBonusPerMin = store?.earlyBonusPerMin ?? 500;
+
+    const workEndTimeStr = user.workEndTime || '18:00';
+    const [endH, endM] = workEndTimeStr.split(':').map(Number);
+    const { year, month, day: tDay } = getTashkentDate(now);
+    const tashkentMidnightUTC = Date.UTC(year, month, tDay, 0, 0, 0, 0) - 5 * 60 * 60 * 1000;
+    const workEndMs = tashkentMidnightUTC + (endH * 60 + endM) * 60 * 1000;
+    const workEnd = new Date(workEndMs);
+
+    let earlyLeaveMin = 0;
+    let earlyLeavePenalty = 0;
+    let overtimeBonus = 0;
+
+    if (now < workEnd) {
+      const earlyLeaveDiff = Math.round((+workEnd - +now) / 60000);
+      if (earlyLeaveDiff > earlyLeaveTol) {
+        earlyLeaveMin = earlyLeaveDiff;
+        earlyLeavePenalty = earlyLeaveMin * latePenaltyPerMin;
+      }
+    } else {
+      const overtimeDiff = Math.round((+now - +workEnd) / 60000);
+      if (overtimeDiff > 0 && overtimeDiff <= 360) {
+        overtimeBonus = overtimeDiff * earlyBonusPerMin;
+      }
+    }
 
     let day = await this.prisma.attendanceDay.findUnique({ where: { userId_date: { userId, date: today } } });
     if (!day) {
@@ -216,6 +271,10 @@ export class AttendanceService {
           storeId: storeId ?? user.storeId ?? null,
           date: today,
           checkOutAt: now,
+          earlyLeaveMinutes: earlyLeaveMin,
+          penaltyAmount: earlyLeavePenalty,
+          bonusAmount: overtimeBonus,
+          status: earlyLeaveMin > 0 ? ('LEFT_EARLY' as any) : 'PRESENT',
           deviceId,
         },
       });
@@ -227,6 +286,10 @@ export class AttendanceService {
         data: {
           checkOutAt: now,
           totalMinutes,
+          earlyLeaveMinutes: earlyLeaveMin,
+          penaltyAmount: (day.penaltyAmount || 0) + earlyLeavePenalty,
+          bonusAmount: (day.bonusAmount || 0) + overtimeBonus,
+          status: earlyLeaveMin > 0 ? ('LEFT_EARLY' as any) : day.status || 'PRESENT',
           branchId: branchId ?? user.branchId ?? null,
           storeId: storeId ?? user.storeId ?? null,
           deviceId,
@@ -411,15 +474,22 @@ export class AttendanceService {
     const workEndTimeStr = matchedUser.workEndTime || defaultSchedule?.workEndTime || '18:00';
 
     const [startH, startM] = workStartTimeStr.split(':').map(Number);
+    const [endH, endM] = workEndTimeStr.split(':').map(Number);
     const { year, month, day: tDay } = getTashkentDate(now);
     const tashkentMidnightUTC = Date.UTC(year, month, tDay, 0, 0, 0, 0) - 5 * 60 * 60 * 1000;
     const workStartMs = tashkentMidnightUTC + (startH * 60 + startM) * 60 * 1000;
     const workStart = new Date(workStartMs);
+    const workEndMs = tashkentMidnightUTC + (endH * 60 + endM) * 60 * 1000;
+    const workEnd = new Date(workEndMs);
 
     let lateMin = 0;
+    let earlyLeaveMin = 0;
+    let earlyArrivalMin = 0;
+    let overtimeMin = 0;
     let penaltyAmt = 0;
     let bonusAmt = 0;
     const toleranceMin = store?.lateToleranceMin || 15;
+    const earlyLeaveTol = store?.earlyLeaveToleranceMin || 15;
     const latePenaltyPerMin = store?.latePenaltyPerMin || 500;
     const earlyBonusPerMin = store?.earlyBonusPerMin || 500;
 
@@ -432,14 +502,30 @@ export class AttendanceService {
         }
       } else {
         const earlyDiff = Math.round((+workStart - +now) / 60000);
-        if (earlyDiff > 0 && earlyDiff <= 120) {
+        if (earlyDiff > 0 && earlyDiff <= 180) {
+          earlyArrivalMin = earlyDiff;
           bonusAmt = earlyDiff * earlyBonusPerMin;
+        }
+      }
+    } else {
+      if (now < workEnd) {
+        const earlyLeaveDiff = Math.round((+workEnd - +now) / 60000);
+        if (earlyLeaveDiff > earlyLeaveTol) {
+          earlyLeaveMin = earlyLeaveDiff;
+          penaltyAmt = earlyLeaveMin * latePenaltyPerMin;
+        }
+      } else {
+        const overtimeDiff = Math.round((+now - +workEnd) / 60000);
+        if (overtimeDiff > 0 && overtimeDiff <= 360) {
+          overtimeMin = overtimeDiff;
+          bonusAmt = overtimeDiff * earlyBonusPerMin;
         }
       }
     }
 
     let status = 'PRESENT';
     if (isCheckIn && lateMin > 0) status = 'LATE';
+    if (!isCheckIn && earlyLeaveMin > 0) status = 'LEFT_EARLY';
 
     const existingDay = await this.prisma.attendanceDay.findUnique({
       where: { userId_date: { userId: matchedUser.id, date: today } },
@@ -486,6 +572,7 @@ export class AttendanceService {
         checkOutAt: !isCheckIn ? now : null,
         totalMinutes: isCheckIn ? 0 : calculatedTotalMinutes,
         lateMinutes: lateMin,
+        earlyLeaveMinutes: earlyLeaveMin,
         penaltyAmount: penaltyAmt,
         bonusAmount: bonusAmt,
         status: status as any,
@@ -501,6 +588,10 @@ export class AttendanceService {
         : {
             checkOutAt: now,
             totalMinutes: calculatedTotalMinutes,
+            earlyLeaveMinutes: earlyLeaveMin,
+            penaltyAmount: (existingDay?.penaltyAmount || 0) + penaltyAmt,
+            bonusAmount: (existingDay?.bonusAmount || 0) + bonusAmt,
+            status: (earlyLeaveMin > 0 ? 'LEFT_EARLY' : existingDay?.status || status) as any,
           },
     });
 
@@ -517,6 +608,9 @@ export class AttendanceService {
           accuracy,
           distanceMeters,
           lateMin,
+          earlyLeaveMin,
+          earlyArrivalMin,
+          overtimeMin,
           penaltyAmt,
           bonusAmt,
         },
@@ -544,6 +638,7 @@ export class AttendanceService {
         check_out_time: day.checkOutAt,
         status: day.status,
         late_minutes: day.lateMinutes || 0,
+        early_leave_minutes: day.earlyLeaveMinutes || 0,
         penalty: day.penaltyAmount || 0,
         bonus: day.bonusAmount || 0,
       },
@@ -697,6 +792,52 @@ export class AttendanceService {
         const dateFormatted = d.date.toISOString().split('T')[0];
         const empName = `${d.user?.firstName || ''} ${d.user?.lastName || ''}`.trim() || d.user?.username || '';
 
+        const store = d.store || d.user?.store;
+        const latePenaltyPerMin = store?.latePenaltyPerMin ?? 500;
+        const earlyBonusPerMin = store?.earlyBonusPerMin ?? 500;
+        const workStartTimeStr = d.user?.workStartTime || '09:00';
+        const workEndTimeStr = d.user?.workEndTime || '18:00';
+
+        const [sH, sM] = workStartTimeStr.split(':').map(Number);
+        const [eH, eM] = workEndTimeStr.split(':').map(Number);
+
+        let earlyArrivalMins = 0;
+        let overtimeMins = 0;
+        let lateMins = d.lateMinutes || 0;
+        let earlyLeaveMins = d.earlyLeaveMinutes || 0;
+
+        if (d.checkInAt) {
+          const cin = new Date(d.checkInAt);
+          const { year, month, day: tDay } = getTashkentDate(cin);
+          const tashkentMidnightUTC = Date.UTC(year, month, tDay, 0, 0, 0, 0) - 5 * 60 * 60 * 1000;
+          const shiftStart = new Date(tashkentMidnightUTC + (sH * 60 + sM) * 60 * 1000);
+          if (cin < shiftStart) {
+            earlyArrivalMins = Math.min(180, Math.round((+shiftStart - +cin) / 60000));
+          } else if (cin > shiftStart && lateMins === 0) {
+            lateMins = Math.round((+cin - +shiftStart) / 60000);
+          }
+        }
+
+        if (d.checkOutAt) {
+          const cout = new Date(d.checkOutAt);
+          const { year, month, day: tDay } = getTashkentDate(cout);
+          const tashkentMidnightUTC = Date.UTC(year, month, tDay, 0, 0, 0, 0) - 5 * 60 * 60 * 1000;
+          const shiftEnd = new Date(tashkentMidnightUTC + (eH * 60 + eM) * 60 * 1000);
+          if (cout > shiftEnd) {
+            overtimeMins = Math.min(360, Math.round((+cout - +shiftEnd) / 60000));
+          } else if (cout < shiftEnd && earlyLeaveMins === 0) {
+            earlyLeaveMins = Math.round((+shiftEnd - +cout) / 60000);
+          }
+        }
+
+        const calculatedBonus = d.bonusAmount !== null && d.bonusAmount !== undefined && d.bonusAmount > 0
+          ? d.bonusAmount
+          : (earlyArrivalMins + overtimeMins) * earlyBonusPerMin;
+
+        const calculatedPenalty = d.penaltyAmount !== null && d.penaltyAmount !== undefined && d.penaltyAmount > 0
+          ? d.penaltyAmount
+          : (lateMins + earlyLeaveMins) * latePenaltyPerMin;
+
         return {
           id: d.id,
           date: dateFormatted,
@@ -708,10 +849,12 @@ export class AttendanceService {
           check_out_time: d.checkOutAt ? d.checkOutAt.toISOString() : null,
           total_minutes: d.totalMinutes || 0,
           work_hours: d.totalMinutes ? Math.round((d.totalMinutes / 60) * 100) / 100 : 0,
-          late_minutes: d.lateMinutes || 0,
-          early_leave_minutes: d.earlyLeaveMinutes || 0,
-          penalty_amount: d.penaltyAmount || 0,
-          bonus_amount: d.bonusAmount || 0,
+          late_minutes: lateMins,
+          early_leave_minutes: earlyLeaveMins,
+          early_arrival_minutes: earlyArrivalMins,
+          overtime_minutes: overtimeMins,
+          penalty_amount: calculatedPenalty,
+          bonus_amount: calculatedBonus,
           status: d.status,
 
           // Backward compatibility Cyrillic keys
@@ -721,11 +864,11 @@ export class AttendanceService {
           'Кетиш вақти': checkOutFormatted ? `${dateFormatted} ${checkOutFormatted}` : '',
           'Ишланган вақт (дақиқа)': d.totalMinutes || 0,
           'Ишланган соат': d.totalMinutes ? Math.round((d.totalMinutes / 60) * 100) / 100 : 0,
-          'Кечикиш (дақиқа)': d.lateMinutes || 0,
-          'Эрта кетиш (дақиқа)': d.earlyLeaveMinutes || 0,
-          'Вақтли келиш (дақиқа)': d.bonusAmount ? Math.round(d.bonusAmount / 500) : 0,
-          'Овертайм (дақиқа)': 0,
-          'Статус': d.status === 'LATE' ? 'Кечикди' : d.status === 'PRESENT' ? 'Ўз вақтида' : d.status,
+          'Кечикиш (дақиқа)': lateMins,
+          'Эрта кетиш (дақиқа)': earlyLeaveMins,
+          'Вақтли келиш (дақиқа)': earlyArrivalMins,
+          'Овертайм (дақиқа)': overtimeMins,
+          'Статус': d.status === 'LATE' ? 'Кечикди' : d.status === 'PRESENT' ? 'Ўз вақтида' : d.status === 'LEFT_EARLY' ? 'Эрта кетди' : d.status,
         };
       }),
     };
