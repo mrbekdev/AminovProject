@@ -144,9 +144,11 @@ export class AttendanceService {
     // Check work start time for late minutes in Uzbekistan (UTC+5) time
     let lateMinutes = 0;
     if (user.workStartTime) {
-      const [h, m] = user.workStartTime.split(':').map(Number);
+      const [startH, startM] = user.workStartTime.split(':').map(Number);
       const { year, month, day: tDay } = getTashkentDate(now);
-      const workStart = new Date(Date.UTC(year, month, tDay, h - 5, m, 0, 0));
+      const tashkentMidnightUTC = Date.UTC(year, month, tDay, 0, 0, 0, 0) - 5 * 60 * 60 * 1000;
+      const workStartMs = tashkentMidnightUTC + (startH * 60 + startM) * 60 * 1000;
+      const workStart = new Date(workStartMs);
       if (now > workStart) {
         lateMinutes = Math.round((+now - +workStart) / 60000);
       }
@@ -405,12 +407,14 @@ export class AttendanceService {
     const today = startOfDayUTC(now);
 
     const defaultSchedule = await (this.prisma as any).workSchedule.findFirst({ where: { isDefault: true } });
-    const workStartTimeStr = matchedUser.workStartTime || defaultSchedule?.workStartTime || '08:00';
-    const workEndTimeStr = matchedUser.workEndTime || defaultSchedule?.workEndTime || '02:00';
+    const workStartTimeStr = matchedUser.workStartTime || defaultSchedule?.workStartTime || '09:00';
+    const workEndTimeStr = matchedUser.workEndTime || defaultSchedule?.workEndTime || '18:00';
 
     const [startH, startM] = workStartTimeStr.split(':').map(Number);
     const { year, month, day: tDay } = getTashkentDate(now);
-    const workStart = new Date(Date.UTC(year, month, tDay, startH - 5, startM, 0, 0));
+    const tashkentMidnightUTC = Date.UTC(year, month, tDay, 0, 0, 0, 0) - 5 * 60 * 60 * 1000;
+    const workStartMs = tashkentMidnightUTC + (startH * 60 + startM) * 60 * 1000;
+    const workStart = new Date(workStartMs);
 
     let lateMin = 0;
     let penaltyAmt = 0;
@@ -444,7 +448,7 @@ export class AttendanceService {
     // ===== Kuniga 1 marta keldi / 1 marta ketdi cheklovi =====
     if (isCheckIn && existingDay?.checkInAt) {
       const checkInTime = new Date(existingDay.checkInAt).toLocaleTimeString('uz-UZ', {
-        hour: '2-digit', minute: '2-digit',
+        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent',
       });
       throw new BadRequestException(
         `Сиз бугун аллақачон ишга келганингизни қайд қилгансиз (${checkInTime}). Кунига фақат 1 марта "Келди" белгилаш мумкин.`,
@@ -453,7 +457,7 @@ export class AttendanceService {
 
     if (!isCheckIn && existingDay?.checkOutAt) {
       const checkOutTime = new Date(existingDay.checkOutAt).toLocaleTimeString('uz-UZ', {
-        hour: '2-digit', minute: '2-digit',
+        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent',
       });
       throw new BadRequestException(
         `Сиз бугун аллақачон ишдан кетганингизни қайд қилгансиз (${checkOutTime}). Кунига фақат 1 марта "Кетди" белгилаш мумкин.`,
@@ -685,10 +689,10 @@ export class AttendanceService {
     return {
       data: items.map(d => {
         const checkInFormatted = d.checkInAt
-          ? new Date(d.checkInAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false })
+          ? new Date(d.checkInAt).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent' })
           : null;
         const checkOutFormatted = d.checkOutAt
-          ? new Date(d.checkOutAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false })
+          ? new Date(d.checkOutAt).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent' })
           : null;
         const dateFormatted = d.date.toISOString().split('T')[0];
         const empName = `${d.user?.firstName || ''} ${d.user?.lastName || ''}`.trim() || d.user?.username || '';
@@ -771,10 +775,12 @@ export class AttendanceService {
     let checkOutAt = dayData.checkOutAt ? new Date(dayData.checkOutAt) : null;
 
     if (!checkInAt && dayData.check_in_time) {
-      checkInAt = new Date(`${dayData.date}T${dayData.check_in_time}:00Z`);
+      const timeStr = dayData.check_in_time.length === 5 ? `${dayData.check_in_time}:00` : dayData.check_in_time;
+      checkInAt = new Date(`${dayData.date}T${timeStr}+05:00`);
     }
     if (!checkOutAt && dayData.check_out_time) {
-      checkOutAt = new Date(`${dayData.date}T${dayData.check_out_time}:00Z`);
+      const timeStr = dayData.check_out_time.length === 5 ? `${dayData.check_out_time}:00` : dayData.check_out_time;
+      checkOutAt = new Date(`${dayData.date}T${timeStr}+05:00`);
     }
 
     const totalMinutes = checkInAt && checkOutAt ? Math.max(0, Math.round((+checkOutAt - +checkInAt) / 60000)) : 0;
