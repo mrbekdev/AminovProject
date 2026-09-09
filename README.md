@@ -75,7 +75,7 @@ npm install --legacy-peer-deps
 npx prisma generate
 npm run start:dev
 ```
-*(Server http://localhost:4000 manzilida ishga tushadi)*
+*(Server https://alikafecrmm.uz manzilida ishga tushadi)*
 
 ---
 
@@ -86,7 +86,7 @@ npm run start:dev
 Multi-part shaklda xodim uchun bir nechta rasm yuboriladi va 512-float vektorlar bazaga yoziladi:
 
 ```bash
-curl -X POST "http://localhost:4000/face/register" \
+curl -X POST "https://alikafecrmm.uz/face/register" \
   -F "employeeId=49" \
   -F "images=@/path/to/photo1.jpg" \
   -F "images=@/path/to/photo2.jpg"
@@ -106,7 +106,7 @@ curl -X POST "http://localhost:4000/face/register" \
 ### 2. FaceID Verifikatsiya va Avto-Davomat (`POST /face/verify`)
 
 ```bash
-curl -X POST "http://localhost:4000/face/verify" \
+curl -X POST "https://alikafecrmm.uz/face/verify" \
   -F "image=@/path/to/webcam_scan.jpg"
 ```
 
@@ -159,7 +159,7 @@ curl -X POST "http://localhost:4000/face/verify" \
 ### 3. Bugungi Davomat (`GET /attendance/today`)
 
 ```bash
-curl -s "http://localhost:4000/attendance/today"
+curl -s "https://alikafecrmm.uz/attendance/today"
 ```
 
 ---
@@ -167,5 +167,5 @@ curl -s "http://localhost:4000/attendance/today"
 ### 4. Xodimning Davomat Tarixi (`GET /attendance/history/:employeeId`)
 
 ```bash
-curl -s "http://localhost:4000/attendance/history/49"
+curl -s "https://alikafecrmm.uz/attendance/history/49"
 ```

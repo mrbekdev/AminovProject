@@ -23,7 +23,7 @@ interface UserSession {
 export class HrTelegramBotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HrTelegramBotService.name);
   private bot: TelegramBot | null = null;
-  private readonly token = '8888143813:AAGmrutnlwx-tyyM19ggKJ_qNcyW6Ol2DTk';
+  private readonly token = process.env.HR_TELEGRAM_BOT_TOKEN || '8888143813:AAGb9pzFYLq38uArPww81Ns5RbFVD_5SfZc';
   private sessions = new Map<number, UserSession>();
 
   constructor(private readonly hrService: HrService) {}
