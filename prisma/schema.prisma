@@ -180,6 +180,7 @@ model Branch {
   stores           Store[]
   salaryPayments   SalaryPayment[]
   deletedRecords   DeletedRecord[]        @relation("DeletedRecordBranch")
+  tradeInProducts  TradeInProduct[]
 
   @@index([name])
 }
@@ -244,6 +245,8 @@ model User {
   salaryPayments       SalaryPayment[]        @relation("UserSalaryPayments")
   createdSalaryPayments SalaryPayment[]       @relation("SalaryPaymentCreatedBy")
   deletedRecords                    DeletedRecord[]                @relation("DeletedRecordUser")
+  createdTradeInProducts            TradeInProduct[]               @relation("TradeInCreatedBy")
+  approvedTradeInProducts           TradeInProduct[]               @relation("TradeInApprovedBy")
 
   @@index([phone])
   @@index([branchId])
@@ -341,6 +344,7 @@ model Category {
 
   branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
   products Product[]
+  tradeInProducts TradeInProduct[]
 
   @@index([name])
   @@index([branchId])
@@ -375,6 +379,7 @@ model Product {
   bonusProducts     TransactionBonusProduct[]
   incomingStockItems IncomingStockItem[]       @relation("ProductIncomingItems")
   history           ProductHistory[]
+  tradeInProducts   TradeInProduct[]          @relation("TradeInApprovedProduct")
 
   @@unique([barcode, branchId], name: "barcode_branchId")
   @@index([isDeleted])
@@ -434,6 +439,7 @@ model Customer {
   updatedAt      DateTime @updatedAt
 
   transactions Transaction[]
+  tradeInProducts TradeInProduct[]
 
   @@index([phone])
   @@index([passportSeries])
@@ -504,6 +510,7 @@ model Transaction {
   payments         TransactionPayment[]
   driverRatings    DriverRating[]
   notes            TransactionNote[]
+  tradeInProducts  TradeInProduct[]
 
   @@index([customerId])
   @@index([userId])
@@ -1207,6 +1214,44 @@ model DeletedRecord {
   @@index([entityType])
   @@index([createdAt])
   @@index([branchId])
+}
+
+model TradeInProduct {
+  id                Int       @id @default(autoincrement())
+  transactionId     Int?
+  branchId          Int
+  userId            Int?      // Cashier who accepted the trade-in item
+  customerId        Int?
+  name              String
+  model             String?
+  barcode           String?
+  costPrice         Float     // Received valuation / cost price in UZS
+  costPriceUSD      Float?    // In USD
+  sellingPrice      Float?    // Admin defined selling price in UZS
+  sellingPriceUSD   Float?    // In USD
+  quantity          Int       @default(1)
+  status            String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedById      Int?
+  approvedAt        DateTime?
+  approvedProductId Int?
+  categoryId        Int?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  transaction       Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  branch            Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user              User?        @relation("TradeInCreatedBy", fields: [userId], references: [id], onDelete: SetNull)
+  approvedBy        User?        @relation("TradeInApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedProduct   Product?     @relation("TradeInApprovedProduct", fields: [approvedProductId], references: [id], onDelete: SetNull)
+  category          Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  customer          Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([branchId])
+  @@index([status])
+  @@index([transactionId])
+  @@index([createdAt])
+  @@map("trade_in_products")
 }
 
 

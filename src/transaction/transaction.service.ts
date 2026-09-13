@@ -148,7 +148,10 @@ export class TransactionService {
     }
 
     // Transaction yaratish
-    const { cashierId, ...cleanTransactionData } = transactionData as any;
+    const { cashierId, bonusProducts: txBonusProducts, tradeInProducts: txTradeInProducts, ...cleanTransactionData } = transactionData as any;
+    if (cleanTransactionData.paymentType === 'TOVAR') {
+      cleanTransactionData.paymentType = 'CASH';
+    }
     const transaction = await this.prisma.transaction.create({
       data: {
         ...cleanTransactionData,
@@ -208,6 +211,118 @@ export class TransactionService {
         payments: true,
       }
     });
+
+    // Agar bonus mahsulotlar yuborilgan bo'lsa, ularni TransactionBonusProduct ga saqlaymiz va ombordan kamaytiramiz
+    const incomingBonusProducts = txBonusProducts || (createTransactionDto as any).bonusProducts;
+    if (incomingBonusProducts && Array.isArray(incomingBonusProducts) && incomingBonusProducts.length > 0) {
+      for (const bp of incomingBonusProducts) {
+        const pId = Number(bp.productId);
+        const qty = Number(bp.quantity);
+        if (pId && qty > 0) {
+          try {
+            await this.prisma.transactionBonusProduct.create({
+              data: {
+                transactionId: transaction.id,
+                productId: pId,
+                quantity: qty,
+              }
+            });
+            await this.prisma.product.update({
+              where: { id: pId },
+              data: {
+                quantity: {
+                  decrement: qty,
+                },
+              },
+            });
+          } catch (bpErr) {
+            console.error('Error creating transaction bonus product in create transaction:', bpErr);
+          }
+        }
+      }
+    }
+
+    // Agar Trade-in (Tovar to'lovi) mahsulotlari yuborilgan bo'lsa, ularni TradeInProduct ga PENDING holatda saqlaymiz (hali inventarga qo'shilmaydi)
+    let incomingTradeInProducts = txTradeInProducts || (createTransactionDto as any).tradeInProducts;
+    const tovarPayments = paymentsData.filter(p => p.method === 'TOVAR');
+    if ((!incomingTradeInProducts || !Array.isArray(incomingTradeInProducts) || incomingTradeInProducts.length === 0) && (tovarPayments.length > 0 || (transactionData as any).paymentType === 'TOVAR')) {
+      const tovarAmt = tovarPayments.reduce((s, p) => s + p.amount, 0) || transaction.finalTotal || 0;
+      incomingTradeInProducts = [{
+        name: 'Қабул қилинган товар (Trade-In)',
+        model: '',
+        costPrice: tovarAmt,
+        quantity: 1,
+        notes: transaction.description || 'Товар тўлови орқали',
+      }];
+    }
+
+    if (incomingTradeInProducts && Array.isArray(incomingTradeInProducts) && incomingTradeInProducts.length > 0) {
+      let branchId = transaction.fromBranchId || transaction.toBranchId || (createTransactionDto as any).fromBranchId || (createTransactionDto as any).branchId;
+      if (!branchId) {
+        try {
+          const firstBranch = await this.prisma.branch.findFirst({ select: { id: true } });
+          branchId = firstBranch?.id || 1;
+        } catch (bErr) {
+          branchId = 1;
+        }
+      }
+
+      let rate = 12600;
+      try {
+        const rateRecord = await this.prisma.currencyExchangeRate.findFirst({
+          where: {
+            isActive: true,
+            OR: [
+              { branchId, isActive: true },
+              { fromCurrency: 'USD', toCurrency: 'UZS' },
+              { fromCurrency: 'USD' },
+              { isActive: true },
+            ],
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (rateRecord && Number(rateRecord.rate) > 100) {
+          rate = Number(rateRecord.rate);
+        }
+      } catch (err) {
+        console.error('Rate fetch error in transaction.service:', err);
+      }
+
+      for (const tip of incomingTradeInProducts) {
+        const name = String(tip.name || '').trim() || 'Қабул қилинган товар';
+        let costPrice = Number(tip.costPrice || 0);
+        if (costPrice <= 0) {
+          costPrice = tovarPayments.reduce((s, p) => s + p.amount, 0) || Number(transaction.finalTotal || 0);
+        }
+        const qty = Number(tip.quantity || 1);
+        if (name) {
+          try {
+            const costPriceUSD = (tip.costPriceUSD != null && Number(tip.costPriceUSD) > 0 && Number(tip.costPriceUSD) < costPrice)
+              ? Number(tip.costPriceUSD)
+              : (rate > 1 ? Number((costPrice / rate).toFixed(2)) : costPrice);
+            await this.prisma.tradeInProduct.create({
+              data: {
+                transactionId: transaction.id,
+                branchId,
+                userId: userId || transaction.soldByUserId || transaction.userId || null,
+                customerId: transaction.customerId || null,
+                name,
+                model: tip.model ? String(tip.model).trim() : null,
+                barcode: tip.barcode ? String(tip.barcode).trim() : null,
+                costPrice,
+                costPriceUSD,
+                quantity: qty,
+                categoryId: tip.categoryId ? Number(tip.categoryId) : null,
+                notes: tip.notes ? String(tip.notes).trim() : null,
+                status: 'PENDING',
+              },
+            });
+          } catch (tipErr) {
+            console.error('Error creating trade-in product for transaction:', tipErr);
+          }
+        }
+      }
+    }
 
     // Kredit yoki Bo'lib to'lash bo'lsa, to'lovlar jadvalini yaratish
     if (transaction.paymentType === PaymentType.CREDIT || transaction.paymentType === PaymentType.INSTALLMENT) {
@@ -581,8 +696,10 @@ export class TransactionService {
     }
 
     if (type && type !== 'ALL') where.type = type;
-    if (status && status !== 'ALL') {
-      where.status = status;
+    if (status) {
+      if (status !== 'ALL') {
+        where.status = status;
+      }
     } else {
       where.status = { not: 'CANCELLED' };
     }
@@ -614,25 +731,38 @@ export class TransactionService {
         'TERMINAL': ['TERMINAL', 'POS', 'TRANSFER', 'BANK', 'CLICK', 'PAYME'],
         'CREDIT': ['CREDIT', 'DEBT'],
         'INSTALLMENT': ['INSTALLMENT', 'BOLOB', "BO'LIB"],
-        'THIRD_PARTY': ['THIRD_PARTY', '3RD', 'THIRDPARTY'],
+        'THIRD_PARTY': ['THIRD_PARTY', '3RD', 'THIRDPARTY', 'CREDIT'],
         'UYDAN': ['UYDAN', 'HOME'],
         'PARTNER': ['PARTNER', 'HAMKOR', 'HAMKORLAR'],
+        'TOVAR': ['TOVAR', 'TRADEIN', 'TRADE_IN'],
       };
       const matchedKey = Object.keys(paymentTypeMapping).find(k => paymentTypeMapping[k].includes(normalizedType)) || normalizedType;
-      
+
       const validPaymentTypeEnums = ['CASH', 'CARD', 'TERMINAL', 'CREDIT', 'INSTALLMENT', 'THIRD_PARTY', 'PARTNER'];
       const isEnumVal = validPaymentTypeEnums.includes(matchedKey);
 
       andConditions.push({
         OR: [
           ...(isEnumVal ? [{ paymentType: matchedKey as any }] : []),
-          { payments: { some: { method: matchedKey } } },
+          ...(matchedKey === 'THIRD_PARTY' || matchedKey === 'CREDIT' ? [
+            { paymentType: 'THIRD_PARTY' as any },
+            { paymentType: 'CREDIT' as any },
+            { payments: { some: { method: { in: ['THIRD_PARTY', 'CREDIT'] } } } },
+          ] : [
+            { payments: { some: { method: matchedKey } } },
+          ]),
+          ...(matchedKey === 'TOVAR' ? [
+            { tradeInProducts: { some: {} } },
+            { payments: { some: { method: 'TOVAR' } } },
+          ] : []),
           ...(matchedKey === 'UYDAN' ? [
             { payments: { some: { method: 'UYDAN' } } },
             { description: { contains: 'UYDAN', mode: 'insensitive' } }
           ] : []),
           ...(matchedKey === 'PARTNER' ? [
-            { partnerName: { not: null } }
+            { partnerName: { not: null } },
+            { payments: { some: { method: 'PARTNER' } } },
+            { paymentType: 'PARTNER' as any },
           ] : []),
         ]
       });
@@ -794,11 +924,11 @@ export class TransactionService {
       if (['CASH', 'NAQD', 'NAL'].includes(t)) return 'CASH';
       if (['CARD', 'ICAN', 'PLASTIC', 'PLASTIK'].includes(t)) return 'CARD';
       if (['TERMINAL', 'POS', 'TRANSFER', 'BANK', 'CLICK', 'PAYME'].includes(t)) return 'TERMINAL';
-      if (['CREDIT', 'DEBT'].includes(t)) return 'CREDIT';
+      if (['CREDIT', 'DEBT', 'THIRD_PARTY', 'THIRDPARTY', '3RD', '3RDPARTY', 'TASHQI'].includes(t)) return 'THIRD_PARTY';
       if (['INSTALLMENT', 'BOLOB', "BO'LIB"].includes(t)) return 'INSTALLMENT';
+      if (['PARTNER', 'HAMKOR', 'HAMKORLAR'].includes(t)) return 'PARTNER';
       if (['UYDAN', 'HOME'].includes(t)) return 'UYDAN';
-      if (['THIRD_PARTY', 'THIRDPARTY', '3RD', '3RDPARTY', 'TASHQI'].includes(t)) return 'THIRD_PARTY';
-      if (['TOVAR'].includes(t)) return 'TOVAR';
+      if (['TOVAR', 'TRADEIN', 'TRADE_IN'].includes(t)) return 'TOVAR';
       return t;
     };
 
@@ -809,8 +939,12 @@ export class TransactionService {
         finalTotal: true,
         paymentType: true,
         upfrontPaymentType: true,
+        partnerName: true,
         payments: {
           select: { method: true, amount: true }
+        },
+        tradeInProducts: {
+          select: { id: true, costPrice: true, quantity: true }
         },
         items: {
           select: { quantity: true, price: true, originalPrice: true, product: { select: { price: true } } }
@@ -827,11 +961,11 @@ export class TransactionService {
     let costOfSoldGoods = 0;
 
     const result = {
-      cash: 0, card: 0, terminal: 0, credit: 0, installment: 0,
+      cash: 0, card: 0, terminal: 0, credit: 0, installment: 0, partner: 0,
       uydan: 0, thirdParty: 0, tovar: 0, totalSales: 0, costOfSoldGoods: 0, count: transactions.length
     };
 
-    transactions.forEach(t => {
+    (transactions as any[]).forEach((t: any) => {
       const finalTotal = Number(t.finalTotal || 0);
       result.totalSales += finalTotal;
 
@@ -856,10 +990,12 @@ export class TransactionService {
           if (norm === 'CASH') result.cash += amt;
           else if (norm === 'CARD') result.card += amt;
           else if (norm === 'TERMINAL') result.terminal += amt;
-          else if (norm === 'CREDIT') result.credit += amt;
+          else if (norm === 'THIRD_PARTY') {
+            result.thirdParty += amt;
+          }
           else if (norm === 'INSTALLMENT') result.installment += amt;
+          else if (norm === 'PARTNER') result.partner += amt;
           else if (norm === 'UYDAN') result.uydan += amt;
-          else if (norm === 'THIRD_PARTY') result.thirdParty += amt;
           else if (norm === 'TOVAR') result.tovar += amt;
         });
       } else {
@@ -868,10 +1004,12 @@ export class TransactionService {
         if (norm === 'CASH') result.cash += finalTotal;
         else if (norm === 'CARD') result.card += finalTotal;
         else if (norm === 'TERMINAL') result.terminal += finalTotal;
-        else if (norm === 'CREDIT') result.credit += finalTotal;
+        else if (norm === 'THIRD_PARTY') {
+          result.thirdParty += finalTotal;
+        }
         else if (norm === 'INSTALLMENT') result.installment += finalTotal;
+        else if (norm === 'PARTNER') result.partner += finalTotal;
         else if (norm === 'UYDAN') result.uydan += finalTotal;
-        else if (norm === 'THIRD_PARTY') result.thirdParty += finalTotal;
         else if (norm === 'TOVAR') result.tovar += finalTotal;
       }
     });
@@ -928,6 +1066,13 @@ export class TransactionService {
                 branch: true,
               },
             },
+          },
+        },
+        tradeInProducts: {
+          include: {
+            category: true,
+            branch: true,
+            approvedProduct: true,
           },
         },
         defectiveLogs: true,
@@ -1135,6 +1280,13 @@ export class TransactionService {
           include: { paidBy: true }
         },
         payments: true,
+        tradeInProducts: {
+          include: {
+            category: true,
+            branch: true,
+            approvedProduct: true,
+          },
+        },
         tasks: {
           include: {
             auditor: true,
@@ -2638,10 +2790,39 @@ export class TransactionService {
    * Avtomatik bonus hisoblash va yaratish
    * CASHIER bozor narxini o'zgartirib, bozor narxidan qimmatroq sotsa, 
    * sotish narxidan bozor narxini ayirib, ayirmaning product ichidagi bonus foizini hisoblab
-   * belgilangan sotuvchiga bonus tariqasida qo'shilishi kerak
+   * belgilangan sotuvchiga bonus tariqasida qo'shilishi kerak.
+   * Agar bonus tovarlar (sovg'a) berilgan bo'lsa, ularning kelish narxi (tannarxi)
+   * ortiqcha summadan ayirilib, qolgan sof ortiqcha (extraProfit) dan foiz hisoblanadi.
    */
-  private async calculateAndCreateSalesBonuses(transaction: any, soldByUserId: number, createdById?: number) {
+  public async calculateAndCreateSalesBonuses(transactionOrId: any, soldByUserIdParam?: number, createdById?: number) {
     try {
+      let transactionId = typeof transactionOrId === 'object' ? transactionOrId?.id : Number(transactionOrId);
+      if (!transactionId) return;
+
+      const transaction = await this.prisma.transaction.findUnique({
+        where: { id: transactionId },
+        include: {
+          items: {
+            include: {
+              product: true,
+            },
+          },
+          bonusProducts: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+
+      if (!transaction) {
+        return;
+      }
+
+      const soldByUserId = soldByUserIdParam || transaction.soldByUserId || transaction.userId;
+      if (!soldByUserId) {
+        return;
+      }
 
       // Sotuvchining branch ma'lumotini olish
       const seller = await this.prisma.user.findUnique({
@@ -2653,9 +2834,20 @@ export class TransactionService {
         return;
       }
 
+      // Avval ushbu tranzaksiya uchun yaratilgan avtomatik bonus/jarimalarni tozalaymiz (dublikat bo'lmasligi uchun)
+      try {
+        await this.prisma.bonus.deleteMany({
+          where: {
+            transactionId: transaction.id,
+            reason: { in: ['SALES_BONUS', 'SALES_PENALTY'] }
+          }
+        });
+      } catch (delErr) {
+        console.error('Failed to clean old transaction bonuses:', delErr);
+      }
+
       // Branch tekshiruvini majburiy qilmaymiz: avvalo tranzaksiya branchini ishlatamiz, yo'q bo'lsa sotuvchinikini, bo'lmasa branchsiz davom etamiz
       const branchContextId = transaction.fromBranchId || transaction.toBranchId || seller.branchId || null;
-
 
       // USD->UZS kursini aniqlash (branch bo'yicha, bo'lmasa global fallback)
       let usdToUzsRateBranch = 0;
@@ -2672,63 +2864,35 @@ export class TransactionService {
           ? usdToUzsRateGlobal
           : (usdToUzsRateBranch || usdToUzsRateGlobal || 1);
 
-      // Bonus products qiymatini hisoblash - Frontend dan UZS da kelgan narhlarni ishlatish
-
-      const bonusProducts = await this.prisma.transactionBonusProduct.findMany({
-        where: { transactionId: transaction.id },
-        include: { product: true }
-      });
-
+      // Bonus products qiymatini hisoblash
+      let bonusProducts = transaction.bonusProducts || [];
+      if (bonusProducts.length === 0) {
+        bonusProducts = await this.prisma.transactionBonusProduct.findMany({
+          where: { transactionId: transaction.id },
+          include: { product: true }
+        });
+      }
 
       let totalBonusProductsValue = 0;
+      const bonusProductsData: any[] = [];
       if (bonusProducts.length > 0) {
         for (const bonusProduct of bonusProducts) {
-
-          // Kurs xizmatidan foydalanib USD -> UZS ga aniq konvertatsiya (filial konteksti bilan)
+          // Kurs xizmatidan foydalanib USD -> UZS ga aniq konvertatsiya
           const productPriceInUzs = Math.round(Number(bonusProduct.product?.price || 0) * usdToSomRate);
           const productTotalValue = productPriceInUzs * bonusProduct.quantity;
           totalBonusProductsValue += productTotalValue;
-        }
-      } else {
-        // FALLBACK: Transaction ichidagi nol narxli (bonus sifatida yuborilgan) itemlardan foydalanamiz
-        // Shart: sellingPrice == 0 yoki price == 0 bo'lsa, bu item bonus deb qabul qilamiz
-        const potentialBonusItems = (transaction.items || []).filter((it: any) => {
-          const sp = Number(it.sellingPrice ?? it.price ?? 0);
-          const p = Number(it.price ?? 0);
-          return (sp === 0 || p === 0) && (it.productId != null);
-        });
-
-        if (potentialBonusItems.length > 0) {
-          const createdFallbackBonusProducts: any[] = [];
-          for (const bi of potentialBonusItems) {
-            // Product bazaviy narxini USD dan UZS ga o'tkazamiz
-            const dbProduct = bi.product || (bi.productId
-              ? await this.prisma.product.findUnique({ where: { id: Number(bi.productId) } })
-              : null);
-            const unitCostUZS = dbProduct?.price
-              ? Math.round(Number(dbProduct.price) * usdToSomRate)
-              : 0;
-            const qty = Number(bi.quantity || 1);
-            const itemValue = unitCostUZS * qty;
-            totalBonusProductsValue += itemValue;
-
-            // Ma'lumotlar yaxlitligi uchun TransactionBonusProduct yozuvini ham yaratib qo'yamiz (agar productId mavjud bo'lsa)
-            if (bi.productId) {
-              try {
-                const created = await this.prisma.transactionBonusProduct.create({
-                  data: {
-                    transactionId: transaction.id,
-                    productId: Number(bi.productId),
-                    quantity: qty,
-                  }
-                });
-                createdFallbackBonusProducts.push(created);
-              } catch (e) {
-              }
-            }
-          }
-          if (createdFallbackBonusProducts.length > 0) {
-          }
+          bonusProductsData.push({
+            productId: bonusProduct.productId,
+            name: bonusProduct.product?.name || 'Номаълум махсулот',
+            productName: bonusProduct.product?.name || 'Номаълум махсулот',
+            model: bonusProduct.product?.model || null,
+            productModel: bonusProduct.product?.model || null,
+            barcode: bonusProduct.product?.barcode || null,
+            productCode: bonusProduct.product?.barcode || 'N/A',
+            quantity: bonusProduct.quantity,
+            price: productPriceInUzs,
+            totalValue: productTotalValue
+          });
         }
       }
 
@@ -2745,7 +2909,7 @@ export class TransactionService {
         costInUzs: number;
         priceDifference: number;
       }> = [];
-      // Arzon sotilgan mahsulotlar uchun batafsil ro'yxat va tranzaksiya darajasida umumiy yig'indilar
+
       const negativeItems: Array<{
         item: any;
         productInfo: any;
@@ -2754,18 +2918,14 @@ export class TransactionService {
         costInUzs: number;
         lossAmount: number;
       }> = [];
+
       let totalSellingAll = 0;
       let totalCostAll = 0;
 
       for (const item of transaction.items) {
-
-        // Sotish narxini doim UZS da ishlatamiz:
-        // - Agar item.sellingPrice mavjud bo'lsa, u allaqachon UZS (frontenddan keladi)
-        // - Aks holda, item.price USD bo'lishi mumkin, shuning uchun USD -> UZS konvertatsiya qilamiz
         let sellingPrice = 0;
         if (item?.sellingPrice != null) {
           const rawSp = Number(item.sellingPrice);
-          // Agar sellingPrice juda kichik bo'lsa (USD ehtimoli), USD->UZS aylantiramiz
           if (rawSp > 0 && rawSp < Math.max(usdToSomRate / 2, 10000)) {
             sellingPrice = Math.round(rawSp * usdToSomRate);
           } else {
@@ -2777,7 +2937,6 @@ export class TransactionService {
         }
         const quantity = Number(item.quantity || 1);
 
-        // Product ma'lumotlarini olish (agar item.product yo'q bo'lsa)
         let productInfo = item.product;
         let bonusPercentage = Number(productInfo?.bonusPercentage || 0);
 
@@ -2798,7 +2957,6 @@ export class TransactionService {
           ? (sellingPrice - costInUzs) * quantity
           : 0;
 
-        // Tranzaksiya darajasida umumiy sotish va umumiy kelish yig'indilarini jamlash
         totalSellingAll += sellingPrice * quantity;
         totalCostAll += costInUzs * quantity;
         if (sellingPrice < costInUzs) {
@@ -2812,117 +2970,82 @@ export class TransactionService {
         }
       }
 
-
-      // Transaction darajasida sof ortiqcha pool (bonus mahsulotlar qiymati ayirilganidan keyin)
-      const transactionNetExtraPool = Math.max(0, Math.round(totalPriceDifferenceForTransaction) - Math.round(totalBonusProductsValue));
-
-      // 2-bosqich: Sof ortiqchani (pool) ulushlab taqsimlab, keyin foizni qo'llash
-      for (const info of itemDiffs) {
-        const { item, productInfo, sellingPrice, quantity, bonusPercentage, costInUzs, priceDifference } = info;
-
-        // Har bir item ulushi (narx farqiga nisbatan)
-        const share = totalPriceDifferenceForTransaction > 0
-          ? (priceDifference / totalPriceDifferenceForTransaction)
-          : 0;
-        const allocatedBonusProductsValue = Math.round(totalBonusProductsValue * share);
-        // Endi sof pooldan shu item ulushini olamiz
-        const netExtraAmount = Math.round(transactionNetExtraPool * share);
-        const bonusAmount = Math.round(netExtraAmount * (bonusPercentage / 100));
-
-
-        if (bonusAmount > 0) {
-          // Bonus products ma'lumotlarini kurs orqali UZS ga konvert qilib tayyorlaymiz
-          const bonusProductsData = [] as any[];
-          for (const bp of bonusProducts) {
-            const priceInUzs = Math.round(Number(bp.product?.price || 0) * usdToSomRate);
-            bonusProductsData.push({
-              productId: bp.productId,
-              productName: bp.product?.name || 'Номаълум махсулот',
-              productModel: bp.product?.model || null,
-              productCode: bp.product?.barcode || 'N/A',
-              quantity: bp.quantity,
-              price: priceInUzs,
-              totalValue: priceInUzs * bp.quantity
-            });
-          }
-
-          const bonusData = {
-            userId: soldByUserId,
-            branchId: branchContextId || undefined,
-            amount: bonusAmount,
-            reason: 'SALES_BONUS',
-            description: `${productInfo?.name || item.productName} (${productInfo?.model || '-'}) mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice.toLocaleString()} som, Kelish narxi: ${Math.round(costInUzs).toLocaleString()} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${totalBonusProductsValue.toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
-            bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
-            transactionId: transaction.id,
-            bonusDate: new Date().toISOString()
-          };
-
-          await this.bonusService.create(bonusData, createdById || soldByUserId);
-
-        }
-      }
-
-      // Transaction darajasida jami (foyda yoki kamomad) ni hisoblab, database ga saqlash
-      // Formulalar:
-      //   sellingTotal = totalSellingAll
-      //   costPlusBonus = totalCostAll + totalBonusProductsValue
-      //   grossDiffAfterBonusCost = sellingTotal - costPlusBonus
+      // Transaction darajasida jami sotish, kelish va bonus tovarlar tannarxini hisoblash
       const sellingTotal = Math.round(totalSellingAll);
       const costPlusBonus = Math.round(totalCostAll) + Math.round(totalBonusProductsValue);
-      const grossDiffAfterBonusCost = sellingTotal - costPlusBonus; // manfiy bo'lishi ham mumkin
+      const grossDiffAfterBonusCost = sellingTotal - costPlusBonus; // Sof ortiqcha (extraProfit)
+
+      // Transaction ga extraProfit ni saqlash
       try {
         await this.prisma.transaction.update({
           where: { id: transaction.id },
           data: { extraProfit: grossDiffAfterBonusCost }
         });
       } catch (e) {
+        console.error('Failed to update transaction extraProfit:', e);
       }
 
+      // Sof ortiqcha pool (faqat musbat bo'lsa)
+      const transactionNetExtraPool = Math.max(0, grossDiffAfterBonusCost);
 
-      // 3-bosqich: Bonus mahsulotlar qiymatini ham hisobga olgan holda jarimani aniqlash
-      // Penalty faqat grossDiffAfterBonusCost manfiy bo'lsa yaratiladi
+      // 2-bosqich: Sof ortiqchani (pool) ulushlab taqsimlab, keyin foizni qo'llash
+      if (transactionNetExtraPool > 0 && totalPriceDifferenceForTransaction > 0) {
+        for (const info of itemDiffs) {
+          const { item, productInfo, sellingPrice, quantity, bonusPercentage, costInUzs, priceDifference } = info;
+
+          const share = totalPriceDifferenceForTransaction > 0
+            ? (priceDifference / totalPriceDifferenceForTransaction)
+            : 0;
+          const allocatedBonusProductsValue = Math.round(totalBonusProductsValue * share);
+          const netExtraAmount = Math.round(transactionNetExtraPool * share);
+          const bonusAmount = Math.round(netExtraAmount * (bonusPercentage / 100));
+
+          if (bonusAmount > 0) {
+            const bonusData = {
+              userId: soldByUserId,
+              branchId: branchContextId || undefined,
+              amount: bonusAmount,
+              reason: 'SALES_BONUS',
+              description: `${productInfo?.name || item.productName} (${productInfo?.model || '-'}) mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice.toLocaleString()} som, Kelish narxi: ${Math.round(costInUzs).toLocaleString()} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
+              bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
+              transactionId: transaction.id,
+              bonusDate: new Date().toISOString()
+            };
+
+            await this.bonusService.create(bonusData, createdById || soldByUserId);
+          }
+        }
+      }
+
+      // 3-bosqich: Agar umumiy zarar (kamomad) bo'lsa, jarima yaratish
       if (grossDiffAfterBonusCost < 0) {
         const netDeficit = Math.abs(grossDiffAfterBonusCost);
         try {
-          // Build bonusProducts payload once for penalties as well
-          const penaltyBonusProductsData = [] as any[];
-          for (const bp of bonusProducts) {
-            const priceInUzs = Math.round(Number(bp.product?.price || 0) * usdToSomRate);
-            penaltyBonusProductsData.push({
-              productId: bp.productId,
-              productName: bp.product?.name || 'Номаълум махсулот',
-              productModel: bp.product?.model || null,
-              productCode: bp.product?.barcode || 'N/A',
-              quantity: bp.quantity,
-              price: priceInUzs,
-              totalValue: priceInUzs * bp.quantity
-            });
-          }
-          // Bonus mahsulotlar nomi va modeli haqida qo'shimcha ma'lumot
           const bonusProductsInfo = (bonusProducts && bonusProducts.length > 0)
             ? ' Bonus mahsulotlar: ' + bonusProducts
-              .map(bp => `${bp.product?.name || 'Номаълум махсулот'} (${bp.product?.model || '-'}) qty=${bp.quantity}`)
+              .map((bp: any) => `${bp.product?.name || 'Номаълум махсулот'} (${bp.product?.model || '-'}) qty=${bp.quantity}`)
               .join(' | ')
             : '';
 
           const penaltyData = {
             userId: soldByUserId,
             branchId: branchContextId || undefined,
-            amount: -netDeficit, // manfiy summa
+            amount: -netDeficit,
             reason: 'SALES_PENALTY',
             description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${sellingTotal.toLocaleString()} som, Bonus mahsulotlar qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Umumiy kelish: ${Math.round(totalCostAll).toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: `
               + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} (${n.productInfo?.model || '-'}) qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | ')
               + bonusProductsInfo,
-            bonusProducts: penaltyBonusProductsData.length > 0 ? penaltyBonusProductsData : null,
+            bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
             transactionId: transaction.id,
             bonusDate: new Date().toISOString()
           } as any;
           await this.bonusService.create(penaltyData, createdById || soldByUserId);
         } catch (e) {
+          console.error('Failed to create sales penalty:', e);
         }
       }
     } catch (error) {
-      // Bonus yaratishda xatolik bo'lsa ham, asosiy tranzaksiya davom etsin
+      console.error('Bonus calculation error:', error);
     }
   }
 
@@ -2986,6 +3109,8 @@ export class TransactionService {
           { soldByUserId: userId },
           { userId: userId }
         ],
+        type: TransactionType.SALE,
+        status: { not: TransactionStatus.CANCELLED },
         ...dateWhere,
         ...(search && search.trim() ? {
           OR: [
@@ -3005,6 +3130,11 @@ export class TransactionService {
           include: {
             product: true
           }
+        },
+        bonusProducts: {
+          include: {
+            product: true
+          }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -3018,6 +3148,8 @@ export class TransactionService {
             { soldByUserId: userId },
             { userId: userId }
           ],
+          type: TransactionType.SALE,
+          status: { not: TransactionStatus.CANCELLED },
           ...dateWhere
         }
       },
@@ -3036,12 +3168,16 @@ export class TransactionService {
     let totalProfit = 0;
     for (const b of bonuses) {
       if (b.description) {
-        const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
+        const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d\s,.'-]+?)(?:\s*(?:som|сўм|so'm|$|,))/i) || b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
         if (matchProfit) {
-          const valStr = matchProfit[1].replace(/,/g, '');
+          const valStr = matchProfit[1].replace(/[\s,']/g, '');
           totalProfit += parseFloat(valStr) || 0;
         }
       }
+    }
+
+    if (totalProfit === 0 && transactions.length > 0) {
+      totalProfit = transactions.reduce((sum, tx) => sum + Number(tx.extraProfit || 0), 0);
     }
 
     const totalBonuses = bonuses.reduce((sum, b) => sum + (b.amount || 0), 0);

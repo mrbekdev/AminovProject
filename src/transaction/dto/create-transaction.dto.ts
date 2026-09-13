@@ -114,24 +114,67 @@ export class PaymentBreakdownDto {
   days?: number;
 }
 
+export class BonusProductDto {
+  @IsNumber()
+  @IsPositive()
+  productId: number;
+
+  @IsNumber()
+  @IsPositive()
+  quantity: number;
+}
+
+export class TradeInProductDto {
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsNumber()
+  costPrice: number;
+
+  @IsOptional()
+  @IsNumber()
+  costPriceUSD?: number;
+
+  @IsOptional()
+  @IsNumber()
+  quantity?: number;
+
+  @IsOptional()
+  @IsNumber()
+  categoryId?: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
 export class CreateTransactionDto {
   @IsOptional()
   @IsNumber()
-  @IsPositive()
   userId?: number;
 
   @IsOptional()
   @IsNumber()
-  @IsPositive()
-  soldByUserId?: number; // Kim sotganini saqlash uchun
-
-  @IsNumber()
-  @IsPositive()
-  fromBranchId: number;
+  customerId?: number;
 
   @IsOptional()
   @IsNumber()
-  @IsPositive()
+  soldByUserId?: number; // Kim sotganini saqlash uchun
+
+  @IsOptional()
+  @IsNumber()
+  fromBranchId?: number;
+
+  @IsOptional()
+  @IsNumber()
   toBranchId?: number;
 
   @IsEnum(TransactionType)
@@ -237,6 +280,18 @@ export class CreateTransactionDto {
   @ValidateNested({ each: true })
   @Type(() => PaymentBreakdownDto)
   paymentBreakdowns?: PaymentBreakdownDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BonusProductDto)
+  bonusProducts?: BonusProductDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TradeInProductDto)
+  tradeInProducts?: TradeInProductDto[];
 
   // Validationni service da qilish maqsadga muvofiq
 }

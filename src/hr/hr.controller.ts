@@ -72,6 +72,7 @@ export class HrController {
         if (updateDto.status === 'INTERVIEW') {
           const dateStr = updated.interviewDate
             ? new Date(updated.interviewDate).toLocaleString('uz-UZ', {
+                timeZone: 'Asia/Tashkent',
                 year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',

@@ -38,6 +38,7 @@ import { FaceModule } from './face/face.module';
 import { HrModule } from './hr/hr.module';
 import { DeletedRecordsModule } from './deleted-records/deleted-records.module';
 import { SalaryPaymentModule } from './salary-payment/salary-payment.module';
+import { TradeInProductModule } from './trade-in-product/trade-in-product.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { SalaryPaymentModule } from './salary-payment/salary-payment.module';
     HrModule,
     DeletedRecordsModule,
     SalaryPaymentModule,
+    TradeInProductModule,
   ],
   controllers: [AppController],
   providers: [AppService],

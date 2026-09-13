@@ -124,6 +124,13 @@ export class CashierReportService {
         customer: true,
         paymentSchedules: true,
         payments: true,
+        soldBy: true,
+        user: true,
+        fromBranch: true,
+        toBranch: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
       },
     });
 
@@ -206,9 +213,22 @@ export class CashierReportService {
     let defectivePlus = 0;
     let defectiveMinus = 0;
 
+    let partnerTotal = 0;
+    const partnerBreakdown: Record<string, number> = {
+      Ishonch: 0,
+      Yuksalish: 0,
+      'Bir zumda': 0,
+      'Limit nasiya': 0,
+      Boshqa: 0,
+    };
+
     // Process transactions
     for (const transaction of transactions as any[]) {
-      const finalTotal = Number(transaction.finalTotal || transaction.total || 0);
+      const origItemTotal = (transaction.items || []).reduce(
+        (s: number, it: any) => s + (Number(it.total) || (Number(it.price || it.sellingPrice || 0) * Number(it.quantity || 0)) || 0),
+        0
+      );
+      const finalTotal = Math.max(Number(transaction.finalTotal || transaction.total || 0), origItemTotal);
       const amountPaid = Number(transaction.amountPaid || 0);
       const upfront = ['CREDIT', 'INSTALLMENT'].includes(transaction.paymentType || '') ? amountPaid : 0;
 
@@ -216,9 +236,11 @@ export class CashierReportService {
       const hasSplitPayments = paymentsArr.length > 0;
 
       if (hasSplitPayments) {
+        let splitSum = 0;
         for (const p of paymentsArr) {
           const amt = Number(p.amount || 0);
           if (!amt || Number.isNaN(amt)) continue;
+          splitSum += amt;
           const m = String(p.method || '').toUpperCase().trim();
 
           if (['CREDIT', 'INSTALLMENT'].includes(transaction.paymentType || '')) {
@@ -231,10 +253,27 @@ export class CashierReportService {
             if (m === 'CASH') cashTotal += amt;
             else if (m === 'CARD') cardTotal += amt;
             else if (m === 'TERMINAL') terminalTotal += amt;
+            else if (m === 'PARTNER') {
+              partnerTotal += amt;
+              const pName = transaction.partnerName || 'Boshqa';
+              if (partnerBreakdown[pName] !== undefined) partnerBreakdown[pName] += amt;
+              else partnerBreakdown.Boshqa += amt;
+            }
             else if (m === 'THIRD_PARTY') thirdPartyTotal += amt;
             else if (m === 'TOVAR') tovarTotal += amt;
             else if (m === 'UYDAN') uydanTotal += amt;
+            else if (m === 'INSTALLMENT') installmentTotal += amt;
           }
+        }
+        if (splitSum === 0 && finalTotal > 0) {
+          const pType = String(transaction.paymentType || '').toUpperCase().trim();
+          if (pType === 'CASH') cashTotal += finalTotal;
+          else if (pType === 'CARD') cardTotal += finalTotal;
+          else if (pType === 'TERMINAL') terminalTotal += finalTotal;
+          else if (pType === 'PARTNER') partnerTotal += finalTotal;
+          else if (pType === 'THIRD_PARTY') thirdPartyTotal += finalTotal;
+          else if (pType === 'TOVAR') tovarTotal += finalTotal;
+          else if (pType === 'UYDAN') uydanTotal += finalTotal;
         }
       } else {
         const pType = String(transaction.paymentType || '').toUpperCase().trim();
@@ -248,6 +287,12 @@ export class CashierReportService {
           case 'TERMINAL':
             terminalTotal += finalTotal;
             break;
+          case 'PARTNER':
+            partnerTotal += finalTotal;
+            const pName = transaction.partnerName || 'Boshqa';
+            if (partnerBreakdown[pName] !== undefined) partnerBreakdown[pName] += finalTotal;
+            else partnerBreakdown.Boshqa += finalTotal;
+            break;
           case 'THIRD_PARTY':
             thirdPartyTotal += finalTotal;
             break;
@@ -258,14 +303,15 @@ export class CashierReportService {
             uydanTotal += finalTotal;
             break;
           case 'CREDIT':
-          case 'INSTALLMENT':
-            const upType = String(transaction.upfrontPaymentType || 'CASH').toUpperCase().trim();
+          case 'INSTALLMENT': {
+            const upfrontType = String(transaction.upfrontPaymentType || 'CASH').toUpperCase();
             upfrontTotal += upfront;
-            if (upType === 'CASH') upfrontCash += upfront;
-            else if (upType === 'CARD') upfrontCard += upfront;
-            else if (upType === 'TERMINAL') upfrontTerminal += upfront;
-            else if (upType === 'THIRD_PARTY') upfrontThird += upfront;
+            if (upfrontType === 'CASH') upfrontCash += upfront;
+            else if (upfrontType === 'CARD') upfrontCard += upfront;
+            else if (upfrontType === 'TERMINAL') upfrontTerminal += upfront;
+            else if (upfrontType === 'THIRD_PARTY') upfrontThird += upfront;
             break;
+          }
         }
       }
 
@@ -365,6 +411,8 @@ export class CashierReportService {
       cashTotal,
       cardTotal,
       terminalTotal,
+      partnerTotal,
+      partnerBreakdown,
       thirdPartyTotal,
       tovarTotal,
       uydanTotal,
@@ -381,6 +429,7 @@ export class CashierReportService {
       defectivePlus,
       defectiveMinus,
       repayments: mappedRepayments,
+      transactions: transactions,
     };
 
     if (branchId != null) {

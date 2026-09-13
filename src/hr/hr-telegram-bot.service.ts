@@ -497,11 +497,18 @@ export class HrTelegramBotService implements OnModuleInit, OnModuleDestroy {
         `👤 <b>Nomzod:</b> ${latest.fullName}\n` +
         `📱 <b>Telefon:</b> ${latest.phone}\n` +
         `💼 <b>Lavozim:</b> ${latest.position || '—'}\n` +
-        `📅 <b>Topshirilgan sana:</b> ${new Date(latest.createdAt).toLocaleDateString('uz-UZ')}\n` +
+        `📅 <b>Topshirilgan sana:</b> ${new Date(latest.createdAt).toLocaleDateString('uz-UZ', { timeZone: 'Asia/Tashkent' })}\n` +
         `📊 <b>Holati:</b> <b>${statusText}</b>\n`;
 
       if (latest.status === 'INTERVIEW' && latest.interviewDate) {
-        msg += `\n⏰ <b>Suhbat vaqti:</b> <b>${new Date(latest.interviewDate).toLocaleString('uz-UZ')}</b>\n`;
+        msg += `\n⏰ <b>Suhbat vaqti:</b> <b>${new Date(latest.interviewDate).toLocaleString('uz-UZ', {
+          timeZone: 'Asia/Tashkent',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        })}</b>\n`;
       }
 
       if (latest.notes) {

@@ -69,11 +69,14 @@ export class TransactionBonusProductService {
       });
 
       return bonusProduct;
+    }).then(async (result) => {
+      await this.recalculateTransaction(transactionId);
+      return result;
     });
   }
 
   async createMultiple(transactionId: number, bonusProducts: { productId: number; quantity: number }[]) {
-    return this.prisma.$transaction(async (prisma) => {
+    const result = await this.prisma.$transaction(async (prisma) => {
       const createdBonusProducts: any[] = [];
 
       for (const bonusProduct of bonusProducts) {
@@ -142,6 +145,9 @@ export class TransactionBonusProductService {
 
       return createdBonusProducts;
     });
+
+    await this.recalculateTransaction(transactionId);
+    return result;
   }
 
   async findAll() {
@@ -237,7 +243,9 @@ export class TransactionBonusProductService {
       throw new Error('Bonus product not found');
     }
 
-    return this.prisma.$transaction(async (prisma) => {
+    const transactionId = bonusProduct.transactionId;
+
+    const result = await this.prisma.$transaction(async (prisma) => {
       // Restore quantity to product inventory
       await prisma.product.update({
         where: { id: bonusProduct.productId },
@@ -253,6 +261,12 @@ export class TransactionBonusProductService {
         where: { id },
       });
     });
+
+    if (transactionId) {
+      await this.recalculateTransaction(transactionId);
+    }
+
+    return result;
   }
 
   async getTotalBonusProductsValueByUserId(userId: number, startDate?: string, endDate?: string) {
@@ -489,5 +503,143 @@ export class TransactionBonusProductService {
     }
 
     return createdBonusProducts;
+  }
+
+  private async recalculateTransaction(transactionId: number) {
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: transactionId },
+        include: {
+          items: { include: { product: true } },
+          bonusProducts: { include: { product: true } },
+        }
+      });
+      if (!tx) return;
+      const rate = await this.getUsdToUzsRate(tx.fromBranchId ?? undefined);
+
+      let totalSellingAll = 0;
+      let totalCostAll = 0;
+      let totalPriceDiff = 0;
+      const itemDiffs: any[] = [];
+      const negativeItems: any[] = [];
+
+      for (const item of tx.items) {
+        let sellingPrice = 0;
+        if (item?.sellingPrice != null) {
+          const rawSp = Number(item.sellingPrice);
+          if (rawSp > 0 && rawSp < Math.max(rate / 2, 10000)) {
+            sellingPrice = Math.round(rawSp * rate);
+          } else {
+            sellingPrice = Math.round(rawSp);
+          }
+        } else {
+          sellingPrice = Math.round(Number(item.price || 0) * rate);
+        }
+        const qty = Number(item.quantity || 1);
+        const costInUzs = Math.round(Number(item.product?.price || 0) * rate);
+        const bonusPercentage = Number(item.product?.bonusPercentage || 0);
+
+        totalSellingAll += sellingPrice * qty;
+        totalCostAll += costInUzs * qty;
+
+        if (sellingPrice < costInUzs) {
+          const loss = (costInUzs - sellingPrice) * qty;
+          negativeItems.push({ item, productInfo: item.product, sellingPrice, qty, costInUzs, lossAmount: loss });
+        }
+
+        const diff = (sellingPrice > costInUzs && bonusPercentage > 0) ? (sellingPrice - costInUzs) * qty : 0;
+        if (diff > 0) {
+          totalPriceDiff += diff;
+          itemDiffs.push({ item, productInfo: item.product, sellingPrice, qty, costInUzs, bonusPercentage, diff });
+        }
+      }
+
+      let totalBonusProductsValue = 0;
+      const bonusProductsData: any[] = [];
+      for (const bp of tx.bonusProducts) {
+        const bpPriceInUzs = Math.round(Number(bp.product?.price || 0) * rate);
+        const val = bpPriceInUzs * bp.quantity;
+        totalBonusProductsValue += val;
+        bonusProductsData.push({
+          productId: bp.productId,
+          name: bp.product?.name || 'Номаълум махсулот',
+          productName: bp.product?.name || 'Номаълум махсулот',
+          model: bp.product?.model || null,
+          productModel: bp.product?.model || null,
+          barcode: bp.product?.barcode || null,
+          productCode: bp.product?.barcode || 'N/A',
+          quantity: bp.quantity,
+          price: bpPriceInUzs,
+          totalValue: val,
+        });
+      }
+
+      const grossDiffAfterBonusCost = Math.round(totalSellingAll) - (Math.round(totalCostAll) + Math.round(totalBonusProductsValue));
+
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: { extraProfit: grossDiffAfterBonusCost }
+      });
+
+      const soldByUserId = tx.soldByUserId || tx.userId;
+      if (soldByUserId) {
+        // Delete previous automatic bonuses
+        await this.prisma.bonus.deleteMany({
+          where: {
+            transactionId: tx.id,
+            reason: { in: ['SALES_BONUS', 'SALES_PENALTY'] }
+          }
+        });
+
+        const netExtraPool = Math.max(0, grossDiffAfterBonusCost);
+        if (netExtraPool > 0 && totalPriceDiff > 0) {
+          for (const info of itemDiffs) {
+            const share = info.diff / totalPriceDiff;
+            const allocatedBonusProductsValue = Math.round(totalBonusProductsValue * share);
+            const netExtraAmount = Math.round(netExtraPool * share);
+            const bonusAmount = Math.round(netExtraAmount * (info.bonusPercentage / 100));
+
+            if (bonusAmount > 0) {
+              await this.prisma.bonus.create({
+                data: {
+                  userId: soldByUserId,
+                  branchId: tx.fromBranchId || undefined,
+                  amount: bonusAmount,
+                  reason: 'SALES_BONUS',
+                  description: `${info.productInfo?.name || info.item.productName} (${info.productInfo?.model || '-'}) mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${tx.id}, Sotish narxi: ${info.sellingPrice.toLocaleString()} som, Kelish narxi: ${Math.round(info.costInUzs).toLocaleString()} som, Miqdor: ${info.qty}, Bonus mahsulotlar umumiy qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${info.bonusPercentage}%`,
+                  bonusProducts: bonusProductsData.length > 0 ? (bonusProductsData as any) : null,
+                  transactionId: tx.id,
+                  createdById: soldByUserId,
+                  bonusDate: new Date(),
+                }
+              });
+            }
+          }
+        } else if (grossDiffAfterBonusCost < 0) {
+          const netDeficit = Math.abs(grossDiffAfterBonusCost);
+          const bonusProductsInfo = (bonusProductsData.length > 0)
+            ? ' Bonus mahsulotlar: ' + bonusProductsData.map(bp => `${bp.productName} (${bp.productModel || '-'}) qty=${bp.quantity}`).join(' | ')
+            : '';
+
+          await this.prisma.bonus.create({
+            data: {
+              userId: soldByUserId,
+              branchId: tx.fromBranchId || undefined,
+              amount: -netDeficit,
+              reason: 'SALES_PENALTY',
+              description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${tx.id}. Umumiy sotish: ${Math.round(totalSellingAll).toLocaleString()} som, Bonus mahsulotlar qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Umumiy kelish: ${Math.round(totalCostAll).toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: `
+                + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} (${n.productInfo?.model || '-'}) qty=${n.qty}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | ')
+                + bonusProductsInfo,
+              bonusProducts: bonusProductsData.length > 0 ? (bonusProductsData as any) : null,
+              transactionId: tx.id,
+              createdById: soldByUserId,
+              bonusDate: new Date(),
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Error in recalculateTransaction:', e);
+    }
   }
 }

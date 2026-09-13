@@ -117,6 +117,7 @@ export class StatisticsService {
     let installmentSales = 0;
     let uydanSales = 0;
     let thirdPartySales = 0;
+    let partnerSales = 0;
     let tovarSales = 0;
     let totalSales = 0;
     let totalCostPrice = 0;
@@ -130,8 +131,9 @@ export class StatisticsService {
       if (['CREDIT', 'DEBT'].includes(t)) return 'CREDIT';
       if (['INSTALLMENT', 'BOLOB', "BO'LIB"].includes(t)) return 'INSTALLMENT';
       if (['UYDAN', 'HOME'].includes(t)) return 'UYDAN';
-      if (['THIRD_PARTY'].includes(t)) return 'THIRD_PARTY';
-      if (['TOVAR'].includes(t)) return 'TOVAR';
+      if (['THIRD_PARTY', 'THIRDPARTY', '3RD', '3RDPARTY', 'TASHQI'].includes(t)) return 'THIRD_PARTY';
+      if (['PARTNER', 'HAMKOR', 'HAMKORLAR'].includes(t)) return 'PARTNER';
+      if (['TOVAR', 'TRADEIN', 'TRADE_IN'].includes(t)) return 'TOVAR';
       return t;
     };
 
@@ -170,6 +172,7 @@ export class StatisticsService {
           else if (m === 'CREDIT') creditSales += amt;
           else if (m === 'INSTALLMENT') installmentSales += amt;
           else if (m === 'THIRD_PARTY') thirdPartySales += amt;
+          else if (m === 'PARTNER') partnerSales += amt;
           else if (m === 'TOVAR') tovarSales += amt;
         });
       } else {
@@ -197,6 +200,7 @@ export class StatisticsService {
           else if (mainType === 'CARD') cardSales += finalTotal;
           else if (mainType === 'TERMINAL') terminalSales += finalTotal;
           else if (mainType === 'THIRD_PARTY') thirdPartySales += finalTotal;
+          else if (mainType === 'PARTNER') partnerSales += finalTotal;
           else if (mainType === 'TOVAR') tovarSales += finalTotal;
           else cashSales += finalTotal; // Default to cash
         }
@@ -272,18 +276,19 @@ export class StatisticsService {
 
     const sellerIds = marketingSellers.map((s) => s.id);
 
-    // Fetch transactions for all marketing sellers within date range
+    // Fetch transactions for all marketing sellers strictly within date range
     const sellerTransactions = await this.prisma.transaction.findMany({
       where: {
         OR: [
           { soldByUserId: { in: sellerIds } },
           { userId: { in: sellerIds } },
         ],
+        status: { not: TransactionStatus.CANCELLED },
+        type: TransactionType.SALE,
         createdAt: {
           gte: start,
           lte: end,
         },
-        type: TransactionType.SALE,
         ...(branchId ? {
           AND: [
             {
@@ -305,7 +310,7 @@ export class StatisticsService {
       },
     });
 
-    // Fetch bonuses (KPI) for all marketing sellers within date range
+    // Fetch bonuses (KPI) for all marketing sellers strictly within date range
     const sellerBonuses = await this.prisma.bonus.findMany({
       where: {
         userId: { in: sellerIds },
@@ -326,36 +331,29 @@ export class StatisticsService {
       const uId = seller.id;
       const name = `${seller.firstName || ''} ${seller.lastName || ''}`.trim() || seller.username;
 
-      // Filter transactions for this seller
+      // Filter transactions for this seller strictly within date range
       const userTxs = sellerTransactions.filter((tx) => tx.soldByUserId === uId || (!tx.soldByUserId && tx.userId === uId));
       const salesCount = userTxs.length;
 
-      // Filter bonuses for this seller
+      // Actual sales volume strictly from user transactions in date range
+      const totalSales = userTxs.reduce((sum, tx) => sum + Number(tx.finalTotal ?? tx.total ?? 0), 0);
+
+      // Filter bonuses for this seller strictly within date range
       const userBonuses = sellerBonuses.filter((b) => b.userId === uId);
       const totalBonuses = userBonuses.reduce((sum, b) => sum + (b.amount || 0), 0);
 
-      // Calculate total sales volume and net profit
-      let totalSales = 0;
+      // Calculate net profit strictly for date range
       let totalProfit = 0;
-
       for (const b of userBonuses) {
         if (b.description) {
-          const matchSales = b.description.match(/Sotish narxi:\s*([\d,.-]+)/i);
-          if (matchSales) {
-            const valStr = matchSales[1].replace(/,/g, '');
-            totalSales += parseFloat(valStr) || 0;
-          }
-          const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
+          const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d\s,.'-]+?)(?:\s*(?:som|сўм|so'm|$|,))/i) || b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
           if (matchProfit) {
-            const valStr = matchProfit[1].replace(/,/g, '');
+            const valStr = matchProfit[1].replace(/[\s,']/g, '');
             totalProfit += parseFloat(valStr) || 0;
           }
         }
       }
 
-      if (totalSales === 0 && userTxs.length > 0) {
-        totalSales = userTxs.reduce((sum, tx) => sum + Number(tx.finalTotal || tx.total || 0), 0);
-      }
       if (totalProfit === 0 && userTxs.length > 0) {
         totalProfit = userTxs.reduce((sum, tx) => sum + Number(tx.extraProfit || 0), 0);
       }
@@ -405,6 +403,7 @@ export class StatisticsService {
         model: true,
         barcode: true,
         price: true,
+        marketPrice: true,
       },
     });
 
@@ -429,7 +428,7 @@ export class StatisticsService {
         const transactions = transactionIds.length > 0
           ? await this.prisma.transaction.findMany({
               where: { id: { in: transactionIds } },
-              select: { id: true, paymentType: true },
+              include: { payments: true },
             })
           : [];
 
@@ -441,29 +440,60 @@ export class StatisticsService {
           const tx = transactions.find(t => t.id === b.transactionId);
           const qty = b._sum.quantity || 0;
           if (tx) {
-            if (tx.paymentType === PaymentType.CASH) {
-              cashCount += qty;
-            } else if (tx.paymentType === PaymentType.CARD || tx.paymentType === PaymentType.TERMINAL) {
-              cardCount += qty;
-            } else if (tx.paymentType === PaymentType.CREDIT || tx.paymentType === PaymentType.INSTALLMENT) {
-              creditCount += qty;
+            const payments = tx.payments || [];
+            if (payments.length > 0) {
+              const txTotal = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0) || 1;
+              const cashAmt = payments.filter(p => String(p.method || '').toUpperCase() === 'CASH').reduce((s, p) => s + (Number(p.amount) || 0), 0);
+              const cardAmt = payments.filter(p => ['CARD', 'TERMINAL', 'ICAN'].includes(String(p.method || '').toUpperCase())).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+              const creditAmt = Math.max(0, txTotal - cashAmt - cardAmt);
+
+              if (cashAmt > 0 && cardAmt === 0 && creditAmt === 0) {
+                cashCount += qty;
+              } else if (cardAmt > 0 && cashAmt === 0 && creditAmt === 0) {
+                cardCount += qty;
+              } else if (creditAmt > 0 && cashAmt === 0 && cardAmt === 0) {
+                creditCount += qty;
+              } else {
+                cashCount += (cashAmt / txTotal) * qty;
+                cardCount += (cardAmt / txTotal) * qty;
+                creditCount += (creditAmt / txTotal) * qty;
+              }
+            } else {
+              const pType = String(tx.paymentType || '').toUpperCase();
+              if (pType === 'CASH') {
+                cashCount += qty;
+              } else if (['CARD', 'TERMINAL', 'ICAN'].includes(pType)) {
+                cardCount += qty;
+              } else {
+                creditCount += qty;
+              }
             }
           }
         }
 
-        return { productId, cashCount, cardCount, creditCount };
+        return {
+          productId,
+          cashCount: Math.round(cashCount),
+          cardCount: Math.round(cardCount),
+          creditCount: Math.round(creditCount),
+        };
       })
     );
 
     const topProducts = productSales.map(ps => {
       const prod = products.find(p => p.id === ps.productId);
       const payBreakdown = productPaymentBreakdown.find(pb => pb.productId === ps.productId);
+      const priceInSom = prod?.marketPrice
+        ? Math.round(prod.marketPrice * currentExchangeRate)
+        : (ps._sum.total && ps._sum.quantity ? Math.round(ps._sum.total / ps._sum.quantity) : Math.round((prod?.price || 0) * currentExchangeRate));
+
       return {
         productId: ps.productId,
         name: prod?.name || 'Unknown',
         model: prod?.model || '',
         barcode: prod?.barcode || '',
-        price: prod?.price || 0,
+        price: priceInSom,
+        priceUsd: prod?.price || 0,
         quantitySold: ps._sum.quantity || 0,
         totalRevenue: ps._sum.total || 0,
         cashCount: payBreakdown?.cashCount || 0,
@@ -938,7 +968,7 @@ export class StatisticsService {
           const finalTotal = Number(sale.finalTotal || 0);
           const pType = String(sale.paymentType || '').toUpperCase();
 
-          if (pType === 'CREDIT') {
+          if (pType === 'CREDIT' || pType === 'THIRD_PARTY') {
             totalCreditSales += finalTotal;
           } else if (pType === 'INSTALLMENT') {
             totalInstallmentSales += finalTotal;
@@ -952,6 +982,8 @@ export class StatisticsService {
               if (m === 'CASH') totalCashSales += amt;
               else if (m === 'CARD') totalCardSales += amt;
               else if (m === 'TERMINAL') totalTerminalSales += amt;
+              else if (m === 'CREDIT' || m === 'THIRD_PARTY') totalCreditSales += amt;
+              else if (m === 'INSTALLMENT') totalInstallmentSales += amt;
             }
           } else {
             if (pType === 'CASH') {
@@ -1176,7 +1208,7 @@ export class StatisticsService {
       const finalTotal = t.finalTotal || t.total || 0;
       data.volume += finalTotal;
       data.count += 1;
-      if (t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') {
+      if (t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT' || t.paymentType === 'THIRD_PARTY' || (Array.isArray(t.payments) && t.payments.some((p: any) => ['CREDIT', 'INSTALLMENT', 'THIRD_PARTY'].includes(String(p.method || '').toUpperCase())))) {
         data.creditVolume += finalTotal;
       }
     });
@@ -1262,6 +1294,7 @@ export class StatisticsService {
           installment: installmentSales,
           uydan: uydanSales,
           thirdParty: thirdPartySales,
+          partner: partnerSales,
           tovar: tovarSales,
           total: totalSales,
           totalCostPrice: Math.round(totalCostPrice),
@@ -1743,16 +1776,63 @@ export class StatisticsService {
       ];
     }
 
-    const transactions = await this.prisma.transaction.findMany({
+    const transactions: any = await this.prisma.transaction.findMany({
       where: whereClause,
       include: {
+        fromBranch: { select: { id: true, name: true } },
+        toBranch: { select: { id: true, name: true } },
+        user: { select: { id: true, firstName: true, lastName: true, phone: true } },
+        soldBy: { select: { id: true, firstName: true, lastName: true, phone: true } },
         items: {
           include: {
-            product: true
+            product: {
+              select: {
+                id: true,
+                name: true,
+                model: true,
+                barcode: true,
+                price: true,
+                marketPrice: true,
+                category: { select: { id: true, name: true } },
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Hydrate products that might have been soft-deleted or missed by relation
+    const missingProductIds = new Set<number>();
+    for (const tx of transactions) {
+      for (const it of (tx.items || [])) {
+        if (it.productId && !it.product) {
+          missingProductIds.add(Number(it.productId));
+        }
+      }
+    }
+    if (missingProductIds.size > 0) {
+      const foundProducts = await this.prisma.product.findMany({
+        where: { id: { in: Array.from(missingProductIds) } },
+        select: {
+          id: true,
+          name: true,
+          model: true,
+          barcode: true,
+          price: true,
+          marketPrice: true,
+          category: { select: { id: true, name: true } },
+        }
+      });
+      const prodMap = new Map(foundProducts.map(p => [p.id, p]));
+      for (const tx of transactions) {
+        for (const it of (tx.items || [])) {
+          if (it.productId && !it.product && prodMap.has(Number(it.productId))) {
+            it.product = prodMap.get(Number(it.productId));
           }
         }
       }
-    });
+    }
 
     const branches = await this.prisma.branch.findMany({
       select: {
@@ -1766,85 +1846,211 @@ export class StatisticsService {
     let productsEntered = 0;
     let productsReleased = 0;
 
-    const transferMap = new Map<number, { product: any; totalQty: number }>();
-    const branchTransferMap = new Map<number, { branch: any; txCount: number; totalQty: number }>();
+    const inflowTransactions: any[] = [];
+    const outflowTransactions: any[] = [];
+    const allTransfers: any[] = [];
+
+    const transferMap = new Map<number, {
+      product: any;
+      totalQty: number;
+      totalAmount: number;
+      transfers: any[];
+      branchBreakdown: Map<string, number>;
+    }>();
+    const branchTransferMap = new Map<number, {
+      branch: any;
+      txCount: number;
+      totalQty: number;
+      totalAmount: number;
+      transfers: any[];
+      productMap: Map<number, any>;
+    }>();
 
     for (const tx of transactions) {
-      const isTransfer = tx.type === TransactionType.TRANSFER;
-      const isPurchase = tx.type === TransactionType.PURCHASE;
-      const isSale = tx.type === TransactionType.SALE;
-      const isWriteOff = tx.type === TransactionType.WRITE_OFF;
-      const isReturn = tx.type === TransactionType.RETURN;
+      const isTransfer = tx.type === TransactionType.TRANSFER || tx.transactionType === 'TRANSFER';
+      if (!isTransfer) continue;
 
-      const itemsCount = tx.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      const itemsCount = (tx.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0);
+      const fromBranchObj = tx.fromBranch || (tx.fromBranchId ? branches.find(b => b.id === tx.fromBranchId) : null);
+      const fromBranchName = fromBranchObj?.name || (tx.fromBranchId ? `Филиал #${tx.fromBranchId}` : 'Бош омбор');
+      const toBranchObj = tx.toBranch || (tx.toBranchId ? branches.find(b => b.id === tx.toBranchId) : null);
+      const toBranchName = toBranchObj?.name || (tx.toBranchId ? `Филиал #${tx.toBranchId}` : '—');
 
-      if (branchId) {
-        if (isPurchase) {
-          inflowCount++;
-          productsEntered += itemsCount;
-        } else if (isSale || isWriteOff) {
-          outflowCount++;
-          productsReleased += itemsCount;
-        } else if (isReturn) {
-          inflowCount++;
-          productsEntered += itemsCount;
-        } else if (isTransfer) {
-          if (tx.toBranchId === branchId) {
-            inflowCount++;
-            productsEntered += itemsCount;
-          }
-          if (tx.fromBranchId === branchId) {
-            outflowCount++;
-            productsReleased += itemsCount;
-          }
-        }
-      } else {
-        if (isPurchase || isReturn) {
-          inflowCount++;
-          productsEntered += itemsCount;
-        } else if (isSale || isWriteOff) {
-          outflowCount++;
-          productsReleased += itemsCount;
-        } else if (isTransfer) {
-          inflowCount++;
-          outflowCount++;
-          productsEntered += itemsCount;
-          productsReleased += itemsCount;
-        }
+      let txTotalSum = 0;
+      for (const item of (tx.items || [])) {
+        const qty = Number(item.quantity || 1);
+        const price = Number(item.sellingPrice || item.price || item.product?.price || 0);
+        txTotalSum += qty * price;
       }
 
-      if (isTransfer) {
-        if (tx.toBranchId) {
-          const bId = tx.toBranchId;
-          const current = branchTransferMap.get(bId) || {
-            branch: branches.find(b => b.id === bId) || { id: bId, name: `Filial #${bId}` },
-            txCount: 0,
-            totalQty: 0
+      const formattedTx = {
+        id: tx.id,
+        type: tx.type,
+        status: tx.status,
+        createdAt: tx.createdAt,
+        fromBranch: fromBranchObj || { id: tx.fromBranchId || null, name: fromBranchName },
+        fromBranchName: fromBranchName,
+        toBranch: toBranchObj || { id: tx.toBranchId || null, name: toBranchName },
+        toBranchName: toBranchName,
+        user: tx.user,
+        soldBy: tx.soldBy,
+        description: tx.description,
+        total: tx.total,
+        finalTotal: tx.finalTotal,
+        calculatedTotal: txTotalSum,
+        itemsCount: itemsCount,
+        items: (tx.items || []).map(it => ({
+          id: it.id,
+          productId: it.productId,
+          productName: it.product?.name || it.productName || `Маҳсулот #${it.productId || it.id}`,
+          model: it.product?.model || it.model || '',
+          barcode: it.product?.barcode || it.barcode || '',
+          categoryName: it.product?.category?.name || it.categoryName || '',
+          quantity: it.quantity || 0,
+          price: it.price || it.sellingPrice || it.product?.price || 0,
+          costPrice: it.product?.marketPrice || it.product?.price || 0,
+          total: it.total || ((it.quantity || 0) * (it.price || it.sellingPrice || it.product?.price || 0)),
+          fromBranchName: fromBranchName,
+          toBranchName: toBranchName,
+        })),
+      };
+
+      allTransfers.push(formattedTx);
+
+      if (branchId) {
+        if (tx.toBranchId === branchId) {
+          inflowCount++;
+          productsEntered += itemsCount;
+          inflowTransactions.push(formattedTx);
+        }
+        if (tx.fromBranchId === branchId) {
+          outflowCount++;
+          productsReleased += itemsCount;
+          outflowTransactions.push(formattedTx);
+        }
+      } else {
+        inflowCount++;
+        outflowCount++;
+        productsEntered += itemsCount;
+        productsReleased += itemsCount;
+        inflowTransactions.push(formattedTx);
+        outflowTransactions.push(formattedTx);
+      }
+
+      // Populate Branch Transfer Map
+      if (tx.toBranchId) {
+        const bId = tx.toBranchId;
+        const current = branchTransferMap.get(bId) || {
+          branch: branches.find(b => b.id === bId) || { id: bId, name: `Filial #${bId}` },
+          txCount: 0,
+          totalQty: 0,
+          totalAmount: 0,
+          transfers: [],
+          productMap: new Map<number, any>(),
+        };
+        current.txCount++;
+        current.totalQty += itemsCount;
+        current.totalAmount += (Number(tx.finalTotal || tx.total || txTotalSum) || 0);
+
+        for (const item of (tx.items || [])) {
+          const qty = Number(item.quantity || 1);
+          const price = Number(item.sellingPrice || item.price || item.product?.price || 0);
+          const itemSum = qty * price;
+
+          const pid = item.productId || item.id;
+          const pName = item.product?.name || item.productName || `Маҳсулот #${pid}`;
+          const pModel = item.product?.model || item.model || '';
+          const pBarcode = item.product?.barcode || item.barcode || '';
+          const pCat = item.product?.category?.name || item.categoryName || '';
+
+          const prodEntry = current.productMap.get(pid) || {
+            productId: pid,
+            name: pName,
+            model: pModel,
+            barcode: pBarcode,
+            categoryName: pCat,
+            quantity: 0,
+            totalAmount: 0,
+            costPrice: Number(item.product?.marketPrice || item.product?.price || price),
+            sellingPrice: price,
+            fromBranchesMap: new Map<string, number>(),
           };
-          current.txCount++;
-          current.totalQty += itemsCount;
-          branchTransferMap.set(bId, current);
+          prodEntry.quantity += qty;
+          prodEntry.totalAmount += itemSum;
+          const curBranchQty = prodEntry.fromBranchesMap.get(fromBranchName) || 0;
+          prodEntry.fromBranchesMap.set(fromBranchName, curBranchQty + qty);
+
+          current.productMap.set(pid, prodEntry);
         }
 
-        for (const item of tx.items) {
-          if (!item.productId || !item.product) continue;
-          const pid = item.productId;
-          const current = transferMap.get(pid) || { product: item.product, totalQty: 0 };
-          current.totalQty += item.quantity || 0;
-          transferMap.set(pid, current);
-        }
+        current.transfers.push(formattedTx);
+        branchTransferMap.set(bId, current);
+      }
+
+      // Populate Product Transfer Map
+      for (const item of (tx.items || [])) {
+        const pid = item.productId || item.id;
+        const qty = Number(item.quantity || 1);
+        const price = Number(item.sellingPrice || item.price || item.product?.price || 0);
+        const itemSum = qty * price;
+
+        const current = transferMap.get(pid) || {
+          product: item.product || {
+            id: pid,
+            name: item.productName || `Маҳсулот #${pid}`,
+            model: item.model || '',
+            barcode: item.barcode || '',
+            price: price,
+            marketPrice: item.product?.marketPrice || price,
+            category: item.product?.category,
+          },
+          totalQty: 0,
+          totalAmount: 0,
+          transfers: [],
+          branchBreakdown: new Map<string, number>(),
+        };
+
+        current.totalQty += qty;
+        current.totalAmount += itemSum;
+        current.transfers.push({
+          txId: tx.id,
+          createdAt: tx.createdAt,
+          fromBranchName: fromBranchName,
+          toBranchName: toBranchName,
+          quantity: qty,
+          price: price,
+          total: itemSum,
+          user: tx.user,
+          soldBy: tx.soldBy,
+          status: tx.status,
+          description: tx.description,
+        });
+
+        const targetBranch = toBranchName || 'Бошқа филиал';
+        const curBranchQty = current.branchBreakdown.get(targetBranch) || 0;
+        current.branchBreakdown.set(targetBranch, curBranchQty + qty);
+
+        transferMap.set(pid, current);
       }
     }
 
     const topTransferredProducts = Array.from(transferMap.values())
       .sort((a, b) => b.totalQty - a.totalQty)
-      .slice(0, 5)
       .map(item => ({
-        productId: item.product.id,
-        name: item.product.name,
-        model: item.product.model,
-        barcode: item.product.barcode,
+        productId: item.product?.id,
+        name: item.product?.name || '—',
+        model: item.product?.model || '—',
+        barcode: item.product?.barcode || '—',
         quantityTransferred: item.totalQty,
+        totalAmount: item.totalAmount,
+        categoryName: item.product?.category?.name,
+        sellingPrice: item.product?.price,
+        costPrice: item.product?.marketPrice || item.product?.price,
+        transfers: item.transfers,
+        branchBreakdown: Array.from(item.branchBreakdown.entries()).map(([name, qty]) => ({
+          branchName: name,
+          quantity: qty,
+        })),
       }));
 
     const topTransferBranches = Array.from(branchTransferMap.values())
@@ -1854,6 +2060,21 @@ export class StatisticsService {
         branchName: item.branch.name,
         transferCount: item.txCount,
         quantityReceived: item.totalQty,
+        totalAmount: item.totalAmount,
+        transfers: item.transfers,
+        products: Array.from(item.productMap.values()).map(p => ({
+          productId: p.productId,
+          name: p.name,
+          model: p.model,
+          barcode: p.barcode,
+          categoryName: p.categoryName,
+          quantity: p.quantity,
+          totalAmount: p.totalAmount,
+          costPrice: p.costPrice,
+          sellingPrice: p.sellingPrice,
+          fromBranches: Array.from(p.fromBranchesMap?.entries() || []).map(([name, qty]) => ({ name, quantity: qty })),
+          fromBranchNames: Array.from(p.fromBranchesMap?.keys() || []),
+        })).sort((a, b) => b.quantity - a.quantity),
       }));
 
     return {
@@ -1863,6 +2084,9 @@ export class StatisticsService {
       productsReleased,
       topTransferredProducts,
       topTransferBranches,
+      inflowTransactions: inflowTransactions,
+      outflowTransactions: outflowTransactions,
+      allTransfers: allTransfers,
     };
   }
 
@@ -1934,7 +2158,7 @@ export class StatisticsService {
       let txSofOrtiqcha = 0;
       const parsedDetails: string[] = [];
 
-      for (const b of tx.bonuses) {
+      for (const b of (tx.bonuses || [])) {
         if (b.description) {
           parsedDetails.push(b.description);
           let qty = 1;
@@ -1943,37 +2167,45 @@ export class StatisticsService {
             qty = parseInt(matchQty[1], 10) || 1;
           }
 
-          const matchSales = b.description.match(/Sotish narxi:\s*([\d,.-]+)/i);
+          const matchSales = b.description.match(/Sotish narxi:\s*([\d\s,.'-]+?)(?:\s*(?:som|сўм|so'm|$|,))/i) || b.description.match(/Sotish narxi:\s*([\d,.-]+)/i);
           if (matchSales) {
-            const valStr = matchSales[1].replace(/,/g, '');
+            const valStr = matchSales[1].replace(/[\s,']/g, '');
             txSotish += (parseFloat(valStr) || 0) * qty;
           }
-          const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
+          const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d\s,.'-]+?)(?:\s*(?:som|сўм|so'm|$|,))/i) || b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
           if (matchProfit) {
-            const valStr = matchProfit[1].replace(/,/g, '');
+            const valStr = matchProfit[1].replace(/[\s,']/g, '');
             txSofOrtiqcha += parseFloat(valStr) || 0;
           }
         }
       }
 
-      totalSotish += txSotish;
+      const realTxTotal = Number(tx.finalTotal ?? tx.total ?? 0);
+      if (txSotish === 0) {
+        txSotish = realTxTotal;
+      }
+      if (txSofOrtiqcha === 0) {
+        txSofOrtiqcha = Number(tx.extraProfit || 0);
+      }
+
+      totalSotish += realTxTotal;
       totalSofOrtiqcha += txSofOrtiqcha;
 
       return {
         id: tx.id,
         createdAt: tx.createdAt,
-        finalTotal: tx.finalTotal,
+        finalTotal: realTxTotal,
         paymentType: tx.paymentType,
-        sotishNarxi: txSotish,
+        sotishNarxi: txSotish || realTxTotal,
         sofOrtiqcha: txSofOrtiqcha,
         details: parsedDetails,
-        items: tx.items.map(item => ({
+        items: (tx.items || []).map((item: any) => ({
           productId: item.productId,
-          productName: item.product?.name || 'Unknown',
-          productModel: item.product?.model || '',
+          productName: item.product?.name || item.productName || 'Маҳсулот',
+          productModel: item.product?.model || item.model || '',
           quantity: item.quantity,
-          price: item.price,
-          total: item.total,
+          price: item.price || item.sellingPrice || 0,
+          total: item.total || ((item.quantity || 1) * (item.price || item.sellingPrice || 0)),
         })),
       };
     });
@@ -1982,6 +2214,132 @@ export class StatisticsService {
       transactions: formattedTransactions,
       totalSotish,
       totalSofOrtiqcha,
+    };
+  }
+
+  async getTopCustomers(
+    branchId?: number,
+    startDate?: string,
+    endDate?: string,
+    sortBy: 'price' | 'count' = 'price',
+    search?: string,
+    limit?: number,
+  ) {
+    let start: Date;
+    let end: Date;
+
+    if (startDate) {
+      start = new Date(startDate);
+      const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+      if (!isUTC) {
+        start.setUTCHours(start.getUTCHours() - 5);
+      }
+    } else {
+      const now = new Date();
+      start = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0));
+      start.setUTCHours(start.getUTCHours() - 5);
+    }
+
+    if (endDate) {
+      end = new Date(endDate);
+      const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+      if (!isUTC) {
+        end.setUTCDate(end.getUTCDate() + 1);
+        end.setUTCHours(end.getUTCHours() - 5);
+        end.setTime(end.getTime() - 1);
+      }
+    } else {
+      end = new Date();
+    }
+
+    const transactionWhere: any = {
+      type: TransactionType.SALE,
+      status: { not: TransactionStatus.CANCELLED },
+      customerId: { not: null },
+      createdAt: {
+        gte: start,
+        lte: end,
+      },
+    };
+
+    if (branchId) {
+      transactionWhere.OR = [
+        { fromBranchId: branchId },
+        { toBranchId: branchId },
+      ];
+    }
+
+    const customerSales = await this.prisma.transaction.groupBy({
+      by: ['customerId'],
+      where: transactionWhere,
+      _sum: {
+        finalTotal: true,
+        extraProfit: true,
+      },
+      _count: {
+        id: true,
+      },
+      orderBy: sortBy === 'count' ? {
+        _count: {
+          id: 'desc',
+        },
+      } : {
+        _sum: {
+          finalTotal: 'desc',
+        },
+      },
+      take: limit ? limit : 1000,
+    });
+
+    const customerIds = customerSales.map(cs => cs.customerId).filter((id): id is number => id !== null);
+    const customers = await this.prisma.customer.findMany({
+      where: { id: { in: customerIds } },
+      select: {
+        id: true,
+        fullName: true,
+        phone: true,
+        address: true,
+        email: true,
+      },
+    });
+
+    let topCustomers = customerSales.map(cs => {
+      const cust = customers.find(c => c.id === cs.customerId);
+      return {
+        customerId: cs.customerId,
+        fullName: cust?.fullName || 'Unknown',
+        phone: cust?.phone || '',
+        address: cust?.address || '',
+        email: cust?.email || '',
+        totalSpent: cs._sum.finalTotal || 0,
+        ordersCount: cs._count.id || 0,
+        netProfit: cs._sum.extraProfit || 0,
+      };
+    });
+
+    if (search && search.trim()) {
+      const q = search.toLowerCase().trim();
+      topCustomers = topCustomers.filter(c =>
+        (c.fullName && c.fullName.toLowerCase().includes(q)) ||
+        (c.phone && c.phone.toLowerCase().includes(q)) ||
+        (c.address && c.address.toLowerCase().includes(q))
+      );
+    }
+
+    const totalActiveCustomers = topCustomers.length;
+    const totalOrders = topCustomers.reduce((s, c) => s + (c.ordersCount || 0), 0);
+    const totalRevenue = topCustomers.reduce((s, c) => s + (c.totalSpent || 0), 0);
+    const totalProfit = topCustomers.reduce((s, c) => s + (c.netProfit || 0), 0);
+
+    return {
+      data: topCustomers,
+      summary: {
+        totalActiveCustomers,
+        totalOrders,
+        totalRevenue,
+        totalProfit,
+        topCustomer: topCustomers[0] || null,
+      },
     };
   }
 
@@ -2640,6 +2998,14 @@ export class StatisticsService {
     const transactionsList = await this.prisma.transaction.findMany({
       where: txWhere,
       include: {
+        customer: {
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+          },
+        },
+        payments: true,
         items: {
           include: {
             product: {
@@ -2656,7 +3022,7 @@ export class StatisticsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const sellerTxMap = new Map<number, typeof transactionsList>();
+    const sellerTxMap = new Map<number, any[]>();
     transactionsList.forEach((tx) => {
       const sId = tx.soldByUserId || tx.userId;
       if (!sId) return;
@@ -2712,6 +3078,11 @@ export class StatisticsService {
         receiptId: tx.receiptId || `Чек #${tx.id}`,
         createdAt: tx.createdAt,
         totalAmount: tx.finalTotal ?? tx.total ?? 0,
+        paymentType: tx.paymentType,
+        description: tx.description,
+        partnerName: tx.partnerName,
+        customer: tx.customer,
+        payments: tx.payments,
         items: (tx.items || []).map((item) => ({
           itemId: item.id,
           productId: item.productId,

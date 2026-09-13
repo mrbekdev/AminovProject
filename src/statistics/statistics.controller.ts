@@ -149,6 +149,34 @@ export class StatisticsController {
     return this.statisticsService.getAuditorStats(parseInt(id, 10));
   }
 
+  @Get('top-customers')
+  @ApiOperation({ summary: 'Get all top customers ranked by sales or order count within date range' })
+  @ApiQuery({ name: 'branchId', required: false, type: Number })
+  @ApiQuery({ name: 'startDate', required: false, type: String })
+  @ApiQuery({ name: 'endDate', required: false, type: String })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  async getTopCustomers(
+    @Query('branchId') branchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('sortBy') sortBy?: 'price' | 'count',
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedBranchId = branchId && branchId !== 'all' ? parseInt(branchId, 10) : undefined;
+    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+    return this.statisticsService.getTopCustomers(
+      parsedBranchId,
+      startDate,
+      endDate,
+      sortBy || 'price',
+      search,
+      parsedLimit,
+    );
+  }
+
   @Get('customer-transactions/:id')
   @ApiOperation({ summary: 'Get transactions for a specific customer with parsed bonus details' })
   @ApiQuery({ name: 'branchId', required: false, type: Number })
@@ -160,7 +188,7 @@ export class StatisticsController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    const parsedBranchId = branchId ? parseInt(branchId, 10) : undefined;
+    const parsedBranchId = branchId && branchId !== 'all' ? parseInt(branchId, 10) : undefined;
     return this.statisticsService.getCustomerTransactions(
       parseInt(id, 10),
       parsedBranchId,
