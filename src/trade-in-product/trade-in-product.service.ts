@@ -18,33 +18,16 @@ export class TradeInProductService {
 
     if (!counterRecord) {
       counterRecord = await tx.barcodeCounter.create({
-        data: { counter: 1n },
-      });
-    } else {
-      counterRecord = await tx.barcodeCounter.update({
-        where: { id: counterRecord.id },
-        data: { counter: counterRecord.counter + 1n },
+        data: { counter: 1000000000n },
       });
     }
 
-    const prefix = '20';
-    const numberStr = counterRecord.counter.toString().padStart(10, '0');
-    const rawCode = `${prefix}${numberStr}`;
+    counterRecord = await tx.barcodeCounter.update({
+      where: { id: counterRecord.id },
+      data: { counter: counterRecord.counter + 1n },
+    });
 
-    let sumOdd = 0;
-    let sumEven = 0;
-    for (let i = 0; i < 12; i++) {
-      const digit = parseInt(rawCode[i], 10);
-      if (i % 2 === 0) {
-        sumOdd += digit;
-      } else {
-        sumEven += digit;
-      }
-    }
-    const totalSum = sumOdd + sumEven * 3;
-    const checkDigit = (10 - (totalSum % 10)) % 10;
-
-    return `${rawCode}${checkDigit}`;
+    return counterRecord.counter.toString();
   }
 
   public async getUsdToUzsRate(branchId?: number): Promise<number> {

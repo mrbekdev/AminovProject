@@ -18,6 +18,23 @@ export class TransactionService {
     private historyService: ProductHistoryService,
   ) { }
 
+  private async generateUniqueBarcode(tx: any = this.prisma): Promise<string> {
+    let counterRecord = await tx.barcodeCounter.findFirst();
+
+    if (!counterRecord) {
+      counterRecord = await tx.barcodeCounter.create({
+        data: { counter: 1000000000n },
+      });
+    }
+
+    counterRecord = await tx.barcodeCounter.update({
+      where: { id: counterRecord.id },
+      data: { counter: counterRecord.counter + 1n },
+    });
+
+    return counterRecord.counter.toString();
+  }
+
   async create(createTransactionDto: CreateTransactionDto, userId?: number) {
     const { items, customer, payments, ...transactionData } = createTransactionDto;
 
@@ -2481,7 +2498,7 @@ export class TransactionService {
         // Agar ayni barcode boshqa aktiv tovar tomonidan egallangan bo'lsa (shouldCreateNew=true), unga tegilmasligi uchun yangi unique barcode beriladi
         let safeBarcode = barcode;
         if (!safeBarcode || shouldCreateNew) {
-          safeBarcode = `${barcode ? `${barcode}_` : 'TRANSFER_'}${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+          safeBarcode = await this.generateUniqueBarcode(tx);
         }
 
         try {
@@ -2504,7 +2521,7 @@ export class TransactionService {
           });
         } catch (error: any) {
           if (error?.code === 'P2002') {
-            const fallbackBarcode = `${barcode ? `${barcode}_` : 'TRANSFER_'}${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+            const fallbackBarcode = await this.generateUniqueBarcode(tx);
             await tx.product.create({
               data: {
                 name: itemName,

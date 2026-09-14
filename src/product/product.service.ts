@@ -14,53 +14,36 @@ export class ProductService {
     private currencyExchangeRateService: CurrencyExchangeRateService,
     private historyService: ProductHistoryService,
   ) {}
-private async generateUniqueBarcode(tx: any): Promise<string> {
-  // mavjud counterni olamiz yoki 0 yaratib qo'yamiz
-  let counterRecord = await tx.barcodeCounter.findFirst();
+  private async generateUniqueBarcode(tx: any): Promise<string> {
+    let counterRecord = await tx.barcodeCounter.findFirst();
 
-  if (!counterRecord) {
-    counterRecord = await tx.barcodeCounter.create({
-      data: { counter: 1n }, // 1 dan boshlaymiz
-    });
-  } else {
+    if (!counterRecord) {
+      counterRecord = await tx.barcodeCounter.create({
+        data: { counter: 1000000000n },
+      });
+    }
+
     counterRecord = await tx.barcodeCounter.update({
       where: { id: counterRecord.id },
       data: { counter: counterRecord.counter + 1n },
     });
+
+    return counterRecord.counter.toString();
   }
 
-  // 13 xonali EAN-13 shtrix kod hosil qilish
-  // Masalan: 2000000000001
-  const prefix = '20';
-  const numberStr = counterRecord.counter.toString().padStart(10, '0');
-  const rawCode = `${prefix}${numberStr}`;
+  async create(
+    createProductDto: CreateProductDto,
+    userId: number,
+    prismaClient: PrismaClient | Prisma.TransactionClient = this.prisma,
+  ) {
+    const barcode = createProductDto.barcode && createProductDto.barcode.trim()
+      ? createProductDto.barcode.trim()
+      : await this.generateUniqueBarcode(prismaClient);
 
-  // EAN-13 uchun Check Digit (nazorat raqami) hisoblash
-  let sumOdd = 0;
-  let sumEven = 0;
-  for (let i = 0; i < 12; i++) {
-    const digit = parseInt(rawCode[i], 10);
-    if (i % 2 === 0) {
-      sumOdd += digit;
-    } else {
-      sumEven += digit;
-    }
-  }
-  const totalSum = sumOdd + sumEven * 3;
-  const checkDigit = (10 - (totalSum % 10)) % 10;
-
-  return `${rawCode}${checkDigit}`;
-}
-
-async create(
-  createProductDto: CreateProductDto,
-  userId: number,
-  prismaClient: PrismaClient | Prisma.TransactionClient = this.prisma,
-) {
-  const product = await prismaClient.product.create({
-    data: {
-      name: createProductDto.name,
-      barcode: await this.generateUniqueBarcode(prismaClient),
+    const product = await prismaClient.product.create({
+      data: {
+        name: createProductDto.name,
+        barcode: barcode,
       categoryId: createProductDto.categoryId,
       branchId: createProductDto.branchId,
       price: createProductDto.price,
