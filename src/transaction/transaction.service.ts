@@ -1805,18 +1805,19 @@ export class TransactionService {
       paymentType: { not: PaymentType.INSTALLMENT },
     };
 
-    // Payment type filter - check if it's CREDIT, or has UYDAN payments
+    // Payment type filter - check if it's CREDIT, or has UYDAN payments or debt paymentSchedules
     // NOTE: INSTALLMENT has its own dedicated "Бўлиб тўлаш" section, so it must not appear in Mijozlar (Уйдан келадиган пуллар)
     const paymentTypeConditions = [
       { paymentType: PaymentType.CREDIT },
-      { payments: { some: { method: 'UYDAN' } } }
+      { payments: { some: { method: { in: ['UYDAN', 'uydan', 'CREDIT', 'credit', 'NASIYA', 'nasiya'] } } } },
+      { paymentSchedules: { some: { installmentType: { not: 'INSTALLMENT' } } } }
     ];
 
     // Handle payment status filter
     if (paymentStatus === 'UYDAN') {
-      // Only show transactions with UYDAN payments
       where.OR = [
-        { payments: { some: { method: 'UYDAN' } } }
+        { payments: { some: { method: { in: ['UYDAN', 'uydan'] } } } },
+        { paymentSchedules: { some: { installmentType: 'UYDAN' } } }
       ];
     } else {
       where.OR = paymentTypeConditions;
@@ -1893,6 +1894,7 @@ export class TransactionService {
             isPaid: true,
             month: true,
             rating: true,
+            installmentType: true,
           }
         },
         payments: {
@@ -1918,34 +1920,27 @@ export class TransactionService {
       if (!isCredit && !hasUydanPayment && schedules.length === 0) continue;
 
       // Calculate outstanding debt correctly
-      let outstanding = 0;
-      let totalPaidOnDebt = 0;
+      let txOutstanding = 0;
+      let txPaidOnDebt = 0;
 
       if (schedules.length > 0) {
-        outstanding = schedules.reduce((sum, s) => sum + Math.max(0, (s.payment || 0) - (s.paidAmount || 0)), 0);
-        totalPaidOnDebt = schedules.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
+        txOutstanding = schedules.reduce((sum, s) => sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0)), 0);
+        txPaidOnDebt = schedules.reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
       } else {
         const baseAmount = Number((t as any).finalTotal || (t as any).total || 0);
         const downPayment = Number((t as any).downPayment || 0);
         const creditRepaid = Number((t as any).creditRepaymentAmount || 0);
         const uydanAmount = payments.filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
           .reduce((s, p) => s + Number(p.amount || 0), 0);
-        if (isCredit) {
-          outstanding = Math.max(0, baseAmount - downPayment - creditRepaid);
-          totalPaidOnDebt = creditRepaid;
-        } else if (hasUydanPayment) {
-          outstanding = Math.max(0, uydanAmount - creditRepaid);
-          totalPaidOnDebt = creditRepaid;
+        if (hasUydanPayment) {
+          const debtPortion = uydanAmount > 0 ? uydanAmount : Math.max(0, baseAmount - downPayment);
+          txOutstanding = Math.max(0, debtPortion - creditRepaid);
+          txPaidOnDebt = creditRepaid;
+        } else if (isCredit) {
+          txOutstanding = Math.max(0, baseAmount - downPayment - creditRepaid);
+          txPaidOnDebt = creditRepaid;
         }
       }
-
-      // Filter by hasOutstanding if specified
-      if (hasOutstanding === true && outstanding <= 0) continue;
-      if (hasOutstanding === false && outstanding > 0) continue;
-
-      // Filter by payment status
-      if (paymentStatus === 'FULLY_PAID' && outstanding > 0) continue;
-      if (paymentStatus === 'HAS_REMAINING' && outstanding <= 0) continue;
 
       // Aggregate rating counts
       let goodMonths = 0;
@@ -1971,16 +1966,31 @@ export class TransactionService {
       }
 
       const agg = customerMap.get(cust.id);
-      agg.totalPaid += totalPaidOnDebt;
-      agg.outstanding += outstanding;
+      agg.totalPaid += txPaidOnDebt;
+      agg.outstanding += txOutstanding;
       agg.transactionCount += 1;
       agg.goodMonths += goodMonths;
       agg.badMonths += badMonths;
       agg.totalMonths += schedules.length;
     }
 
+    // Customer-level filtering
+    let customerList = Array.from(customerMap.values());
+
+    if (hasOutstanding === true) {
+      customerList = customerList.filter(c => c.outstanding > 0);
+    } else if (hasOutstanding === false) {
+      customerList = customerList.filter(c => c.outstanding <= 0);
+    }
+
+    if (paymentStatus === 'FULLY_PAID') {
+      customerList = customerList.filter(c => c.outstanding <= 0);
+    } else if (paymentStatus === 'HAS_REMAINING') {
+      customerList = customerList.filter(c => c.outstanding > 0);
+    }
+
     // Build final list with rating object
-    const customers = Array.from(customerMap.values()).map(c => ({
+    const customers = customerList.map(c => ({
       id: c.id,
       fullName: c.fullName,
       phone: c.phone,
@@ -3474,32 +3484,6 @@ export class TransactionService {
       const cust = t.customer;
       if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
 
-      const schedules = t.paymentSchedules || [];
-      const payments = t.payments || [];
-
-      let outstanding = 0;
-      let totalPaidOnDebt = 0;
-
-      if (schedules.length > 0) {
-        outstanding = schedules.reduce((sum, s) => sum + Math.max(0, (s.payment || 0) - (s.paidAmount || 0)), 0);
-        totalPaidOnDebt = schedules.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
-      } else {
-        const baseAmount = Number(t.finalTotal || t.total || 0);
-        const downPayment = Number(t.downPayment || 0);
-        const creditRepaid = Number(t.creditRepaymentAmount || 0);
-        const uydanAmount = payments.filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
-          .reduce((s, p) => s + Number(p.amount || 0), 0);
-        const isDebtPaymentType = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType || '');
-        outstanding = isDebtPaymentType ? (Math.max(0, baseAmount - downPayment - creditRepaid) + uydanAmount) : uydanAmount;
-        totalPaidOnDebt = creditRepaid;
-      }
-
-      if (hasOutstanding === true && outstanding <= 0) continue;
-      if (hasOutstanding === false && outstanding > 0) continue;
-
-      if (paymentStatus === 'FULLY_PAID' && outstanding > 0) continue;
-      if (paymentStatus === 'HAS_REMAINING' && outstanding <= 0) continue;
-
       if (!customerMap.has(cust.id)) {
         customerMap.set(cust.id, {
           customer: cust,
@@ -3566,16 +3550,24 @@ export class TransactionService {
 
         let paidAmt = 0;
         let remainingAmt = 0;
-        const schedules = t.paymentSchedules || [];
+        const schedules = (t.paymentSchedules || []).filter((s: any) => s.installmentType !== 'INSTALLMENT');
         if (schedules.length > 0) {
-          remainingAmt = schedules.reduce((sum, s) => sum + Math.max(0, (s.payment || 0) - (s.paidAmount || 0)), 0);
-          paidAmt = downAmt + schedules.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
+          remainingAmt = schedules.reduce((sum, s) => sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0)), 0);
+          paidAmt = downAmt + schedules.reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
         } else {
           const creditRepaid = Number(t.creditRepaymentAmount || 0);
           const uydanAmount = (t.payments || []).filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
             .reduce((s, p) => s + Number(p.amount || 0), 0);
-          remainingAmt = isDebtPaymentType ? (Math.max(0, soldAmt - downAmt - creditRepaid) + uydanAmount) : uydanAmount;
-          paidAmt = isDebtPaymentType ? (downAmt + creditRepaid) : soldAmt;
+          if (uydanAmount > 0) {
+            remainingAmt = Math.max(0, uydanAmount - creditRepaid);
+            paidAmt = (soldAmt - uydanAmount) + creditRepaid;
+          } else if (isDebtPaymentType) {
+            remainingAmt = Math.max(0, soldAmt - downAmt - creditRepaid);
+            paidAmt = downAmt + creditRepaid;
+          } else {
+            remainingAmt = 0;
+            paidAmt = soldAmt;
+          }
         }
 
         totalSold += soldAmt;
@@ -3584,6 +3576,13 @@ export class TransactionService {
         totalPaid += paidAmt;
         totalRemaining += remainingAmt;
       }
+
+      // Customer-level filtering
+      if (hasOutstanding === true && totalRemaining <= 0) continue;
+      if (hasOutstanding === false && totalRemaining > 0) continue;
+
+      if (paymentStatus === 'FULLY_PAID' && totalRemaining > 0) continue;
+      if (paymentStatus === 'HAS_REMAINING' && totalRemaining <= 0) continue;
 
       rows.push({
         'Holat': returnedTxIds.length > 0 ? 'Qaytarilgan bor' : '-',
