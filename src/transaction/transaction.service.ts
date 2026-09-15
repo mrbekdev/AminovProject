@@ -1810,7 +1810,7 @@ export class TransactionService {
     const paymentTypeConditions = [
       { paymentType: PaymentType.CREDIT },
       { payments: { some: { method: { in: ['UYDAN', 'uydan', 'CREDIT', 'credit', 'NASIYA', 'nasiya'] } } } },
-      { paymentSchedules: { some: { installmentType: { not: 'INSTALLMENT' } } } }
+      { paymentSchedules: { some: { OR: [{ installmentType: null }, { installmentType: { not: 'INSTALLMENT' } }] } } }
     ];
 
     // Handle payment status filter

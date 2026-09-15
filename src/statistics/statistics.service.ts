@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TransactionType, TransactionStatus, PaymentType, TaskStatus, UserRole, UserStatus } from '@prisma/client';
+import { TransactionType, TransactionStatus, PaymentType, TaskStatus, UserRole, UserStatus, BranchType } from '@prisma/client';
 
 @Injectable()
 export class StatisticsService {
@@ -1779,10 +1779,11 @@ export class StatisticsService {
     const transactions: any = await this.prisma.transaction.findMany({
       where: whereClause,
       include: {
-        fromBranch: { select: { id: true, name: true } },
-        toBranch: { select: { id: true, name: true } },
-        user: { select: { id: true, firstName: true, lastName: true, phone: true } },
-        soldBy: { select: { id: true, firstName: true, lastName: true, phone: true } },
+        fromBranch: { select: { id: true, name: true, type: true } },
+        toBranch: { select: { id: true, name: true, type: true } },
+        user: { select: { id: true, firstName: true, lastName: true, phone: true, username: true } },
+        soldBy: { select: { id: true, firstName: true, lastName: true, phone: true, username: true } },
+        updatedBy: { select: { id: true, firstName: true, lastName: true, phone: true, username: true } },
         items: {
           include: {
             product: {
@@ -1838,6 +1839,7 @@ export class StatisticsService {
       select: {
         id: true,
         name: true,
+        type: true,
       }
     });
 
@@ -1870,8 +1872,11 @@ export class StatisticsService {
       const isTransfer = tx.type === TransactionType.TRANSFER || tx.transactionType === 'TRANSFER';
       if (!isTransfer) continue;
 
-      const itemsCount = (tx.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0);
       const fromBranchObj = tx.fromBranch || (tx.fromBranchId ? branches.find(b => b.id === tx.fromBranchId) : null);
+      const isFromSklad = !fromBranchObj || fromBranchObj.type === BranchType.SKLAD || fromBranchObj.type === 'SKLAD';
+
+      // Faqatgina jo'natuvchi filiali SKLAD (ombor) bo'lgan transferlar olinadi
+      const itemsCount = (tx.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0);
       const fromBranchName = fromBranchObj?.name || (tx.fromBranchId ? `Филиал #${tx.fromBranchId}` : 'Бош омбор');
       const toBranchObj = tx.toBranch || (tx.toBranchId ? branches.find(b => b.id === tx.toBranchId) : null);
       const toBranchName = toBranchObj?.name || (tx.toBranchId ? `Филиал #${tx.toBranchId}` : '—');
@@ -1893,7 +1898,8 @@ export class StatisticsService {
         toBranch: toBranchObj || { id: tx.toBranchId || null, name: toBranchName },
         toBranchName: toBranchName,
         user: tx.user,
-        soldBy: tx.soldBy,
+        soldBy: tx.soldBy || tx.user || tx.updatedBy,
+        updatedBy: tx.updatedBy,
         description: tx.description,
         total: tx.total,
         finalTotal: tx.finalTotal,
@@ -2021,7 +2027,8 @@ export class StatisticsService {
           price: price,
           total: itemSum,
           user: tx.user,
-          soldBy: tx.soldBy,
+          soldBy: tx.soldBy || tx.user || tx.updatedBy,
+          updatedBy: tx.updatedBy,
           status: tx.status,
           description: tx.description,
         });

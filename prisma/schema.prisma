@@ -122,6 +122,8 @@ enum UserRole {
   REVIZOR
   DEBTCASHIER
   NAZORATCHI
+  UNDIRUVCHI
+  BOSHQA
 }
 
 enum BranchType {
