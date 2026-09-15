@@ -89,8 +89,29 @@ export class TransactionBonusProductService {
           throw new Error(`Product with ID ${bonusProduct.productId} not found`);
         }
 
-        if (product.quantity < bonusProduct.quantity) {
-          throw new Error(`Insufficient quantity for product ${product.name}`);
+        // If bonus product already exists for this transaction and product, avoid duplicate
+        const existing = await prisma.transactionBonusProduct.findFirst({
+          where: {
+            transactionId,
+            productId: bonusProduct.productId,
+          },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                model: true,
+                barcode: true,
+                price: true,
+                quantity: true,
+              },
+            },
+          },
+        });
+
+        if (existing) {
+          createdBonusProducts.push(existing);
+          continue;
         }
 
         // Create the bonus product

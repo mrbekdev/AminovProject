@@ -1920,12 +1920,14 @@ export class TransactionService {
       if (!isCredit && !hasUydanPayment && schedules.length === 0) continue;
 
       // Calculate outstanding debt correctly
+      let txTotalDebt = 0;
       let txOutstanding = 0;
       let txPaidOnDebt = 0;
 
       if (schedules.length > 0) {
-        txOutstanding = schedules.reduce((sum, s) => sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0)), 0);
+        txTotalDebt = schedules.reduce((sum, s) => sum + Number(s.payment || 0), 0);
         txPaidOnDebt = schedules.reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
+        txOutstanding = schedules.reduce((sum, s) => sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0)), 0);
       } else {
         const baseAmount = Number((t as any).finalTotal || (t as any).total || 0);
         const downPayment = Number((t as any).downPayment || 0);
@@ -1934,11 +1936,14 @@ export class TransactionService {
           .reduce((s, p) => s + Number(p.amount || 0), 0);
         if (hasUydanPayment) {
           const debtPortion = uydanAmount > 0 ? uydanAmount : Math.max(0, baseAmount - downPayment);
+          txTotalDebt = debtPortion;
+          txPaidOnDebt = Math.min(debtPortion, creditRepaid);
           txOutstanding = Math.max(0, debtPortion - creditRepaid);
-          txPaidOnDebt = creditRepaid;
         } else if (isCredit) {
-          txOutstanding = Math.max(0, baseAmount - downPayment - creditRepaid);
-          txPaidOnDebt = creditRepaid;
+          const debtPortion = Math.max(0, baseAmount - downPayment);
+          txTotalDebt = debtPortion;
+          txPaidOnDebt = Math.min(debtPortion, creditRepaid);
+          txOutstanding = Math.max(0, debtPortion - creditRepaid);
         }
       }
 
@@ -1955,8 +1960,10 @@ export class TransactionService {
           id: cust.id,
           fullName: cust.fullName,
           phone: cust.phone,
+          totalDebt: 0,
           totalPaid: 0,
           outstanding: 0,
+          remaining: 0,
           transactionCount: 0,
           goodMonths: 0,
           badMonths: 0,
@@ -1966,8 +1973,10 @@ export class TransactionService {
       }
 
       const agg = customerMap.get(cust.id);
+      agg.totalDebt += txTotalDebt;
       agg.totalPaid += txPaidOnDebt;
       agg.outstanding += txOutstanding;
+      agg.remaining += txOutstanding;
       agg.transactionCount += 1;
       agg.goodMonths += goodMonths;
       agg.badMonths += badMonths;
@@ -1994,8 +2003,10 @@ export class TransactionService {
       id: c.id,
       fullName: c.fullName,
       phone: c.phone,
+      totalDebt: c.totalDebt,
       totalPaid: c.totalPaid,
       outstanding: c.outstanding,
+      remaining: c.outstanding,
       transactionCount: c.transactionCount,
       createdAt: c.createdAt,
       rating: {
