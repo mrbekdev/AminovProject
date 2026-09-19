@@ -96,6 +96,7 @@ export class StatisticsService {
       },
       include: {
         payments: true,
+        customer: true,
         items: {
           include: {
             product: true,
@@ -1185,6 +1186,77 @@ export class StatisticsService {
       uniqueCustomersCount: s.uniqueCustomers.size,
     }));
 
+    // Regional & District Statistics calculation
+    const regionStatsMap = new Map<string, {
+      regionId: number | null;
+      regionName: string;
+      salesVolume: number;
+      salesCount: number;
+      uniqueCustomers: Set<number>;
+      districts: Map<string, {
+        districtId: number | null;
+        districtName: string;
+        salesVolume: number;
+        salesCount: number;
+        uniqueCustomers: Set<number>;
+      }>;
+    }>();
+
+    activeSales.forEach(t => {
+      const finalTotal = t.finalTotal || t.total || 0;
+      const rName = (t.regionName || t.customer?.regionName || '').trim() || 'Кўрсатилмаган вилоят';
+      const rId = t.regionId || t.customer?.regionId || null;
+      const dName = (t.districtName || t.customer?.districtName || '').trim() || 'Кўрсатилмаган туман';
+      const dId = t.districtId || t.customer?.districtId || null;
+      const custId = t.customerId;
+
+      if (!regionStatsMap.has(rName)) {
+        regionStatsMap.set(rName, {
+          regionId: rId,
+          regionName: rName,
+          salesVolume: 0,
+          salesCount: 0,
+          uniqueCustomers: new Set<number>(),
+          districts: new Map(),
+        });
+      }
+
+      const regItem = regionStatsMap.get(rName)!;
+      regItem.salesVolume += finalTotal;
+      regItem.salesCount += 1;
+      if (custId) regItem.uniqueCustomers.add(custId);
+
+      if (!regItem.districts.has(dName)) {
+        regItem.districts.set(dName, {
+          districtId: dId,
+          districtName: dName,
+          salesVolume: 0,
+          salesCount: 0,
+          uniqueCustomers: new Set<number>(),
+        });
+      }
+
+      const distItem = regItem.districts.get(dName)!;
+      distItem.salesVolume += finalTotal;
+      distItem.salesCount += 1;
+      if (custId) distItem.uniqueCustomers.add(custId);
+    });
+
+    const regionStats = Array.from(regionStatsMap.values()).map(r => ({
+      regionId: r.regionId,
+      regionName: r.regionName,
+      salesVolume: r.salesVolume,
+      salesCount: r.salesCount,
+      uniqueCustomersCount: r.uniqueCustomers.size,
+      districts: Array.from(r.districts.values()).map(d => ({
+        districtId: d.districtId,
+        districtName: d.districtName,
+        salesVolume: d.salesVolume,
+        salesCount: d.salesCount,
+        uniqueCustomersCount: d.uniqueCustomers.size,
+      })).sort((a, b) => b.salesVolume - a.salesVolume),
+    })).sort((a, b) => b.salesVolume - a.salesVolume);
+
     // Fetch all active branches
     const allBranches = await this.prisma.branch.findMany({
       where: { status: 'ACTIVE' },
@@ -1284,6 +1356,7 @@ export class StatisticsService {
       dateRange: { start, end },
       salesCount,
       socialMediaStats,
+      regionStats,
       branchesReport,
       cashRegister: {
         sales: {
