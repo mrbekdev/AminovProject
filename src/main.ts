@@ -24,10 +24,6 @@ async function bootstrap() {
   app.use(json({ limit: '2000mb' }));
   app.use(urlencoded({ extended: true, limit: '2000mb' }));
 
-  app.use((req: any, res: any, next: any) => {
-    res.setHeader('Permissions-Policy', 'camera=(self "*"), microphone=(self "*"), geolocation=(self "*"), display-capture=(self "*")');
-    next();
-  });
 
   const express = require('express');
   const path = require('path');
