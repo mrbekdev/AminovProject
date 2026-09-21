@@ -82,7 +82,7 @@ export class AttendanceController {
   // ===== Employees Endpoints (linked directly to User) =====
   @Get('employees')
   async getEmployees(@Query() query: any) {
-    const where: any = { status: 'ACTIVE' };
+    const where: any = { status: 'ACTIVE', role: { not: 'BIGADMIN' } };
     if (query.store_id && query.store_id !== 'ALL') {
       where.storeId = parseInt(query.store_id);
     }

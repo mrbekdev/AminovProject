@@ -654,7 +654,7 @@ export class AttendanceService {
   async getKioskEmployees() {
     const today = startOfDayUTC();
     const users = await this.prisma.user.findMany({
-      where: { status: 'ACTIVE' },
+      where: { status: 'ACTIVE', role: { not: 'BIGADMIN' } },
       include: {
         faceTemplates: true,
         branch: true,
@@ -697,7 +697,7 @@ export class AttendanceService {
   // ===== Admin Dashboard Stats =====
   async getAdminDashboard(query: any) {
     const today = startOfDayUTC();
-    const whereUser: any = { status: 'ACTIVE' };
+    const whereUser: any = { status: 'ACTIVE', role: { not: 'BIGADMIN' } };
     if (query?.store_id && query.store_id !== 'ALL') {
       whereUser.storeId = parseInt(query.store_id);
     }
@@ -705,7 +705,7 @@ export class AttendanceService {
     const [totalEmployees, presentDays] = await Promise.all([
       this.prisma.user.count({ where: whereUser }),
       this.prisma.attendanceDay.findMany({
-        where: { date: today },
+        where: { date: today, user: { role: { not: 'BIGADMIN' } } },
         include: { user: true },
       }),
     ]);
@@ -773,6 +773,8 @@ export class AttendanceService {
     }
     if (query.department_id && query.department_id !== 'ALL') {
       where.user = { role: query.department_id as any };
+    } else {
+      where.user = { role: { not: 'BIGADMIN' } };
     }
 
     const items = await this.prisma.attendanceDay.findMany({
@@ -877,6 +879,7 @@ export class AttendanceService {
   // ===== Audit Logs =====
   async getAllLogs() {
     const events = await this.prisma.attendanceEvent.findMany({
+      where: { user: { role: { not: 'BIGADMIN' } } },
       take: 100,
       orderBy: { occurredAt: 'desc' },
       include: { user: true, branch: true },
@@ -1068,7 +1071,7 @@ export class AttendanceService {
   async getTodayAttendance() {
     const today = startOfDayUTC(new Date());
     const items = await this.prisma.attendanceDay.findMany({
-      where: { date: today },
+      where: { date: today, user: { role: { not: 'BIGADMIN' } } },
       include: { user: true, branch: true, store: true },
       orderBy: { checkInAt: 'desc' },
     });

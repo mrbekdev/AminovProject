@@ -165,7 +165,18 @@ export class TransactionService {
     }
 
     // Transaction yaratish
-    const { cashierId, bonusProducts: txBonusProducts, tradeInProducts: txTradeInProducts, ...cleanTransactionData } = transactionData as any;
+    const {
+      cashierId,
+      bonusProducts: txBonusProducts,
+      tradeInProducts: txTradeInProducts,
+      dueDate: _txDueDate,
+      paymentDueDate: _txPaymentDueDate,
+      items: _txItems,
+      payments: _txPayments,
+      customer: _txCustomer,
+      userId: _txUserId,
+      ...cleanTransactionData
+    } = transactionData as any;
     if (cleanTransactionData.paymentType === 'TOVAR') {
       cleanTransactionData.paymentType = 'CASH';
     }
@@ -232,29 +243,34 @@ export class TransactionService {
     // Agar bonus mahsulotlar yuborilgan bo'lsa, ularni TransactionBonusProduct ga saqlaymiz va ombordan kamaytiramiz
     const incomingBonusProducts = txBonusProducts || (createTransactionDto as any).bonusProducts;
     if (incomingBonusProducts && Array.isArray(incomingBonusProducts) && incomingBonusProducts.length > 0) {
+      const bonusMap = new Map<number, number>();
       for (const bp of incomingBonusProducts) {
-        const pId = Number(bp.productId);
+        const pId = Number(bp.productId || (bp as any).id);
         const qty = Number(bp.quantity);
         if (pId && qty > 0) {
-          try {
-            await this.prisma.transactionBonusProduct.create({
-              data: {
-                transactionId: transaction.id,
-                productId: pId,
-                quantity: qty,
-              }
-            });
-            await this.prisma.product.update({
-              where: { id: pId },
-              data: {
-                quantity: {
-                  decrement: qty,
-                },
+          bonusMap.set(pId, (bonusMap.get(pId) || 0) + qty);
+        }
+      }
+
+      for (const [pId, qty] of bonusMap.entries()) {
+        try {
+          await this.prisma.transactionBonusProduct.create({
+            data: {
+              transactionId: transaction.id,
+              productId: pId,
+              quantity: qty,
+            }
+          });
+          await this.prisma.product.update({
+            where: { id: pId },
+            data: {
+              quantity: {
+                decrement: qty,
               },
-            });
-          } catch (bpErr) {
-            console.error('Error creating transaction bonus product in create transaction:', bpErr);
-          }
+            },
+          });
+        } catch (bpErr) {
+          console.error('Error creating transaction bonus product in create transaction:', bpErr);
         }
       }
     }
@@ -341,19 +357,37 @@ export class TransactionService {
       }
     }
 
+    const explicitDueDate = (createTransactionDto as any).dueDate || (createTransactionDto as any).paymentDueDate;
+
     // Kredit yoki Bo'lib to'lash bo'lsa, to'lovlar jadvalini yaratish
     if (transaction.paymentType === PaymentType.CREDIT || transaction.paymentType === PaymentType.INSTALLMENT) {
       // Kunlik yoki oylik to'lovlarni tekshirish
       const isDays = (transaction as any).termUnit === 'DAYS';
       if (isDays) {
         // Kunlik bo'lib to'lash uchun 1 ta payment schedule
-        await this.createDailyPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0);
+        await this.createDailyPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0, explicitDueDate);
       } else {
         // Oylik bo'lib to'lash uchun har oy uchun alohida schedule
-        await this.createPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0);
+        await this.createPaymentSchedule(transaction.id, transaction.items, createTransactionDto.downPayment || 0, explicitDueDate);
       }
+    } else if (transaction.paymentType === PaymentType.PARTNER) {
+      // Hamkorlar uchun to'lov jadvali va to'lov muddati yaratish
+      const partnerRemain = transaction.remainingBalance ?? (transaction.finalTotal - (transaction.amountPaid || 0));
+      await this.prisma.paymentSchedule.create({
+        data: {
+          transactionId: transaction.id,
+          month: 1,
+          payment: partnerRemain > 0 ? partnerRemain : transaction.finalTotal,
+          paidAmount: transaction.amountPaid || 0,
+          remainingBalance: Math.max(0, partnerRemain),
+          isPaid: partnerRemain <= 0.01,
+          isDailyInstallment: false,
+          installmentType: 'PARTNER',
+          dueDate: explicitDueDate ? new Date(explicitDueDate) : null,
+        } as any,
+      });
     } else {
-      // Oddiy sotuv (CASH / CARD / TERMINAL) bo'lsa ham, agar payments ichida UYDAT bo'lsa,
+      // Oddiy sotuv (CASH / CARD / TERMINAL) bo'lsa ham, agar payments ichida UYDAN bo'lsa,
       // uni qarz sifatida bitta paymentSchedule ga o'tkazamiz, shunda Mijozlar sahifasida
       // kreditga o'xshab ko'rinadi va qisman/to'liq to'lash mumkin bo'ladi.
       const totalUydan = paymentsData
@@ -373,6 +407,26 @@ export class TransactionService {
             isDailyInstallment: false,
             daysCount: null,
             installmentType: 'UYDAN',
+            dueDate: explicitDueDate ? new Date(explicitDueDate) : null,
+          } as any,
+        });
+      }
+
+      // Hamkorlar ham aralash to'lovlar qatorida kelganda jadval yaratish
+      const partnerPayments = paymentsData.filter((p) => p.method === 'PARTNER');
+      for (const pp of partnerPayments) {
+        const customDueDate = (pp as any).dueDate || (pp as any).paymentDueDate || explicitDueDate;
+        await this.prisma.paymentSchedule.create({
+          data: {
+            transactionId: transaction.id,
+            month: 1,
+            payment: pp.amount,
+            paidAmount: 0,
+            remainingBalance: pp.amount,
+            isPaid: false,
+            isDailyInstallment: false,
+            installmentType: 'PARTNER',
+            dueDate: customDueDate ? new Date(customDueDate) : null,
           } as any,
         });
       }
@@ -385,7 +439,11 @@ export class TransactionService {
         const isDays = ip.termUnit === 'DAYS';
         const rawTermCount = isDays ? ip.days : ip.months;
         const termCount = Number(rawTermCount) > 0 ? Number(rawTermCount) : 1;
-        console.log('Creating installment schedule:', { amount, isDays, rawTermCount, termCount, months: ip.months, days: ip.days, termUnit: ip.termUnit });
+        const customDueDate = (ip as any).dueDate || (ip as any).paymentDueDate || explicitDueDate;
+        const calcDueDate = customDueDate
+          ? new Date(customDueDate)
+          : (isDays && termCount > 0 ? new Date(Date.now() + termCount * 24 * 60 * 60 * 1000) : null);
+        console.log('Creating installment schedule:', { amount, isDays, rawTermCount, termCount, months: ip.months, days: ip.days, termUnit: ip.termUnit, dueDate: calcDueDate });
 
         if (isDays && termCount > 1) {
           await this.prisma.paymentSchedule.create({
@@ -398,7 +456,7 @@ export class TransactionService {
               isPaid: false,
               isDailyInstallment: true,
               daysCount: termCount,
-              dueDate: new Date(Date.now() + termCount * 24 * 60 * 60 * 1000),
+              dueDate: calcDueDate,
               installmentType: 'DAILY',
             } as any,
           });
@@ -419,7 +477,8 @@ export class TransactionService {
                 isDailyInstallment: false,
                 installmentType: 'MONTHLY',
                 totalMonths: termCount,
-                remainingMonths: termCount - m + 1
+                remainingMonths: termCount - m + 1,
+                dueDate: m === 1 && customDueDate ? new Date(customDueDate) : new Date(Date.now() + m * 30 * 24 * 60 * 60 * 1000)
               } as any,
             });
           }
@@ -436,7 +495,8 @@ export class TransactionService {
               isDailyInstallment: false,
               installmentType: 'INSTALLMENT',
               totalMonths: 1,
-              remainingMonths: 1
+              remainingMonths: 1,
+              dueDate: calcDueDate,
             } as any,
           });
         }
@@ -488,7 +548,7 @@ export class TransactionService {
     return totalWithInterest / item.creditMonth;
   }
 
-  private async createDailyPaymentSchedule(transactionId: number, items: any[], downPayment: number = 0) {
+  private async createDailyPaymentSchedule(transactionId: number, items: any[], downPayment: number = 0, customDueDate?: string | Date) {
     const schedules: any[] = [];
 
     // Aggregate principal and determine weighted interest and days
@@ -509,17 +569,16 @@ export class TransactionService {
       }
     }
 
-    if (totalPrincipal > 0 && totalDays > 0) {
+    if (totalPrincipal > 0 && (totalDays > 0 || customDueDate)) {
       // To'g'ri hisoblash: oldindan to'lovni ayirib, keyin foiz qo'shish
       const upfrontPayment = downPayment || 0;
       const remainingPrincipal = Math.max(0, totalPrincipal - upfrontPayment);
       const effectivePercent = percentWeightBase > 0 ? (weightedPercentSum / percentWeightBase) : 0;
 
-
-
       const interestAmount = remainingPrincipal * effectivePercent;
       const remainingWithInterest = remainingPrincipal + interestAmount;
 
+      const finalDueDate = customDueDate ? new Date(customDueDate) : new Date(Date.now() + (totalDays || 1) * 24 * 60 * 60 * 1000);
 
       // Kunlik bo'lib to'lash uchun faqat 1 ta payment schedule yaratish
       // Mijoz bu kunlar ichida qolgan summani to'lab ketishi kerak
@@ -530,13 +589,13 @@ export class TransactionService {
         remainingBalance: remainingWithInterest, // Kunlik bo'lib to'lashda qolgan summa to'liq bo'lishi kerak
         isPaid: false,
         paidAmount: 0,
-        dueDate: new Date(Date.now() + totalDays * 24 * 60 * 60 * 1000), // Kunlar soni keyin to'lov muddati
+        dueDate: finalDueDate, // Kunlar soni yoki belgilangan to'lov muddati
         isDailyInstallment: true, // Bu kunlik bo'lib to'lash ekanligini belgilash
-        daysCount: totalDays, // Kunlar sonini saqlash
+        daysCount: totalDays || 1, // Kunlar sonini saqlash
         // Kunlik bo'lib to'lash uchun qo'shimcha ma'lumotlar
         installmentType: 'DAILY', // Kunlik bo'lib to'lash turi
-        totalDays: totalDays, // Jami kunlar soni
-        remainingDays: totalDays // Qolgan kunlar soni
+        totalDays: totalDays || 1, // Jami kunlar soni
+        remainingDays: totalDays || 1 // Qolgan kunlar soni
       });
     }
 
@@ -547,7 +606,7 @@ export class TransactionService {
     }
   }
 
-  private async createPaymentSchedule(transactionId: number, items: any[], downPayment: number = 0) {
+  private async createPaymentSchedule(transactionId: number, items: any[], downPayment: number = 0, customDueDate?: string | Date) {
     const schedules: any[] = [];
 
     // Aggregate principal and determine weighted interest and months
@@ -591,6 +650,7 @@ export class TransactionService {
           remainingBalance: Math.max(0, remainingBalance),
           isPaid: false,
           paidAmount: 0,
+          dueDate: month === 1 && customDueDate ? new Date(customDueDate) : new Date(Date.now() + month * 30 * 24 * 60 * 60 * 1000),
           // Oylik bo'lib to'lash yoki 1 ta bo'lib to'lash
           installmentType: effectiveMonths > 1 ? 'MONTHLY' : 'INSTALLMENT',
           totalMonths: effectiveMonths,

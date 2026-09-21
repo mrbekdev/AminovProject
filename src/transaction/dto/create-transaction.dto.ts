@@ -95,7 +95,7 @@ export class TransactionItemDto {
 
 export class PaymentBreakdownDto {
   @IsString()
-  method: 'CASH' | 'CARD' | 'TERMINAL' | 'TOVAR' | 'UYDAN' | 'INSTALLMENT' | 'THIRD_PARTY';
+  method: 'CASH' | 'CARD' | 'TERMINAL' | 'TOVAR' | 'UYDAN' | 'INSTALLMENT' | 'THIRD_PARTY' | 'PARTNER';
 
   @IsNumber()
   @Min(0)
@@ -112,6 +112,18 @@ export class PaymentBreakdownDto {
   @IsOptional()
   @IsNumber()
   days?: number;
+
+  @IsOptional()
+  @IsString()
+  dueDate?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentDueDate?: string;
+
+  @IsOptional()
+  @IsString()
+  partnerName?: string;
 }
 
 export class BonusProductDto {
@@ -218,6 +230,14 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   partnerName?: string;
+
+  @IsOptional()
+  @IsString()
+  dueDate?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentDueDate?: string;
 
   @IsOptional()
   @IsString()
