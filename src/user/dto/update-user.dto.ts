@@ -56,4 +56,20 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  passportSeries?: string;
+
+  @IsOptional()
+  @IsString()
+  jshshir?: string;
+
+  @IsOptional()
+  @IsString()
+  passportFront?: string;
+
+  @IsOptional()
+  @IsString()
+  passportBack?: string;
 }

@@ -106,6 +106,13 @@ export class AttendanceController {
       work_end_time: u.workEndTime || '18:00',
       store_id: u.storeId,
       branch_id: u.branchId,
+      passport_series: u.passportSeries || '',
+      passportSeries: u.passportSeries || '',
+      jshshir: u.jshshir || '',
+      passport_front: u.passportFront || '',
+      passportFront: u.passportFront || '',
+      passport_back: u.passportBack || '',
+      passportBack: u.passportBack || '',
       has_face: u.faceTemplates.length > 0,
       face_count: u.faceTemplates.length,
       faceTemplates: u.faceTemplates,
@@ -123,14 +130,18 @@ export class AttendanceController {
       data: {
         username: body.username || `user_${Date.now()}`,
         password: body.password || '123456',
-        firstName: body.first_name || '',
-        lastName: body.last_name || '',
+        firstName: body.first_name || body.firstName || '',
+        lastName: body.last_name || body.lastName || '',
         phone: body.phone || null,
         position: body.position || 'Сотувчи',
-        monthlySalary: Number(body.monthly_salary) || 5000000,
-        workStartTime: body.work_start_time || '09:00',
-        workEndTime: body.work_end_time || '18:00',
-        storeId: body.store_id ? Number(body.store_id) : null,
+        monthlySalary: Number(body.monthly_salary || body.monthlySalary) || 5000000,
+        workStartTime: body.work_start_time || body.workStartTime || '09:00',
+        workEndTime: body.work_end_time || body.workEndTime || '18:00',
+        storeId: (body.store_id || body.storeId) ? Number(body.store_id || body.storeId) : null,
+        passportSeries: body.passport_series || body.passportSeries || null,
+        jshshir: body.jshshir || null,
+        passportFront: body.passport_front || body.passportFront || null,
+        passportBack: body.passport_back || body.passportBack || null,
         role: role as any,
       },
     });
@@ -139,14 +150,18 @@ export class AttendanceController {
   @Put('employees/:id')
   async updateEmployee(@Param('id') id: string, @Body() body: any) {
     const updateData: any = {};
-    if (body.first_name !== undefined) updateData.firstName = body.first_name;
-    if (body.last_name !== undefined) updateData.lastName = body.last_name;
+    if (body.first_name !== undefined || body.firstName !== undefined) updateData.firstName = body.first_name ?? body.firstName;
+    if (body.last_name !== undefined || body.lastName !== undefined) updateData.lastName = body.last_name ?? body.lastName;
     if (body.phone !== undefined) updateData.phone = body.phone;
     if (body.position !== undefined) updateData.position = body.position;
-    if (body.monthly_salary !== undefined) updateData.monthlySalary = Number(body.monthly_salary);
-    if (body.work_start_time !== undefined) updateData.workStartTime = body.work_start_time;
-    if (body.work_end_time !== undefined) updateData.workEndTime = body.work_end_time;
-    if (body.store_id !== undefined) updateData.storeId = body.store_id ? Number(body.store_id) : null;
+    if (body.monthly_salary !== undefined || body.monthlySalary !== undefined) updateData.monthlySalary = Number(body.monthly_salary ?? body.monthlySalary);
+    if (body.work_start_time !== undefined || body.workStartTime !== undefined) updateData.workStartTime = body.work_start_time ?? body.workStartTime;
+    if (body.work_end_time !== undefined || body.workEndTime !== undefined) updateData.workEndTime = body.work_end_time ?? body.workEndTime;
+    if (body.store_id !== undefined || body.storeId !== undefined) updateData.storeId = (body.store_id || body.storeId) ? Number(body.store_id || body.storeId) : null;
+    if (body.passport_series !== undefined || body.passportSeries !== undefined) updateData.passportSeries = body.passport_series ?? body.passportSeries;
+    if (body.jshshir !== undefined) updateData.jshshir = body.jshshir;
+    if (body.passport_front !== undefined || body.passportFront !== undefined) updateData.passportFront = body.passport_front ?? body.passportFront;
+    if (body.passport_back !== undefined || body.passportBack !== undefined) updateData.passportBack = body.passport_back ?? body.passportBack;
 
     return this.prisma.user.update({
       where: { id: +id },
@@ -156,9 +171,17 @@ export class AttendanceController {
 
   @Delete('employees/:id')
   async deleteEmployee(@Param('id') id: string) {
+    const userId = +id;
+    await this.prisma.faceTemplate.deleteMany({
+      where: { userId },
+    });
     return this.prisma.user.update({
-      where: { id: +id },
-      data: { status: 'DELETED' },
+      where: { id: userId },
+      data: {
+        status: 'DELETED',
+        passportFront: null,
+        passportBack: null,
+      },
     });
   }
 

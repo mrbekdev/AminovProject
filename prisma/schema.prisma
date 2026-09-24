@@ -206,6 +206,10 @@ model User {
   workShift            String?                @default("DAY")
   position             String?
   monthlySalary        Float?                 @map("monthly_salary") @default(5000000)
+  passportSeries       String?                @map("passport_series")
+  jshshir              String?
+  passportFront        String?                @map("passport_front") @db.Text
+  passportBack         String?                @map("passport_back") @db.Text
   branch               Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
   store                Store?                 @relation("UserStore", fields: [storeId], references: [id], onDelete: SetNull)
   createdTransactions  Transaction[]          @relation("TransactionsCreatedBy")

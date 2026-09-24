@@ -118,6 +118,7 @@ export class UserService {
       where,
       include: { 
         branch: true,
+        faceTemplates: true,
         allowedBranches: {
           include: {
             branch: true
@@ -132,6 +133,7 @@ export class UserService {
       where: { id },
       include: { 
         branch: true,
+        faceTemplates: true,
         allowedBranches: {
           include: {
             branch: true
@@ -204,6 +206,10 @@ export class UserService {
     if (workEndTime !== undefined) updateData.workEndTime = workEndTime;
     if (workShift !== undefined) updateData.workShift = workShift;
     if (userData.branchId !== undefined && userData.role !== 'MARKETING') updateData.branchId = userData.branchId;
+    if (userData.passportSeries !== undefined) updateData.passportSeries = userData.passportSeries;
+    if (userData.jshshir !== undefined) updateData.jshshir = userData.jshshir;
+    if (userData.passportFront !== undefined) updateData.passportFront = userData.passportFront;
+    if (userData.passportBack !== undefined) updateData.passportBack = userData.passportBack;
     if (data.password) updateData.password = data.password;
 
     if (userData.username) {
@@ -270,10 +276,15 @@ export class UserService {
     if (!user) throw new NotFoundException('User not found');
     
     const timestamp = Date.now();
+    await this.prisma.faceTemplate.deleteMany({
+      where: { userId: id },
+    });
     return this.prisma.user.update({
       where: { id },
       data: { 
         status: 'DELETED', 
+        passportFront: null,
+        passportBack: null,
         username: `${user.username}_deleted_${timestamp}_${id}`,
         phone: user.phone ? `${user.phone}_deleted_${timestamp}_${id}` : null,
         updatedAt: new Date() 

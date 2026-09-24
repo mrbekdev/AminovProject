@@ -101,4 +101,34 @@ export class CreateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    example: 'AA1234567',
+    description: 'Pasport seriya va raqami',
+  })
+  @IsOptional()
+  @IsString()
+  passportSeries?: string;
+
+  @ApiPropertyOptional({
+    example: '12345678901234',
+    description: 'JSHSHIR (PINFL) raqami',
+  })
+  @IsOptional()
+  @IsString()
+  jshshir?: string;
+
+  @ApiPropertyOptional({
+    description: 'Pasport old tomoni rasmi (base64 yoki URL)',
+  })
+  @IsOptional()
+  @IsString()
+  passportFront?: string;
+
+  @ApiPropertyOptional({
+    description: 'Pasport orqa tomoni rasmi (base64 yoki URL)',
+  })
+  @IsOptional()
+  @IsString()
+  passportBack?: string;
 }
