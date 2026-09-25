@@ -208,6 +208,7 @@ export class UserService {
     if (userData.branchId !== undefined && userData.role !== 'MARKETING') updateData.branchId = userData.branchId;
     if (userData.passportSeries !== undefined) updateData.passportSeries = userData.passportSeries;
     if (userData.jshshir !== undefined) updateData.jshshir = userData.jshshir;
+    if (userData.birthDate !== undefined) updateData.birthDate = userData.birthDate;
     if (userData.passportFront !== undefined) updateData.passportFront = userData.passportFront;
     if (userData.passportBack !== undefined) updateData.passportBack = userData.passportBack;
     if (data.password) updateData.password = data.password;

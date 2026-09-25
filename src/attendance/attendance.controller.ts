@@ -106,6 +106,8 @@ export class AttendanceController {
       work_end_time: u.workEndTime || '18:00',
       store_id: u.storeId,
       branch_id: u.branchId,
+      birth_date: u.birthDate || '',
+      birthDate: u.birthDate || '',
       passport_series: u.passportSeries || '',
       passportSeries: u.passportSeries || '',
       jshshir: u.jshshir || '',
@@ -138,6 +140,7 @@ export class AttendanceController {
         workStartTime: body.work_start_time || body.workStartTime || '09:00',
         workEndTime: body.work_end_time || body.workEndTime || '18:00',
         storeId: (body.store_id || body.storeId) ? Number(body.store_id || body.storeId) : null,
+        birthDate: body.birth_date || body.birthDate || null,
         passportSeries: body.passport_series || body.passportSeries || null,
         jshshir: body.jshshir || null,
         passportFront: body.passport_front || body.passportFront || null,
@@ -158,6 +161,7 @@ export class AttendanceController {
     if (body.work_start_time !== undefined || body.workStartTime !== undefined) updateData.workStartTime = body.work_start_time ?? body.workStartTime;
     if (body.work_end_time !== undefined || body.workEndTime !== undefined) updateData.workEndTime = body.work_end_time ?? body.workEndTime;
     if (body.store_id !== undefined || body.storeId !== undefined) updateData.storeId = (body.store_id || body.storeId) ? Number(body.store_id || body.storeId) : null;
+    if (body.birth_date !== undefined || body.birthDate !== undefined) updateData.birthDate = body.birth_date ?? body.birthDate;
     if (body.passport_series !== undefined || body.passportSeries !== undefined) updateData.passportSeries = body.passport_series ?? body.passportSeries;
     if (body.jshshir !== undefined) updateData.jshshir = body.jshshir;
     if (body.passport_front !== undefined || body.passportFront !== undefined) updateData.passportFront = body.passport_front ?? body.passportFront;

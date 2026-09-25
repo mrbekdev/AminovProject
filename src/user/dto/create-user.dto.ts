@@ -126,6 +126,14 @@ export class CreateUserDto {
   passportFront?: string;
 
   @ApiPropertyOptional({
+    example: '1995-08-15',
+    description: 'Tugilgan sana (YYYY-MM-DD)',
+  })
+  @IsOptional()
+  @IsString()
+  birthDate?: string;
+
+  @ApiPropertyOptional({
     description: 'Pasport orqa tomoni rasmi (base64 yoki URL)',
   })
   @IsOptional()

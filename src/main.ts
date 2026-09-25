@@ -21,20 +21,40 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
+  // Global Unrestricted CORS Middleware
+  app.use((req: any, res: any, next: any) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || '*');
+    res.setHeader('Access-Control-Expose-Headers', '*');
+
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
+  app.enableCors({
+    origin: (origin, callback) => callback(null, true),
+    credentials: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: '*',
+    exposedHeaders: '*',
+  });
+
   app.use(json({ limit: '2000mb' }));
   app.use(urlencoded({ extended: true, limit: '2000mb' }));
-
 
   const express = require('express');
   const path = require('path');
   app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
-  app.enableCors({
-    origin: true,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  });
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port, '0.0.0.0');
   try {

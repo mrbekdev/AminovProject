@@ -71,5 +71,9 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
+  birthDate?: string;
+
+  @IsOptional()
+  @IsString()
   passportBack?: string;
 }
