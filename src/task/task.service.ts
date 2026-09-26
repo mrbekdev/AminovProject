@@ -6,11 +6,53 @@ const TASK_INCLUDE = {
   transaction: {
     include: {
       customer: true,
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          username: true,
+          role: true,
+        },
+      },
+      soldBy: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          username: true,
+          role: true,
+        },
+      },
+      fromBranch: {
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          phoneNumber: true,
+        },
+      },
+      toBranch: {
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          phoneNumber: true,
+        },
+      },
       items: {
         include: {
           product: {
-            include: {
-              branch: true,
+            select: {
+              id: true,
+              name: true,
+              model: true,
+              barcode: true,
+              price: true,
+              marketPrice: true,
+              branch: {
+                select: { id: true, name: true },
+              },
             },
           },
         },
@@ -18,20 +60,48 @@ const TASK_INCLUDE = {
       bonusProducts: {
         include: {
           product: {
-            include: {
-              branch: true,
+            select: {
+              id: true,
+              name: true,
+              model: true,
+              barcode: true,
+              branch: {
+                select: { id: true, name: true },
+              },
             },
           },
         },
       },
       payments: true,
-      soldBy: true,
-      fromBranch: true,
-      toBranch: true,
+      creditRepayments: {
+        include: {
+          paidBy: {
+            select: { id: true, firstName: true, lastName: true, username: true },
+          },
+        },
+      },
     },
   },
-  auditor: true,
-  uydanCollectedBy: true,
+  auditor: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      username: true,
+      phone: true,
+      role: true,
+    },
+  },
+  uydanCollectedBy: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      username: true,
+      phone: true,
+      role: true,
+    },
+  },
 };
 
 @Injectable()
