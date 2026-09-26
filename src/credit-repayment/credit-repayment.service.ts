@@ -159,21 +159,90 @@ export class CreditRepaymentService {
 
     return this.prisma.creditRepayment.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        transactionId: true,
+        scheduleId: true,
+        amount: true,
+        channel: true,
+        paidAt: true,
+        month: true,
+        paidByUserId: true,
+        branchId: true,
+        createdAt: true,
+        paidBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+          },
+        },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        schedule: {
+          select: {
+            id: true,
+            month: true,
+            payment: true,
+            isPaid: true,
+            remainingBalance: true,
+            dueDate: true,
+          },
+        },
         transaction: {
-          include: {
-            customer: true,
-            soldBy: true,
+          select: {
+            id: true,
+            receiptId: true,
+            fromBranchId: true,
+            finalTotal: true,
+            total: true,
+            remainingBalance: true,
+            paymentType: true,
+            customer: {
+              select: {
+                id: true,
+                fullName: true,
+                phone: true,
+              },
+            },
+            soldBy: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                username: true,
+              },
+            },
+            fromBranch: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
             items: {
-              include: {
-                product: true,
+              select: {
+                id: true,
+                quantity: true,
+                price: true,
+                sellingPrice: true,
+                total: true,
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    model: true,
+                    barcode: true,
+                  },
+                },
               },
             },
           },
         },
-        schedule: true,
-        paidBy: true,
-        branch: true,
       },
       orderBy: {
         paidAt: 'desc',

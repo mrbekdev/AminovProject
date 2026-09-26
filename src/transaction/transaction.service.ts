@@ -1112,15 +1112,58 @@ export class TransactionService {
       where,
       include: {
         customer: true,
-        user: true,
-        soldBy: true,
-        fromBranch: true,
-        toBranch: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            role: true,
+          },
+        },
+        soldBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            role: true,
+          },
+        },
+        fromBranch: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            phoneNumber: true,
+          },
+        },
+        toBranch: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            phoneNumber: true,
+          },
+        },
         items: {
           include: {
             product: {
-              include: {
-                branch: true,
+              select: {
+                id: true,
+                name: true,
+                model: true,
+                barcode: true,
+                price: true,
+                marketPrice: true,
+                branchId: true,
+                categoryId: true,
+                branch: {
+                  select: { id: true, name: true },
+                },
+                category: {
+                  select: { id: true, name: true },
+                },
               },
             },
           },
@@ -1128,34 +1171,60 @@ export class TransactionService {
         payments: true,
         paymentSchedules: {
           orderBy: { month: 'asc' },
-          include: { paidBy: true }
+          include: {
+            paidBy: {
+              select: { id: true, firstName: true, lastName: true, username: true },
+            },
+          },
         },
         tasks: {
-          include: {
-            auditor: true,
+          select: {
+            id: true,
+            status: true,
+            auditor: {
+              select: { id: true, firstName: true, lastName: true, username: true, phone: true },
+            },
           },
         },
         bonusProducts: {
           include: {
             product: {
-              include: {
-                category: true,
-                branch: true,
+              select: {
+                id: true,
+                name: true,
+                model: true,
+                barcode: true,
+                price: true,
+                category: { select: { id: true, name: true } },
+                branch: { select: { id: true, name: true } },
               },
             },
           },
         },
         tradeInProducts: {
           include: {
-            category: true,
-            branch: true,
-            approvedProduct: true,
+            category: { select: { id: true, name: true } },
+            branch: { select: { id: true, name: true } },
           },
         },
-        defectiveLogs: true,
+        defectiveLogs: {
+          select: {
+            id: true,
+            productId: true,
+            quantity: true,
+            description: true,
+            cashAmount: true,
+            actionType: true,
+            createdAt: true,
+          },
+        },
         creditRepayments: {
-          include: { paidBy: true },
-          orderBy: { paidAt: 'desc' }
+          include: {
+            paidBy: {
+              select: { id: true, firstName: true, lastName: true, username: true },
+            },
+          },
+          orderBy: { paidAt: 'desc' },
         },
       },
       orderBy: { createdAt: 'desc' },
