@@ -211,6 +211,7 @@ model User {
   birthDate            String?                @map("birth_date")
   passportFront        String?                @map("passport_front") @db.Text
   passportBack         String?                @map("passport_back") @db.Text
+  isHidden             Boolean                @default(false)
   branch               Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
   store                Store?                 @relation("UserStore", fields: [storeId], references: [id], onDelete: SetNull)
   createdTransactions  Transaction[]          @relation("TransactionsCreatedBy")

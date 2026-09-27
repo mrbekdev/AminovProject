@@ -1925,32 +1925,23 @@ export class TransactionService {
     cashierId?: number;
   }) {
     const { branchId, page = 1, limit = 50, search, startDate, endDate, hasOutstanding, paymentStatus, cashierId } = params;
-
     const skip = (page - 1) * limit;
 
-    // Build where clause
+    // Build where clause: strictly exclude INSTALLMENT and PARTNER, and only allow UYDAN transactions
     const where: any = {
       status: { not: TransactionStatus.CANCELLED },
-      paymentType: { not: PaymentType.INSTALLMENT },
+      paymentType: { notIn: [PaymentType.INSTALLMENT, PaymentType.PARTNER] },
+      partnerName: null,
+      NOT: [
+        { payments: { some: { method: { in: ['PARTNER', 'partner', 'INSTALLMENT', 'installment'] } } } },
+        { partnerName: { not: null } }
+      ],
+      OR: [
+        { payments: { some: { method: { in: ['UYDAN', 'uydan', 'HOME', 'home'] } } } },
+        { paymentSchedules: { some: { installmentType: 'UYDAN' } } },
+        { tasks: { some: { uydanAmount: { gt: 0 } } } }
+      ]
     };
-
-    // Payment type filter - check if it's CREDIT, or has UYDAN payments or debt paymentSchedules
-    // NOTE: INSTALLMENT has its own dedicated "Бўлиб тўлаш" section, so it must not appear in Mijozlar (Уйдан келадиган пуллар)
-    const paymentTypeConditions = [
-      { paymentType: PaymentType.CREDIT },
-      { payments: { some: { method: { in: ['UYDAN', 'uydan', 'CREDIT', 'credit', 'NASIYA', 'nasiya'] } } } },
-      { paymentSchedules: { some: { OR: [{ installmentType: null }, { installmentType: { not: 'INSTALLMENT' } }] } } }
-    ];
-
-    // Handle payment status filter
-    if (paymentStatus === 'UYDAN') {
-      where.OR = [
-        { payments: { some: { method: { in: ['UYDAN', 'uydan'] } } } },
-        { paymentSchedules: { some: { installmentType: 'UYDAN' } } }
-      ];
-    } else {
-      where.OR = paymentTypeConditions;
-    }
 
     if (!where.AND) where.AND = [];
 
@@ -2006,6 +1997,7 @@ export class TransactionService {
       select: {
         id: true,
         paymentType: true,
+        partnerName: true,
         finalTotal: true,
         total: true,
         downPayment: true,
@@ -2037,18 +2029,22 @@ export class TransactionService {
     const customerMap = new Map<number, any>();
 
     for (const t of transactions) {
-      if (t.paymentType === 'INSTALLMENT') continue;
+      if (t.paymentType === 'INSTALLMENT' || t.paymentType === 'PARTNER') continue;
+      if (t.partnerName) continue;
       const cust = t.customer;
       if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
 
-      const schedules = (t.paymentSchedules || []).filter((s: any) => s.installmentType !== 'INSTALLMENT');
       const payments = t.payments || [];
-      const hasUydanPayment = payments.some(p => String(p.method || '').toUpperCase() === 'UYDAN');
-      const isCredit = t.paymentType === 'CREDIT';
+      const hasPartnerPayment = payments.some(p => ['PARTNER', 'HAMKOR'].includes(String(p.method || '').toUpperCase()));
+      const hasInstallmentPayment = payments.some(p => ['INSTALLMENT'].includes(String(p.method || '').toUpperCase()));
+      if (hasPartnerPayment || hasInstallmentPayment) continue;
 
-      if (!isCredit && !hasUydanPayment && schedules.length === 0) continue;
+      const schedules = (t.paymentSchedules || []).filter((s: any) => s.installmentType === 'UYDAN');
+      const hasUydanPayment = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase())) || String(t.paymentType || '').toUpperCase() === 'UYDAN';
 
-      // Calculate outstanding debt correctly
+      if (!hasUydanPayment && schedules.length === 0) continue;
+
+      // Calculate outstanding debt correctly for UYDAN
       let txTotalDebt = 0;
       let txOutstanding = 0;
       let txPaidOnDebt = 0;
@@ -2061,19 +2057,12 @@ export class TransactionService {
         const baseAmount = Number((t as any).finalTotal || (t as any).total || 0);
         const downPayment = Number((t as any).downPayment || 0);
         const creditRepaid = Number((t as any).creditRepaymentAmount || 0);
-        const uydanAmount = payments.filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
+        const uydanAmount = payments.filter(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()))
           .reduce((s, p) => s + Number(p.amount || 0), 0);
-        if (hasUydanPayment) {
-          const debtPortion = uydanAmount > 0 ? uydanAmount : Math.max(0, baseAmount - downPayment);
-          txTotalDebt = debtPortion;
-          txPaidOnDebt = Math.min(debtPortion, creditRepaid);
-          txOutstanding = Math.max(0, debtPortion - creditRepaid);
-        } else if (isCredit) {
-          const debtPortion = Math.max(0, baseAmount - downPayment);
-          txTotalDebt = debtPortion;
-          txPaidOnDebt = Math.min(debtPortion, creditRepaid);
-          txOutstanding = Math.max(0, debtPortion - creditRepaid);
-        }
+        const debtPortion = uydanAmount > 0 ? uydanAmount : Math.max(0, baseAmount - downPayment);
+        txTotalDebt = debtPortion;
+        txPaidOnDebt = Math.min(debtPortion, creditRepaid);
+        txOutstanding = Math.max(0, debtPortion - creditRepaid);
       }
 
       // Aggregate rating counts
@@ -3538,22 +3527,18 @@ export class TransactionService {
 
     const where: any = {
       status: { not: TransactionStatus.CANCELLED },
-      paymentType: { not: PaymentType.INSTALLMENT },
+      paymentType: { notIn: [PaymentType.INSTALLMENT, PaymentType.PARTNER] },
+      partnerName: null,
+      NOT: [
+        { payments: { some: { method: { in: ['PARTNER', 'partner', 'INSTALLMENT', 'installment'] } } } },
+        { partnerName: { not: null } }
+      ],
+      OR: [
+        { payments: { some: { method: { in: ['UYDAN', 'uydan', 'HOME', 'home'] } } } },
+        { paymentSchedules: { some: { installmentType: 'UYDAN' } } },
+        { tasks: { some: { uydanAmount: { gt: 0 } } } }
+      ]
     };
-
-    // Payment type filter - for Mijozlar (Уйдан келадиган пуллар)
-    const paymentTypeConditions = [
-      { paymentType: PaymentType.CREDIT },
-      { payments: { some: { method: 'UYDAN' } } }
-    ];
-
-    if (paymentStatus === 'UYDAN') {
-      where.OR = [
-        { payments: { some: { method: 'UYDAN' } } }
-      ];
-    } else {
-      where.OR = paymentTypeConditions;
-    }
 
     if (!where.AND) where.AND = [];
 
@@ -3621,6 +3606,13 @@ export class TransactionService {
     const customerMap = new Map<number, any>();
 
     for (const t of transactions) {
+      if (t.paymentType === 'INSTALLMENT' || t.paymentType === 'PARTNER') continue;
+      if (t.partnerName) continue;
+      const payments = t.payments || [];
+      const hasPartnerPayment = payments.some(p => ['PARTNER', 'HAMKOR'].includes(String(p.method || '').toUpperCase()));
+      const hasInstallmentPayment = payments.some(p => ['INSTALLMENT'].includes(String(p.method || '').toUpperCase()));
+      if (hasPartnerPayment || hasInstallmentPayment) continue;
+
       const cust = t.customer;
       if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
 

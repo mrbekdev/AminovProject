@@ -632,11 +632,16 @@ export class StatisticsService {
     // --- NEW DETAILED DELIVERY STATS ---
     const tasks = await this.prisma.task.findMany({
       where: taskWhere,
-      include: {
-        auditor: true,
+      select: {
+        id: true,
+        status: true,
+        auditorId: true,
+        createdAt: true,
+        updatedAt: true,
         transaction: {
-          include: {
-            items: true,
+          select: {
+            status: true,
+            fromBranchId: true,
           }
         }
       }
@@ -748,8 +753,19 @@ export class StatisticsService {
         status: 'DELIVERED',
         auditorId: { not: null },
       },
-      include: {
-        auditor: true,
+      select: {
+        auditorId: true,
+        createdAt: true,
+        updatedAt: true,
+        auditor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            status: true,
+          }
+        }
       }
     });
 
@@ -789,11 +805,26 @@ export class StatisticsService {
       where: {
         auditorId: { not: null },
       },
-      include: {
-        auditor: true,
+      select: {
+        auditorId: true,
+        status: true,
+        createdAt: true,
+        auditor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            status: true,
+          }
+        },
         transaction: {
-          include: {
-            items: true,
+          select: {
+            items: {
+              select: {
+                quantity: true,
+              }
+            }
           }
         }
       }

@@ -95,6 +95,16 @@ export class CreateUserDto {
   workShift?: string;
 
   @ApiPropertyOptional({
+    example: 'Katta sotuvchi',
+    description: 'Xodim lavozimi (ixtiyoriy)',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  position?: string;
+
+  @ApiPropertyOptional({
     example: true,
     description: 'Foydalanuvchi faol yoki nofaol',
   })

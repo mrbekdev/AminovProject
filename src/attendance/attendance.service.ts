@@ -105,19 +105,17 @@ function euclideanDistance(arr1: any, arr2: any): number {
 function compareFaceTemplates(scannedDescriptor: any, scannedB64: string, storedFace: any): number {
   if (Array.isArray(scannedDescriptor) && Array.isArray(storedFace.vector) && scannedDescriptor.length > 0 && scannedDescriptor.length === storedFace.vector.length) {
     const dist = euclideanDistance(scannedDescriptor, storedFace.vector);
-    if (dist < 0.52) {
-      const similarity = Math.max(0.70, 1 - (dist / 1.5));
-      return Math.round(similarity * 100) / 100;
+    // Yanada qattiqroq chegara: 0.45 dan oshsa 0 qaytaramiz (oldin 0.52 edi)
+    if (dist < 0.45) {
+      // Similarity = 1 - normalized distance, floor yo'q
+      const similarity = 1 - (dist / 1.0);
+      return Math.round(Math.max(0, Math.min(1, similarity)) * 100) / 100;
     }
     return 0;
   }
 
-  // Backward compatibility for legacy face templates without vector array
-  if (storedFace.template && scannedB64) {
-    const score = compareBase64Images(scannedB64, storedFace.template);
-    return score >= 0.72 ? score : 0;
-  }
-
+  // Eski template bo'lsa — byte-compare fallback ISHONCHSIZ, faqat 0 qaytaramiz
+  // (bu yo'l boshqa odamni o'tkazib yuborishi mumkin edi)
   return 0;
 }
 
@@ -333,7 +331,7 @@ export class AttendanceService {
       if (!matchedUser) {
         throw new NotFoundException('Ходим топилмади.');
       }
-      // If user has face templates, compare similarity across all registered templates
+      // 1:1 mode: faqat shu xodimning face'lari bilan solishtirish
       if (matchedUser.faceTemplates && matchedUser.faceTemplates.length > 0) {
         let bestUserScore = 0;
         let matchedFt: any = null;
@@ -344,8 +342,9 @@ export class AttendanceService {
             matchedFt = ft;
           }
         }
-        if (bestUserScore < 0.30) {
-          throw new BadRequestException(`Юз танилмади ёки ушбу ходимга мос келмади.`);
+        // Qattiqroq chegara: 0.55 dan past bo'lsa rad etamiz (oldin 0.30 edi)
+        if (bestUserScore < 0.55) {
+          throw new BadRequestException(`Юз танилмади ёки ушбу ходимга мос келмади. Аниқроқ қараб қайта урининг.`);
         }
         if (matchedFt && !matchedFt.vector && scanDescriptor) {
           await this.prisma.faceTemplate.update({
@@ -355,7 +354,10 @@ export class AttendanceService {
         }
         matchSimilarity = bestUserScore;
       } else {
-        // Register first face template for this user
+        // Birinchi marta ro'yxatdan o'tish — descriptor bo'lishi shart
+        if (!scanDescriptor || !Array.isArray(scanDescriptor) || scanDescriptor.length < 64) {
+          throw new BadRequestException('Юз дескриптори аниқланмади. Камерага тўғри қараб урининг.');
+        }
         let b64 = image_base64;
         let imgUrl = image_base64;
         if (image_base64.startsWith('data:')) {
@@ -374,13 +376,14 @@ export class AttendanceService {
         });
       }
     } else {
-      // 1:N Match across all users with registered face templates
+      // 1:N Match — barcha active userlar bilan solishtirish
       const activeUsers = await this.prisma.user.findMany({
         where: { status: 'ACTIVE' },
         include: { faceTemplates: true, store: true, branch: true },
       });
 
       let bestScore = 0;
+      let secondBestScore = 0; // Anti-spoofing: ikkinchi eng yaxshi natija
       let bestUser: any = null;
       let bestFt: any = null;
 
@@ -389,15 +392,21 @@ export class AttendanceService {
           for (const ft of u.faceTemplates) {
             const score = compareFaceTemplates(scanDescriptor, image_base64, ft);
             if (score > bestScore) {
+              secondBestScore = bestScore;
               bestScore = score;
               bestUser = u;
               bestFt = ft;
+            } else if (score > secondBestScore) {
+              secondBestScore = score;
             }
           }
         }
       }
 
-      if (bestUser && bestScore >= 0.35) {
+      // Qattiqroq chegara: 0.55 dan past bo'lsa rad etamiz (oldin 0.35 edi)
+      // Anti-spoofing gap tekshiruvi: eng yaxshi natija ikkinchisidan 0.10 dan ko'p farq qilishi kerak
+      const gapOk = bestScore - secondBestScore >= 0.10;
+      if (bestUser && bestScore >= 0.55 && gapOk) {
         matchedUser = bestUser;
         matchSimilarity = bestScore;
         if (bestFt && !bestFt.vector && scanDescriptor) {
@@ -406,6 +415,9 @@ export class AttendanceService {
             data: { vector: scanDescriptor },
           }).catch(() => {});
         }
+      } else if (bestUser && bestScore >= 0.55 && !gapOk) {
+        // Yuz aniq tanilib turibdi lekin boshqa odam bilan chalkashishi mumkin
+        throw new BadRequestException('Юз аниқ танилмади: бир нечта ходимга мос. Камерага яқинроқ туринг.');
       } else {
         throw new BadRequestException('Юз танилмади! Камерага тўғри қараб қайта урининг ёки аввал юз расмингизни рўйхатдан ўтказинг.');
       }

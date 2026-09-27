@@ -54,8 +54,17 @@ export class UpdateUserDto {
   workShift?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  position?: string;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isHidden?: boolean;
 
   @IsOptional()
   @IsString()

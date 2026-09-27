@@ -99,7 +99,7 @@ export class AttendanceController {
       last_name: u.lastName || '',
       name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username,
       phone: u.phone || '',
-      position: u.position || u.role,
+      position: u.position || '',
       department: { id: u.role, name: u.role },
       monthly_salary: u.monthlySalary || 5000000,
       work_start_time: u.workStartTime || '09:00',
@@ -115,6 +115,8 @@ export class AttendanceController {
       passportFront: u.passportFront || '',
       passport_back: u.passportBack || '',
       passportBack: u.passportBack || '',
+      is_hidden: Boolean(u.isHidden),
+      isHidden: Boolean(u.isHidden),
       has_face: u.faceTemplates.length > 0,
       face_count: u.faceTemplates.length,
       faceTemplates: u.faceTemplates,
@@ -125,9 +127,22 @@ export class AttendanceController {
     }));
   }
 
+  @Patch('employees/:id/toggle-hide')
+  async toggleHideEmployee(@Param('id') id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: +id } });
+    if (!user) {
+      return { success: false, message: 'User not found' };
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: +id },
+      data: { isHidden: !user.isHidden },
+    });
+    return { id: updated.id, isHidden: updated.isHidden, is_hidden: updated.isHidden };
+  }
+
   @Post('employees')
   async createEmployee(@Body() body: any) {
-    const role = body.position === 'Кассир' ? 'CASHIER' : body.position === 'Складчи' ? 'WAREHOUSE' : 'MARKETING';
+    const role = body.role || (body.position === 'Кассир' ? 'CASHIER' : body.position === 'Складчи' ? 'WAREHOUSE' : 'MARKETING');
     return this.prisma.user.create({
       data: {
         username: body.username || `user_${Date.now()}`,
@@ -135,7 +150,7 @@ export class AttendanceController {
         firstName: body.first_name || body.firstName || '',
         lastName: body.last_name || body.lastName || '',
         phone: body.phone || null,
-        position: body.position || 'Сотувчи',
+        position: body.position || null,
         monthlySalary: Number(body.monthly_salary || body.monthlySalary) || 5000000,
         workStartTime: body.work_start_time || body.workStartTime || '09:00',
         workEndTime: body.work_end_time || body.workEndTime || '18:00',
@@ -145,6 +160,7 @@ export class AttendanceController {
         jshshir: body.jshshir || null,
         passportFront: body.passport_front || body.passportFront || null,
         passportBack: body.passport_back || body.passportBack || null,
+        isHidden: Boolean(body.is_hidden ?? body.isHidden ?? false),
         role: role as any,
       },
     });
@@ -166,6 +182,7 @@ export class AttendanceController {
     if (body.jshshir !== undefined) updateData.jshshir = body.jshshir;
     if (body.passport_front !== undefined || body.passportFront !== undefined) updateData.passportFront = body.passport_front ?? body.passportFront;
     if (body.passport_back !== undefined || body.passportBack !== undefined) updateData.passportBack = body.passport_back ?? body.passportBack;
+    if (body.is_hidden !== undefined || body.isHidden !== undefined) updateData.isHidden = Boolean(body.is_hidden ?? body.isHidden);
 
     return this.prisma.user.update({
       where: { id: +id },

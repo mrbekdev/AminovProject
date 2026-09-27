@@ -211,6 +211,8 @@ export class UserService {
     if (userData.birthDate !== undefined) updateData.birthDate = userData.birthDate;
     if (userData.passportFront !== undefined) updateData.passportFront = userData.passportFront;
     if (userData.passportBack !== undefined) updateData.passportBack = userData.passportBack;
+    if (userData.position !== undefined) updateData.position = userData.position;
+    if (userData.isHidden !== undefined) updateData.isHidden = userData.isHidden;
     if (data.password) updateData.password = data.password;
 
     if (userData.username) {
