@@ -116,18 +116,59 @@ export class CashierReportService {
       });
     }
 
-    // Get all transactions for the cashier in the date range
+    // Get all transactions for the cashier in the date range with selective fields
     const transactions = await this.prisma.transaction.findMany({
       where: whereClause,
-      include: {
-        items: true,
-        customer: true,
-        paymentSchedules: true,
-        payments: true,
-        soldBy: true,
-        user: true,
-        fromBranch: true,
-        toBranch: true,
+      select: {
+        id: true,
+        type: true,
+        total: true,
+        finalTotal: true,
+        amountPaid: true,
+        paymentType: true,
+        upfrontPaymentType: true,
+        partnerName: true,
+        createdAt: true,
+        payments: {
+          select: {
+            id: true,
+            amount: true,
+            method: true,
+          },
+        },
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            quantity: true,
+            price: true,
+            sellingPrice: true,
+            total: true,
+          },
+        },
+        customer: {
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+          },
+        },
+        soldBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+          },
+        },
       },
       orderBy: {
         createdAt: 'desc',
@@ -144,15 +185,24 @@ export class CashierReportService {
           lte: endDate,
         },
       },
-      include: {
+      select: {
+        id: true,
+        amount: true,
+        channel: true,
+        paidAt: true,
+        transactionId: true,
+        paidByUserId: true,
         transaction: {
-          include: {
-            customer: true,
-            soldBy: true,
-            user: true,
+          select: {
+            id: true,
+            customer: { select: { id: true, fullName: true, phone: true } },
+            soldBy: { select: { id: true, firstName: true, lastName: true, username: true } },
+            user: { select: { id: true, firstName: true, lastName: true, username: true } },
           },
         },
-        paidBy: true,
+        paidBy: {
+          select: { id: true, firstName: true, lastName: true, username: true },
+        },
       },
     });
 
@@ -166,15 +216,26 @@ export class CashierReportService {
           lte: endDate,
         },
       },
-      include: {
+      select: {
+        id: true,
+        scheduleId: true,
+        amount: true,
+        channel: true,
+        month: true,
+        paidAt: true,
+        transactionId: true,
+        paidByUserId: true,
         transaction: {
-          include: {
-            customer: true,
-            soldBy: true,
-            user: true,
+          select: {
+            id: true,
+            customer: { select: { id: true, fullName: true, phone: true } },
+            soldBy: { select: { id: true, firstName: true, lastName: true, username: true } },
+            user: { select: { id: true, firstName: true, lastName: true, username: true } },
           },
         },
-        paidBy: true,
+        paidBy: {
+          select: { id: true, firstName: true, lastName: true, username: true },
+        },
       },
     });
 
@@ -192,6 +253,27 @@ export class CashierReportService {
         },
       },
     });
+
+    // Preload return transactions in a single query (fixes N+1)
+    const returnTxIds = defectiveLogs
+      .filter((l) => String(l.actionType || '').toUpperCase() === 'RETURN' && l.transactionId)
+      .map((l) => Number(l.transactionId));
+
+    let returnTxsMap = new Map<number, any>();
+    if (returnTxIds.length > 0) {
+      try {
+        const returnTxs = await this.prisma.transaction.findMany({
+          where: { id: { in: returnTxIds } },
+          select: {
+            id: true,
+            items: {
+              select: { productId: true, price: true, sellingPrice: true },
+            },
+          },
+        });
+        returnTxsMap = new Map(returnTxs.map((t) => [t.id, t]));
+      } catch (_) {}
+    }
 
     // Calculate totals
     let cashTotal = 0;
@@ -374,7 +456,7 @@ export class CashierReportService {
       });
     }
 
-    // Process defective logs (same as defectiveLogService.getByCashier logic)
+    // Process defective logs
     for (const log of defectiveLogs) {
       const raw = Number(log.cashAmount ?? 0) || 0;
       const dir = String(log.cashAdjustmentDirection || '').toUpperCase();
@@ -383,10 +465,7 @@ export class CashierReportService {
       if ((Number.isNaN(signed) ? 0 : signed) === 0 && isReturn) {
         const txId = log.transactionId ? Number(log.transactionId) : null;
         if (txId) {
-          const tx = await this.prisma.transaction.findUnique({
-            where: { id: txId },
-            include: { items: true },
-          });
+          const tx = returnTxsMap.get(txId);
           if (tx && Array.isArray(tx.items)) {
             const it = tx.items.find((ii: any) => Number(ii.productId) === Number(log.productId));
             const unit = Number((it?.sellingPrice ?? it?.price) || 0);
