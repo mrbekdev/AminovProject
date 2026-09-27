@@ -1009,30 +1009,32 @@ export class TransactionService {
       return t;
     };
 
-    // Fetch minimal fields for aggregation (much faster than full findMany)
-    const transactions = await this.prisma.transaction.findMany({
-      where,
-      select: {
-        finalTotal: true,
-        paymentType: true,
-        upfrontPaymentType: true,
-        partnerName: true,
-        payments: {
-          select: { method: true, amount: true }
-        },
-        tradeInProducts: {
-          select: { id: true, costPrice: true, quantity: true }
-        },
-        items: {
-          select: { quantity: true, price: true, originalPrice: true, product: { select: { price: true } } }
+    // Fetch minimal fields for aggregation and exchange rate in parallel
+    const [transactions, activeRate] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where,
+        select: {
+          finalTotal: true,
+          paymentType: true,
+          upfrontPaymentType: true,
+          partnerName: true,
+          payments: {
+            select: { method: true, amount: true }
+          },
+          tradeInProducts: {
+            select: { id: true, costPrice: true, quantity: true }
+          },
+          items: {
+            select: { quantity: true, price: true, originalPrice: true, product: { select: { price: true } } }
+          }
         }
-      }
-    });
+      }),
+      this.prisma.currencyExchangeRate.findFirst({
+        where: { fromCurrency: 'USD', toCurrency: 'UZS', isActive: true },
+        orderBy: { updatedAt: 'desc' },
+      })
+    ]);
 
-    const activeRate = await this.prisma.currencyExchangeRate.findFirst({
-      where: { fromCurrency: 'USD', toCurrency: 'UZS', isActive: true },
-      orderBy: { updatedAt: 'desc' },
-    });
     const currentExchangeRate = activeRate?.rate || 12600;
 
     let costOfSoldGoods = 0;
@@ -1108,7 +1110,8 @@ export class TransactionService {
 
     const { where } = this.buildTransactionWhere(query);
 
-    const transactions = await this.prisma.transaction.findMany({
+    const [transactions, total] = await Promise.all([
+      this.prisma.transaction.findMany({
       where,
       include: {
         customer: true,
@@ -1230,9 +1233,7 @@ export class TransactionService {
       orderBy: { createdAt: 'desc' },
       skip: parsedLimit ? (parsedPage - 1) * parsedLimit : 0,
       take: parsedLimit,
-    });
-
-    const total = await this.prisma.transaction.count({ where });
+    }), this.prisma.transaction.count({ where })]);
 
     return {
       transactions,
@@ -1938,7 +1939,8 @@ export class TransactionService {
       ],
       OR: [
         { payments: { some: { method: { in: ['UYDAN', 'uydan', 'HOME', 'home'] } } } },
-        { paymentSchedules: { some: { installmentType: 'UYDAN' } } },
+        { paymentType: PaymentType.CREDIT },
+        { paymentSchedules: { some: { installmentType: { notIn: ['INSTALLMENT', 'installment'] } } } },
         { tasks: { some: { uydanAmount: { gt: 0 } } } }
       ]
     };
@@ -2039,27 +2041,29 @@ export class TransactionService {
       const hasInstallmentPayment = payments.some(p => ['INSTALLMENT'].includes(String(p.method || '').toUpperCase()));
       if (hasPartnerPayment || hasInstallmentPayment) continue;
 
-      const schedules = (t.paymentSchedules || []).filter((s: any) => s.installmentType === 'UYDAN');
-      const hasUydanPayment = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase())) || String(t.paymentType || '').toUpperCase() === 'UYDAN';
+      const schedules = (t.paymentSchedules || []).filter((s: any) => !s.installmentType || !['INSTALLMENT', 'installment'].includes(String(s.installmentType)));
+      const hasUydanPayment = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase())) || ['UYDAN', 'CREDIT'].includes(String(t.paymentType || '').toUpperCase());
 
       if (!hasUydanPayment && schedules.length === 0) continue;
 
-      // Calculate outstanding debt correctly for UYDAN
+      // Calculate outstanding debt correctly for UYDAN and credit/debt
       let txTotalDebt = 0;
       let txOutstanding = 0;
       let txPaidOnDebt = 0;
+
+      const baseAmount = Number((t as any).finalTotal || (t as any).total || 0);
+      const downPayment = Number((t as any).downPayment || 0);
+      const txDebtMade = Math.max(0, baseAmount - downPayment);
 
       if (schedules.length > 0) {
         txTotalDebt = schedules.reduce((sum, s) => sum + Number(s.payment || 0), 0);
         txPaidOnDebt = schedules.reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
         txOutstanding = schedules.reduce((sum, s) => sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0)), 0);
       } else {
-        const baseAmount = Number((t as any).finalTotal || (t as any).total || 0);
-        const downPayment = Number((t as any).downPayment || 0);
         const creditRepaid = Number((t as any).creditRepaymentAmount || 0);
         const uydanAmount = payments.filter(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()))
           .reduce((s, p) => s + Number(p.amount || 0), 0);
-        const debtPortion = uydanAmount > 0 ? uydanAmount : Math.max(0, baseAmount - downPayment);
+        const debtPortion = uydanAmount > 0 ? uydanAmount : txDebtMade;
         txTotalDebt = debtPortion;
         txPaidOnDebt = Math.min(debtPortion, creditRepaid);
         txOutstanding = Math.max(0, debtPortion - creditRepaid);
@@ -3535,7 +3539,8 @@ export class TransactionService {
       ],
       OR: [
         { payments: { some: { method: { in: ['UYDAN', 'uydan', 'HOME', 'home'] } } } },
-        { paymentSchedules: { some: { installmentType: 'UYDAN' } } },
+        { paymentType: PaymentType.CREDIT },
+        { paymentSchedules: { some: { installmentType: { notIn: ['INSTALLMENT', 'installment'] } } } },
         { tasks: { some: { uydanAmount: { gt: 0 } } } }
       ]
     };
