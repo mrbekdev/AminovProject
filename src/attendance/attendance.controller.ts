@@ -104,8 +104,6 @@ export class AttendanceController {
         birthDate: true,
         passportSeries: true,
         jshshir: true,
-        passportFront: true,
-        passportBack: true,
         isHidden: true,
         branch: { select: { id: true, name: true } },
         store: { select: { id: true, storeName: true } },
@@ -113,7 +111,6 @@ export class AttendanceController {
           select: {
             id: true,
             imageUrl: true,
-            template: true,
           },
         },
       },
@@ -124,7 +121,7 @@ export class AttendanceController {
       const faceEncodings = u.faceTemplates.map(ft => ({
         id: ft.id,
         imageUrl: ft.imageUrl || '',
-        image_path: ft.imageUrl || (ft.template ? (ft.template.startsWith('data:') || ft.template.startsWith('http') ? ft.template : `data:image/jpeg;base64,${ft.template}`) : ''),
+        image_path: ft.imageUrl || '',
       }));
 
       return {
@@ -146,10 +143,10 @@ export class AttendanceController {
         passport_series: u.passportSeries || '',
         passportSeries: u.passportSeries || '',
         jshshir: u.jshshir || '',
-        passport_front: u.passportFront || '',
-        passportFront: u.passportFront || '',
-        passport_back: u.passportBack || '',
-        passportBack: u.passportBack || '',
+        passport_front: '',
+        passportFront: '',
+        passport_back: '',
+        passportBack: '',
         is_hidden: Boolean(u.isHidden),
         isHidden: Boolean(u.isHidden),
         has_face: u.faceTemplates.length > 0,
@@ -158,6 +155,57 @@ export class AttendanceController {
         face_encodings: faceEncodings,
       };
     });
+  }
+
+  // ===== Single Employee Full Details (with Passport & Face files on demand) =====
+  @Get('employees/:id')
+  async getEmployeeById(@Param('id') id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: +id },
+      include: {
+        branch: true,
+        store: true,
+        faceTemplates: true,
+      },
+    });
+    if (!user) return null;
+
+    const faceEncodings = (user.faceTemplates || []).map(ft => ({
+      id: ft.id,
+      imageUrl: ft.imageUrl || '',
+      image_path: ft.imageUrl || (ft.template ? (ft.template.startsWith('data:') || ft.template.startsWith('http') ? ft.template : `data:image/jpeg;base64,${ft.template}`) : ''),
+    }));
+
+    return {
+      id: user.id,
+      username: user.username,
+      first_name: user.firstName || user.username,
+      last_name: user.lastName || '',
+      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username,
+      phone: user.phone || '',
+      position: user.position || '',
+      department: { id: user.role, name: user.role },
+      monthly_salary: user.monthlySalary || 5000000,
+      work_start_time: user.workStartTime || '09:00',
+      work_end_time: user.workEndTime || '18:00',
+      store_id: user.storeId,
+      branch_id: user.branchId,
+      birth_date: user.birthDate || '',
+      birthDate: user.birthDate || '',
+      passport_series: user.passportSeries || '',
+      passportSeries: user.passportSeries || '',
+      jshshir: user.jshshir || '',
+      passport_front: user.passportFront || '',
+      passportFront: user.passportFront || '',
+      passport_back: user.passportBack || '',
+      passportBack: user.passportBack || '',
+      is_hidden: Boolean(user.isHidden),
+      isHidden: Boolean(user.isHidden),
+      has_face: (user.faceTemplates || []).length > 0,
+      face_count: (user.faceTemplates || []).length,
+      faceTemplates: faceEncodings,
+      face_encodings: faceEncodings,
+    };
   }
 
   @Patch('employees/:id/toggle-hide')
