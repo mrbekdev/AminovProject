@@ -506,10 +506,16 @@ export class StatisticsService {
       },
     });
 
-    // Exclude MARKETING sellers who also appear as customers (match by phone)
-    const marketingSellerPhones = new Set(
-      marketingSellers.map(s => (s.phone || '').replace(/\s+/g, '').toLowerCase()).filter(Boolean)
-    );
+    // Exclude MARKETING sellers who also appear as customers.
+    // Use their exact phone numbers to find corresponding Customer IDs via Prisma.
+    const sellerPhonesRaw = marketingSellers.map(s => s.phone).filter(Boolean) as string[];
+    const sellerCustomerRecords = sellerPhonesRaw.length > 0
+      ? await this.prisma.customer.findMany({
+          where: { phone: { in: sellerPhonesRaw } },
+          select: { id: true },
+        })
+      : [];
+    const sellerCustomerIds = new Set(sellerCustomerRecords.map(c => c.id));
 
     const topCustomers = customerSales.map(cs => {
       const cust = customers.find(c => c.id === cs.customerId);
@@ -522,10 +528,7 @@ export class StatisticsService {
         ordersCount: cs._count.id || 0,
         netProfit: cs._sum.extraProfit || 0,
       };
-    }).filter(c => {
-      const normalizedPhone = (c.phone || '').replace(/\s+/g, '').toLowerCase();
-      return !normalizedPhone || !marketingSellerPhones.has(normalizedPhone);
-    });
+    }).filter(c => !sellerCustomerIds.has(c.customerId as number));
 
     // 6. Query Delivery stats (достафка)
     const taskWhere: any = {};
@@ -2396,14 +2399,20 @@ export class StatisticsService {
       },
     });
 
-    // Fetch all MARKETING-role users' phones so we can exclude them from customers list
+    // Fetch all MARKETING-role users' phones so we can exclude them from customers list.
+    // Use direct Prisma Customer lookup for reliable matching regardless of phone format.
     const marketingUsers = await this.prisma.user.findMany({
       where: { role: UserRole.MARKETING, status: { not: UserStatus.DELETED } },
       select: { phone: true },
     });
-    const marketingPhones = new Set(
-      marketingUsers.map(u => (u.phone || '').replace(/\s+/g, '').toLowerCase()).filter(Boolean)
-    );
+    const mktPhonesRaw = marketingUsers.map(u => u.phone).filter(Boolean) as string[];
+    const mktCustomerRecords = mktPhonesRaw.length > 0
+      ? await this.prisma.customer.findMany({
+          where: { phone: { in: mktPhonesRaw } },
+          select: { id: true },
+        })
+      : [];
+    const mktCustomerIds = new Set(mktCustomerRecords.map(c => c.id));
 
     let topCustomers = customerSales.map(cs => {
       const cust = customers.find(c => c.id === cs.customerId);
@@ -2417,11 +2426,7 @@ export class StatisticsService {
         ordersCount: cs._count.id || 0,
         netProfit: cs._sum.extraProfit || 0,
       };
-    }).filter(c => {
-      // Remove MARKETING-role users who appear as customers
-      const normalizedPhone = (c.phone || '').replace(/\s+/g, '').toLowerCase();
-      return !normalizedPhone || !marketingPhones.has(normalizedPhone);
-    });
+    }).filter(c => !mktCustomerIds.has(c.customerId as number));
 
     if (search && search.trim()) {
       const q = search.toLowerCase().trim();
