@@ -2252,36 +2252,32 @@ export class StatisticsService {
     let totalSofOrtiqcha = 0;
 
     const formattedTransactions = transactions.map(tx => {
-      let txSotish = 0;
-      let txSofOrtiqcha = 0;
       const parsedDetails: string[] = [];
+      let txSofOrtiqcha = 0;
+
+      // sotishNarxi = actual transaction total (finalTotal or total) — no regex needed
+      const realTxTotal = Number(tx.finalTotal ?? tx.total ?? 0);
 
       for (const b of (tx.bonuses || [])) {
         if (b.description) {
           parsedDetails.push(b.description);
-          let qty = 1;
-          const matchQty = b.description.match(/Miqdor:\s*(\d+)/i);
-          if (matchQty) {
-            qty = parseInt(matchQty[1], 10) || 1;
-          }
 
-          const matchSales = b.description.match(/Sotish narxi:\s*([\d\s,.'-]+?)(?:\s*(?:som|сўм|so'm|$|,))/i) || b.description.match(/Sotish narxi:\s*([\d,.-]+)/i);
-          if (matchSales) {
-            const valStr = matchSales[1].replace(/[\s,']/g, '');
-            txSotish += (parseFloat(valStr) || 0) * qty;
-          }
-          const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d\s,.'-]+?)(?:\s*(?:som|сўм|so'm|$|,))/i) || b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
+          // Parse sofOrtiqcha from bonus description using a robust greedy regex
+          // Pattern: match all digits, spaces, commas, dots between "Sof ortiqcha:" and the unit word
+          const matchProfit =
+            b.description.match(/Sof ortiqcha:\s*([\d\s,.']+)\s*(?:som|сўм|so'm)/i) ||
+            b.description.match(/Sof ortiqcha:\s*([\d,.']+)/i);
           if (matchProfit) {
-            const valStr = matchProfit[1].replace(/[\s,']/g, '');
-            txSofOrtiqcha += parseFloat(valStr) || 0;
+            const valStr = matchProfit[1].replace(/[\s,']/g, '').replace(/\.+$/, '');
+            const parsed = parseFloat(valStr) || 0;
+            if (parsed > txSofOrtiqcha) {
+              txSofOrtiqcha = parsed;
+            }
           }
         }
       }
 
-      const realTxTotal = Number(tx.finalTotal ?? tx.total ?? 0);
-      if (txSotish === 0) {
-        txSotish = realTxTotal;
-      }
+      // Fallback: use extraProfit if bonus description didn't yield sofOrtiqcha
       if (txSofOrtiqcha === 0) {
         txSofOrtiqcha = Number(tx.extraProfit || 0);
       }
@@ -2294,7 +2290,7 @@ export class StatisticsService {
         createdAt: tx.createdAt,
         finalTotal: realTxTotal,
         paymentType: tx.paymentType,
-        sotishNarxi: txSotish || realTxTotal,
+        sotishNarxi: realTxTotal,   // always use actual transaction total
         sofOrtiqcha: txSofOrtiqcha,
         details: parsedDetails,
         items: (tx.items || []).map((item: any) => ({
