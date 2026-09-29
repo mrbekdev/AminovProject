@@ -506,6 +506,11 @@ export class StatisticsService {
       },
     });
 
+    // Exclude MARKETING sellers who also appear as customers (match by phone)
+    const marketingSellerPhones = new Set(
+      marketingSellers.map(s => (s.phone || '').replace(/\s+/g, '').toLowerCase()).filter(Boolean)
+    );
+
     const topCustomers = customerSales.map(cs => {
       const cust = customers.find(c => c.id === cs.customerId);
       return {
@@ -517,6 +522,9 @@ export class StatisticsService {
         ordersCount: cs._count.id || 0,
         netProfit: cs._sum.extraProfit || 0,
       };
+    }).filter(c => {
+      const normalizedPhone = (c.phone || '').replace(/\s+/g, '').toLowerCase();
+      return !normalizedPhone || !marketingSellerPhones.has(normalizedPhone);
     });
 
     // 6. Query Delivery stats (достафка)
@@ -2388,6 +2396,15 @@ export class StatisticsService {
       },
     });
 
+    // Fetch all MARKETING-role users' phones so we can exclude them from customers list
+    const marketingUsers = await this.prisma.user.findMany({
+      where: { role: UserRole.MARKETING, status: { not: UserStatus.DELETED } },
+      select: { phone: true },
+    });
+    const marketingPhones = new Set(
+      marketingUsers.map(u => (u.phone || '').replace(/\s+/g, '').toLowerCase()).filter(Boolean)
+    );
+
     let topCustomers = customerSales.map(cs => {
       const cust = customers.find(c => c.id === cs.customerId);
       return {
@@ -2400,6 +2417,10 @@ export class StatisticsService {
         ordersCount: cs._count.id || 0,
         netProfit: cs._sum.extraProfit || 0,
       };
+    }).filter(c => {
+      // Remove MARKETING-role users who appear as customers
+      const normalizedPhone = (c.phone || '').replace(/\s+/g, '').toLowerCase();
+      return !normalizedPhone || !marketingPhones.has(normalizedPhone);
     });
 
     if (search && search.trim()) {
