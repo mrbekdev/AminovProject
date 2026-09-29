@@ -710,15 +710,23 @@ export class AttendanceService {
   async getAdminDashboard(query: any) {
     const today = startOfDayUTC();
     const whereUser: any = { status: 'ACTIVE', role: { not: 'BIGADMIN' } };
+    const whereAtt: any = { date: today, user: { role: { not: 'BIGADMIN' } } };
+
     if (query?.store_id && query.store_id !== 'ALL') {
-      whereUser.storeId = parseInt(query.store_id);
+      const sId = parseInt(query.store_id);
+      whereUser.storeId = sId;
+      whereAtt.storeId = sId;
     }
 
     const [totalEmployees, presentDays] = await Promise.all([
       this.prisma.user.count({ where: whereUser }),
       this.prisma.attendanceDay.findMany({
-        where: { date: today, user: { role: { not: 'BIGADMIN' } } },
-        include: { user: true },
+        where: whereAtt,
+        select: {
+          id: true,
+          status: true,
+          lateMinutes: true,
+        },
       }),
     ]);
 
@@ -791,7 +799,33 @@ export class AttendanceService {
 
     const items = await this.prisma.attendanceDay.findMany({
       where,
-      include: { user: { include: { branch: true, store: true } }, branch: true, store: true },
+      select: {
+        id: true,
+        date: true,
+        userId: true,
+        checkInAt: true,
+        checkOutAt: true,
+        totalMinutes: true,
+        lateMinutes: true,
+        earlyLeaveMinutes: true,
+        penaltyAmount: true,
+        bonusAmount: true,
+        status: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            role: true,
+            workStartTime: true,
+            workEndTime: true,
+            monthlySalary: true,
+          },
+        },
+        branch: { select: { id: true, name: true } },
+        store: { select: { id: true, storeName: true, latePenaltyPerMin: true, earlyBonusPerMin: true } },
+      },
       orderBy: { date: 'desc' },
     });
 
@@ -806,7 +840,7 @@ export class AttendanceService {
         const dateFormatted = d.date.toISOString().split('T')[0];
         const empName = `${d.user?.firstName || ''} ${d.user?.lastName || ''}`.trim() || d.user?.username || '';
 
-        const store = d.store || d.user?.store;
+        const store = d.store;
         const latePenaltyPerMin = store?.latePenaltyPerMin ?? 500;
         const earlyBonusPerMin = store?.earlyBonusPerMin ?? 500;
         const workStartTimeStr = d.user?.workStartTime || '09:00';
@@ -857,7 +891,7 @@ export class AttendanceService {
           date: dateFormatted,
           employee_id: d.userId,
           employee_name: empName,
-          department_name: getRoleText(d.user?.role),
+          department_name: getRoleText(d.user?.role || ''),
           store_name: d.store?.storeName || d.branch?.name || 'Bosh Do\'kon',
           check_in_time: d.checkInAt ? d.checkInAt.toISOString() : null,
           check_out_time: d.checkOutAt ? d.checkOutAt.toISOString() : null,
@@ -889,12 +923,36 @@ export class AttendanceService {
   }
 
   // ===== Audit Logs =====
-  async getAllLogs() {
+  async getAllLogs(query?: any) {
+    const where: any = { user: { role: { not: 'BIGADMIN' } } };
+    if (query?.store_id && query.store_id !== 'ALL') {
+      where.user.storeId = parseInt(query.store_id);
+    }
     const events = await this.prisma.attendanceEvent.findMany({
-      where: { user: { role: { not: 'BIGADMIN' } } },
+      where,
       take: 100,
       orderBy: { occurredAt: 'desc' },
-      include: { user: true, branch: true },
+      select: {
+        id: true,
+        occurredAt: true,
+        eventType: true,
+        similarity: true,
+        payload: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+          },
+        },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
 
     return events.map((ev) => {

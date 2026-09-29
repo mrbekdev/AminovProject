@@ -25,8 +25,8 @@ export class AttendanceController {
 
   // ===== Audit Logs =====
   @Get('attendance/all-logs')
-  getAllLogs() {
-    return this.attendanceService.getAllLogs();
+  getAllLogs(@Query() query: any) {
+    return this.attendanceService.getAllLogs(query);
   }
 
   // ===== Logged Employee Attendance History =====
