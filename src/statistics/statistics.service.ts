@@ -1854,6 +1854,8 @@ export class StatisticsService {
     }
 
     const whereClause: any = {
+      // Only fetch TRANSFER type transactions — filter at DB level for accuracy
+      type: TransactionType.TRANSFER,
       status: { not: TransactionStatus.CANCELLED },
       createdAt: { gte: start, lte: end },
     };
