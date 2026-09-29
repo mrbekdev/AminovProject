@@ -22,8 +22,8 @@ export class BranchService {
   }
 
   async findOne(id: number) {
-    return this.prisma.branch.findUnique({
-      where: { id ,AND: { status: { not: 'DELETED' } } as any},
+    return this.prisma.branch.findFirst({
+      where: { id, status: { not: 'DELETED' } },
       select: {
         id: true,
         name: true,
@@ -33,12 +33,6 @@ export class BranchService {
         cashBalance: true,
         createdAt: true,
         updatedAt: true,
-        products: {
-          where: { isDeleted: false },
-        },
-        users: {
-          where: { status: { not: 'DELETED' } },
-        },
       },
     });
   }
@@ -55,13 +49,8 @@ export class BranchService {
         cashBalance: true,
         createdAt: true,
         updatedAt: true,
-        products: {
-          where: { isDeleted: false },
-        },
-        users: {
-          where: { status: { not: 'DELETED' } },
-        },
       },
+      orderBy: { id: 'asc' },
     });
   }
 

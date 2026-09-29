@@ -408,78 +408,43 @@ export class StatisticsService {
       },
     });
 
-    // Payment type breakdown per product
-    const productPaymentBreakdown = await Promise.all(
-      productIds.map(async (productId) => {
-        const breakdown = await this.prisma.transactionItem.groupBy({
-          by: ['transactionId'],
-          where: {
-            productId,
-            transaction: {
-              ...transactionWhere,
-              type: TransactionType.SALE,
-            },
-          },
-          _sum: {
-            quantity: true,
-          },
-        });
+    // Payment type breakdown per product — computed from already-loaded activeSales (zero extra DB queries)
+    // Build a lookup: transactionId → {payments, paymentType}
+    const txPaymentLookup = new Map<number, { payments: any[]; paymentType: string | null }>();
+    for (const t of activeSales) {
+      txPaymentLookup.set(t.id, { payments: t.payments || [], paymentType: t.paymentType || null });
+    }
 
-        const transactionIds = breakdown.map(b => b.transactionId);
-        const transactions = transactionIds.length > 0
-          ? await this.prisma.transaction.findMany({
-              where: { id: { in: transactionIds } },
-              include: { payments: true },
-            })
-          : [];
+    const productPaymentBreakdown = productIds.map((productId) => {
+      let cashCount = 0;
+      let cardCount = 0;
+      let creditCount = 0;
 
-        let cashCount = 0;
-        let cardCount = 0;
-        let creditCount = 0;
-
-        for (const b of breakdown) {
-          const tx = transactions.find(t => t.id === b.transactionId);
-          const qty = b._sum.quantity || 0;
-          if (tx) {
-            const payments = tx.payments || [];
-            if (payments.length > 0) {
-              const txTotal = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0) || 1;
-              const cashAmt = payments.filter(p => String(p.method || '').toUpperCase() === 'CASH').reduce((s, p) => s + (Number(p.amount) || 0), 0);
-              const cardAmt = payments.filter(p => ['CARD', 'TERMINAL', 'ICAN'].includes(String(p.method || '').toUpperCase())).reduce((s, p) => s + (Number(p.amount) || 0), 0);
-              const creditAmt = Math.max(0, txTotal - cashAmt - cardAmt);
-
-              if (cashAmt > 0 && cardAmt === 0 && creditAmt === 0) {
-                cashCount += qty;
-              } else if (cardAmt > 0 && cashAmt === 0 && creditAmt === 0) {
-                cardCount += qty;
-              } else if (creditAmt > 0 && cashAmt === 0 && cardAmt === 0) {
-                creditCount += qty;
-              } else {
-                cashCount += (cashAmt / txTotal) * qty;
-                cardCount += (cardAmt / txTotal) * qty;
-                creditCount += (creditAmt / txTotal) * qty;
-              }
-            } else {
-              const pType = String(tx.paymentType || '').toUpperCase();
-              if (pType === 'CASH') {
-                cashCount += qty;
-              } else if (['CARD', 'TERMINAL', 'ICAN'].includes(pType)) {
-                cardCount += qty;
-              } else {
-                creditCount += qty;
-              }
-            }
-          }
+      for (const t of activeSales) {
+        const items = (t.items || []).filter((it: any) => it.productId === productId);
+        if (!items.length) continue;
+        const qty = items.reduce((s: number, it: any) => s + Number(it.quantity || 0), 0);
+        const txInfo = txPaymentLookup.get(t.id);
+        const payments = txInfo?.payments || [];
+        if (payments.length > 0) {
+          const txTotal = payments.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0) || 1;
+          const cashAmt = payments.filter((p: any) => String(p.method || '').toUpperCase() === 'CASH').reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
+          const cardAmt = payments.filter((p: any) => ['CARD', 'TERMINAL', 'ICAN'].includes(String(p.method || '').toUpperCase())).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
+          const creditAmt = Math.max(0, txTotal - cashAmt - cardAmt);
+          if (cashAmt > 0 && cardAmt === 0 && creditAmt === 0) { cashCount += qty; }
+          else if (cardAmt > 0 && cashAmt === 0 && creditAmt === 0) { cardCount += qty; }
+          else if (creditAmt > 0 && cashAmt === 0 && cardAmt === 0) { creditCount += qty; }
+          else { cashCount += (cashAmt / txTotal) * qty; cardCount += (cardAmt / txTotal) * qty; creditCount += (creditAmt / txTotal) * qty; }
+        } else {
+          const pType = String(txInfo?.paymentType || '').toUpperCase();
+          if (pType === 'CASH') { cashCount += qty; }
+          else if (['CARD', 'TERMINAL', 'ICAN'].includes(pType)) { cardCount += qty; }
+          else { creditCount += qty; }
         }
+      }
 
-        return {
-          productId,
-          cashCount: Math.round(cashCount),
-          cardCount: Math.round(cardCount),
-          creditCount: Math.round(creditCount),
-        };
-      })
-    );
+      return { productId, cashCount: Math.round(cashCount), cardCount: Math.round(cardCount), creditCount: Math.round(creditCount) };
+    });
 
     const topProducts = productSales.map(ps => {
       const prod = products.find(p => p.id === ps.productId);
@@ -746,12 +711,16 @@ export class StatisticsService {
       }
     }
 
-    // 4) Auditor Speed (Top 10 Fastest)
+    // 4) Auditor Speed (Top 10 Fastest) — limit to last 90 days to avoid full-table scan
     const auditorSpeedMap = new Map<number, any>();
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    ninetyDaysAgo.setHours(0, 0, 0, 0);
     const allCompletedTasks = await this.prisma.task.findMany({
       where: {
         status: 'DELIVERED',
         auditorId: { not: null },
+        createdAt: { gte: ninetyDaysAgo },
       },
       select: {
         auditorId: true,
@@ -799,11 +768,12 @@ export class StatisticsService {
       .sort((a, b) => a.avgTimeMin - b.avgTimeMin)
       .slice(0, 10);
 
-    // 5) Auditor Activity (Top 10 Most Active)
+    // 5) Auditor Activity (Top 10 Most Active) — limit to last 90 days to avoid full-table scan
     const auditorWorkMap = new Map<number, any>();
     const allAuditorTasks = await this.prisma.task.findMany({
       where: {
         auditorId: { not: null },
+        createdAt: { gte: ninetyDaysAgo },
       },
       select: {
         auditorId: true,
@@ -1038,39 +1008,25 @@ export class StatisticsService {
           }
         }
 
-        const crCash = await this.prisma.creditRepayment.aggregate({
-          where: {
-            paidByUserId: cashier.id,
-            channel: 'CASH',
-            paidAt: { gte: start, lte: end },
-          },
-          _sum: { amount: true },
-        });
-        const crCard = await this.prisma.creditRepayment.aggregate({
-          where: {
-            paidByUserId: cashier.id,
-            channel: 'CARD',
-            paidAt: { gte: start, lte: end },
-          },
-          _sum: { amount: true },
-        });
-
-        const drCash = await this.prisma.dailyRepayment.aggregate({
-          where: {
-            paidByUserId: cashier.id,
-            channel: 'CASH',
-            paidAt: { gte: start, lte: end },
-          },
-          _sum: { amount: true },
-        });
-        const drCard = await this.prisma.dailyRepayment.aggregate({
-          where: {
-            paidByUserId: cashier.id,
-            channel: 'CARD',
-            paidAt: { gte: start, lte: end },
-          },
-          _sum: { amount: true },
-        });
+        // Parallelize all 4 repayment aggregation queries
+        const [crCash, crCard, drCash, drCard] = await Promise.all([
+          this.prisma.creditRepayment.aggregate({
+            where: { paidByUserId: cashier.id, channel: 'CASH', paidAt: { gte: start, lte: end } },
+            _sum: { amount: true },
+          }),
+          this.prisma.creditRepayment.aggregate({
+            where: { paidByUserId: cashier.id, channel: 'CARD', paidAt: { gte: start, lte: end } },
+            _sum: { amount: true },
+          }),
+          this.prisma.dailyRepayment.aggregate({
+            where: { paidByUserId: cashier.id, channel: 'CASH', paidAt: { gte: start, lte: end } },
+            _sum: { amount: true },
+          }),
+          this.prisma.dailyRepayment.aggregate({
+            where: { paidByUserId: cashier.id, channel: 'CARD', paidAt: { gte: start, lte: end } },
+            _sum: { amount: true },
+          }),
+        ]);
 
         const cashierRepaymentsCash = (crCash._sum.amount || 0) + (drCash._sum.amount || 0);
         const cashierRepaymentsCard = (crCard._sum.amount || 0) + (drCard._sum.amount || 0);
@@ -1175,19 +1131,7 @@ export class StatisticsService {
       },
     });
 
-    // --- SOCIAL SOURCE STATS ---
-    const sourceTransactions = await this.prisma.transaction.findMany({
-      where: {
-        ...transactionWhere,
-        type: TransactionType.SALE,
-      },
-      select: {
-        source: true,
-        customerId: true,
-        finalTotal: true,
-      },
-    });
-
+    // --- SOCIAL SOURCE STATS — reuse activeSales already in memory (no extra DB query) ---
     const sourcesList = ['Instagram', 'Telegram', 'Youtube', 'Tanishimdan'];
     const socialStatsMap = new Map<string, { source: string; totalRevenue: number; salesCount: number; uniqueCustomers: Set<number> }>();
 
@@ -1200,10 +1144,10 @@ export class StatisticsService {
       });
     }
 
-    for (const tx of sourceTransactions) {
-      const src = tx.source && sourcesList.includes(tx.source) ? tx.source : 'Boshqa';
+    for (const tx of activeSales) {
+      const src = (tx as any).source && sourcesList.includes((tx as any).source) ? (tx as any).source : 'Boshqa';
       const stats = socialStatsMap.get(src)!;
-      stats.totalRevenue += Number(tx.finalTotal || 0);
+      stats.totalRevenue += Number(tx.finalTotal || tx.total || 0);
       stats.salesCount++;
       if (tx.customerId) {
         stats.uniqueCustomers.add(tx.customerId);
@@ -1233,13 +1177,43 @@ export class StatisticsService {
       }>;
     }>();
 
+    // District → correct region override map.
+    // Keys are lowercase district name substrings; values are the canonical region name.
+    const DISTRICT_REGION_CORRECTIONS: Record<string, string> = {
+      'гурлан':   'Хоразм вилояти',
+      'gurlan':   'Хоразм вилояти',
+      'хонқа':    'Хоразм вилояти',
+      'xonqa':    'Хоразм вилояти',
+      'боғот':    'Хоразм вилояти',
+      'bog\'ot':  'Хоразм вилояти',
+      'қўшкўпир': 'Хоразм вилояти',
+      'qo\'shko\'pir': 'Хоразм вилояти',
+      'янгиариқ': 'Хоразм вилояти',
+      'yangiarioq': 'Хоразм вилояти',
+      'шовот':    'Хоразм вилояти',
+      'shovot':   'Хоразм вилояти',
+      'урганч':   'Хоразм вилояти',
+      'urgench':  'Хоразм вилояти',
+    };
+
+    const correctRegionForDistrict = (rawRegion: string, rawDistrict: string): string => {
+      const dLower = rawDistrict.toLowerCase();
+      for (const [key, correctRegion] of Object.entries(DISTRICT_REGION_CORRECTIONS)) {
+        if (dLower.includes(key)) return correctRegion;
+      }
+      return rawRegion;
+    };
+
     activeSales.forEach(t => {
       const finalTotal = t.finalTotal || t.total || 0;
-      const rName = (t.regionName || t.customer?.regionName || '').trim() || 'Кўрсатилмаган вилоят';
+      const rawRName = (t.regionName || t.customer?.regionName || '').trim() || 'Кўрсатилмаган вилоят';
       const rId = t.regionId || t.customer?.regionId || null;
       const dName = (t.districtName || t.customer?.districtName || '').trim() || 'Кўрсатилмаган туман';
       const dId = t.districtId || t.customer?.districtId || null;
       const custId = t.customerId;
+
+      // Correct region based on known district-region mappings
+      const rName = correctRegionForDistrict(rawRName, dName);
 
       if (!regionStatsMap.has(rName)) {
         regionStatsMap.set(rName, {
