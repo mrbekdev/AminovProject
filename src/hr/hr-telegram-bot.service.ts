@@ -38,7 +38,13 @@ export class HrTelegramBotService implements OnModuleInit, OnModuleDestroy {
 
   private startBot() {
     try {
-      this.bot = new TelegramBot(this.token, { polling: true });
+      this.bot = new TelegramBot(this.token, {
+        polling: {
+          params: {
+            allowed_updates: ['message', 'edited_message', 'callback_query'],
+          },
+        },
+      });
 
       this.bot.on('polling_error', (error) => {
         this.logger.warn(`Telegram Bot Polling Error: ${error.message}`);
@@ -378,6 +384,27 @@ export class HrTelegramBotService implements OnModuleInit, OnModuleDestroy {
         break;
       }
 
+      case 'CONFIRMATION': {
+        if (text.includes('Tasdiqlash') || text.includes('Yuborish') || text === '✅ Tasdiqlash va Yuborish') {
+          await this.submitApplication(chatId);
+        } else if (text.includes('Bekor') || text === '❌ Bekor qilish') {
+          this.sessions.delete(chatId);
+          await this.bot?.sendMessage(
+            chatId,
+            '❌ Arizangiz bekor qilindi.\nQaytadan boshlash uchun quyidagi tugmani bosing.',
+            {
+              reply_markup: {
+                keyboard: [[{ text: '📝 Ishga ariza topshirish' }], [{ text: 'ℹ️ Ariza holatini tekshirish' }]],
+                resize_keyboard: true,
+              },
+            }
+          );
+        } else {
+          await this.showSummaryAndConfirmation(chatId, session);
+        }
+        break;
+      }
+
       default:
         break;
     }
@@ -396,9 +423,22 @@ export class HrTelegramBotService implements OnModuleInit, OnModuleDestroy {
       `📍 <b>Manzil:</b> ${d.address || '—'}\n` +
       `💰 <b>Kutilayotgan maosh:</b> ${d.expectedSalary || '—'}\n` +
       (d.about ? `📝 <b>Qo'shimcha:</b> ${d.about}\n` : '') +
-      `\n<i>Barcha ma'lumotlar to'g'riligini tasdiqlaysizmi?</i>`;
+      `\n<i>Barcha ma'lumotlar to'g'riligini tasdiqlaysizmi?</i>\n` +
+      `Quyidagi <b>"✅ Tasdiqlash va Yuborish"</b> tugmasini bosing:`;
 
     await this.bot?.sendMessage(chatId, summary, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        keyboard: [
+          [{ text: '✅ Tasdiqlash va Yuborish' }],
+          [{ text: '❌ Bekor qilish' }],
+        ],
+        resize_keyboard: true,
+      },
+    });
+
+    // Also send inline button as backup
+    await this.bot?.sendMessage(chatId, '👇 <i>Yoki to\'g\'ridan-to\'g\'ri shu yerni bosing:</i>', {
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
@@ -411,10 +451,20 @@ export class HrTelegramBotService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async submitApplication(chatId: number, callbackQueryId: string) {
+  private async submitApplication(chatId: number, callbackQueryId?: string) {
+    if (callbackQueryId) {
+      await this.bot?.answerCallbackQuery(callbackQueryId, { text: 'Arizangiz qabul qilinmoqda...' }).catch(() => {});
+    }
+
     const session = this.sessions.get(chatId);
     if (!session || !session.data.fullName || !session.data.phone) {
-      await this.bot?.answerCallbackQuery(callbackQueryId, { text: 'Xatolik: Ma\'lumotlar topilmadi.' });
+      if (callbackQueryId) {
+        await this.bot?.answerCallbackQuery(callbackQueryId, { text: 'Xatolik: Ma\'lumotlar topilmadi.' }).catch(() => {});
+      }
+      await this.bot?.sendMessage(
+        chatId,
+        '⚠️ Ma\'lumotlar topilmadi yoki sessiya muddati tugagan. Iltimos, /start buyrug\'ini bosib qaytadan boshlang.'
+      );
       return;
     }
 
@@ -435,8 +485,6 @@ export class HrTelegramBotService implements OnModuleInit, OnModuleDestroy {
 
       this.sessions.delete(chatId);
 
-      await this.bot?.answerCallbackQuery(callbackQueryId, { text: 'Arizangiz qabul qilindi!' });
-
       const successMsg =
         `🎉 <b>TABRIKLAYMIZ!</b>\n\n` +
         `Sizning arizangiz muvaffaqiyatli qabul qilindi!\n` +
@@ -453,7 +501,9 @@ export class HrTelegramBotService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (err) {
       this.logger.error('Error saving job application:', err);
-      await this.bot?.answerCallbackQuery(callbackQueryId, { text: 'Xatolik yuz berdi. Qaytadan urinib ko\'ring.' });
+      if (callbackQueryId) {
+        await this.bot?.answerCallbackQuery(callbackQueryId, { text: 'Xatolik yuz berdi.' }).catch(() => {});
+      }
       await this.bot?.sendMessage(
         chatId,
         '⚠️ Arizani saqlashda xatolik yuz berdi. Iltimos, /start buyrug\'i orqali qaytadan urinib ko\'ring.'
