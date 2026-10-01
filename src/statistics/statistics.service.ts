@@ -3050,13 +3050,32 @@ export class StatisticsService {
       end = new Date();
     }
 
-    const year = yearParam || now.getFullYear();
-    const month = monthParam || (now.getMonth() + 1);
+    let targetYear = yearParam;
+    let targetMonth = monthParam;
+    if (!targetYear || !targetMonth) {
+      if (startDate) {
+        const parts = startDate.split('T')[0].split('-');
+        if (parts.length >= 2) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          if (!isNaN(y) && !isNaN(m)) {
+            targetYear = y;
+            targetMonth = m;
+          }
+        }
+      }
+    }
+    const year = targetYear || now.getFullYear();
+    const month = targetMonth || (now.getMonth() + 1);
 
-    // 2. Fetch active sellers ONLY (users with role MARKETING)
+    // 2. Fetch active sellers (users with role MARKETING, or who have targets set, or who made sales)
     const userWhere: any = {
       status: { not: UserStatus.DELETED },
-      role: UserRole.MARKETING,
+      OR: [
+        { role: UserRole.MARKETING },
+        { sellerTargets: { some: {} } },
+        { soldTransactions: { some: { createdAt: { gte: start, lte: end } } } },
+      ],
     };
     if (branchId) {
       userWhere.branchId = branchId;
@@ -3091,6 +3110,48 @@ export class StatisticsService {
         targetAmount: t.targetAmount,
       }),
     );
+
+    // Fallback for sellers with no explicit target row in (year, month):
+    // Use their most recent target plan up to that month, or latest configured plan
+    const missingSellerIds = sellers
+      .map((s) => s.id)
+      .filter((id) => !targetMap.has(id));
+
+    if (missingSellerIds.length > 0) {
+      const priorTargets = await this.prisma.sellerTarget.findMany({
+        where: {
+          sellerId: { in: missingSellerIds },
+          OR: [
+            { year: { lt: year } },
+            { year: year, month: { lte: month } },
+          ],
+        },
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+      });
+
+      for (const t of priorTargets) {
+        if (!targetMap.has(t.sellerId)) {
+          targetMap.set(t.sellerId, {
+            targetAmount: t.targetAmount,
+          });
+        }
+      }
+
+      const stillMissing = missingSellerIds.filter((id) => !targetMap.has(id));
+      if (stillMissing.length > 0) {
+        const anyTargets = await this.prisma.sellerTarget.findMany({
+          where: { sellerId: { in: stillMissing } },
+          orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        });
+        for (const t of anyTargets) {
+          if (!targetMap.has(t.sellerId)) {
+            targetMap.set(t.sellerId, {
+              targetAmount: t.targetAmount,
+            });
+          }
+        }
+      }
+    }
 
     const txWhere: any = {
       type: { in: [TransactionType.SALE, TransactionType.DELIVERY] },
@@ -3329,7 +3390,20 @@ export class StatisticsService {
       },
     });
 
-    const targetAmount = targetRecord?.targetAmount || 0;
+    let targetAmount = targetRecord?.targetAmount || 0;
+    if (!targetAmount) {
+      const latestTarget = await this.prisma.sellerTarget.findFirst({
+        where: {
+          sellerId,
+          OR: [
+            { year: { lt: year } },
+            { year, month: { lte: month } },
+          ],
+        },
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+      });
+      targetAmount = latestTarget?.targetAmount || 0;
+    }
 
     const salesTransactions = await this.prisma.transaction.findMany({
       where: {
