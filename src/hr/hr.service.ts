@@ -44,16 +44,26 @@ export class HrService {
       ];
     }
 
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) {
-        const start = new Date(startDate);
-        where.createdAt.gte = start;
+    const sDate = startDate && startDate.trim();
+    const eDate = endDate && endDate.trim();
+    if (sDate || eDate) {
+      const dateFilter: any = {};
+      if (sDate) {
+        const start = new Date(sDate);
+        if (!isNaN(start.getTime())) {
+          start.setHours(0, 0, 0, 0);
+          dateFilter.gte = start;
+        }
       }
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.createdAt.lte = end;
+      if (eDate) {
+        const end = new Date(eDate);
+        if (!isNaN(end.getTime())) {
+          end.setHours(23, 59, 59, 999);
+          dateFilter.lte = end;
+        }
+      }
+      if (Object.keys(dateFilter).length > 0) {
+        where.createdAt = dateFilter;
       }
     }
 
