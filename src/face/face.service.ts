@@ -164,7 +164,22 @@ export class FaceService {
 
     const activeUsers = await this.prisma.user.findMany({
       where: { status: 'ACTIVE' },
-      include: { faceTemplates: true, store: true, branch: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        branchId: true,
+        storeId: true,
+        store: true,
+        branch: true,
+        faceTemplates: {
+          select: {
+            id: true,
+            vector: true,
+          },
+        },
+      },
     });
 
     let bestSim = 0;

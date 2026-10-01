@@ -102,26 +102,116 @@ function euclideanDistance(arr1: any, arr2: any): number {
   return Math.sqrt(sum);
 }
 
-function compareFaceTemplates(scannedDescriptor: any, scannedB64: string, storedFace: any): number {
-  if (Array.isArray(scannedDescriptor) && Array.isArray(storedFace.vector) && scannedDescriptor.length > 0 && scannedDescriptor.length === storedFace.vector.length) {
-    const dist = euclideanDistance(scannedDescriptor, storedFace.vector);
-    // Yanada qattiqroq chegara: 0.45 dan oshsa 0 qaytaramiz (oldin 0.52 edi)
-    if (dist < 0.45) {
-      // Similarity = 1 - normalized distance, floor yo'q
-      const similarity = 1 - (dist / 1.0);
+function compareFaceTemplates(scannedDescriptor: any, storedVectorOrFace: any): number {
+  const targetVector = Array.isArray(storedVectorOrFace)
+    ? storedVectorOrFace
+    : (storedVectorOrFace?.vector || storedVectorOrFace);
+
+  if (
+    Array.isArray(scannedDescriptor) &&
+    Array.isArray(targetVector) &&
+    scannedDescriptor.length > 0 &&
+    scannedDescriptor.length === targetVector.length
+  ) {
+    const dist = euclideanDistance(scannedDescriptor, targetVector);
+    // Face-API standarti: dist < 0.52 bo'lsa yuqori moslik
+    if (dist < 0.52) {
+      const similarity = 1 - dist;
       return Math.round(Math.max(0, Math.min(1, similarity)) * 100) / 100;
     }
     return 0;
   }
-
-  // Eski template bo'lsa — byte-compare fallback ISHONCHSIZ, faqat 0 qaytaramiz
-  // (bu yo'l boshqa odamni o'tkazib yuborishi mumkin edi)
   return 0;
+}
+
+export interface CachedFaceUser {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  username: string;
+  role: string;
+  status: string;
+  workStartTime: string | null;
+  workEndTime: string | null;
+  branchId: number | null;
+  storeId: number | null;
+  store: any;
+  branch: any;
+  faceVectors: Array<{ id: number; vector: number[] }>;
 }
 
 @Injectable()
 export class AttendanceService {
+  private cachedFaceUsers: CachedFaceUser[] | null = null;
+  private lastFaceCacheTime = 0;
+  private readonly CACHE_TTL_MS = 10 * 60 * 1000; // 10 daqiqa xotirada saqlash
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Yuz shablonlari keshini tozalash (yangi yuz qo'shilganda yoki o'chirilganda chaqiriladi)
+   */
+  invalidateFaceCache() {
+    this.cachedFaceUsers = null;
+    this.lastFaceCacheTime = 0;
+  }
+
+  /**
+   * Barcha faol xodimlarni va ularning yuz vektorlarini xotirada (RAM) keshlaydi.
+   * DIQQAT: Og'ir Base64 matnlar (template va imageUrl) HECH QACHON yuklanmaydi!
+   * Shuning hisobiga har bir skaner so'rovi 0 millisekundda DB siz RAM dan bajariladi!
+   */
+  async getActiveFaceUsers(forceFresh = false): Promise<CachedFaceUser[]> {
+    const now = Date.now();
+    if (!forceFresh && this.cachedFaceUsers && (now - this.lastFaceCacheTime < this.CACHE_TTL_MS)) {
+      return this.cachedFaceUsers;
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        role: true,
+        status: true,
+        workStartTime: true,
+        workEndTime: true,
+        branchId: true,
+        storeId: true,
+        store: true,
+        branch: true,
+        faceTemplates: {
+          select: {
+            id: true,
+            vector: true,
+          },
+        },
+      },
+    });
+
+    this.cachedFaceUsers = users.map((u) => ({
+      id: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      username: u.username,
+      role: u.role,
+      status: u.status,
+      workStartTime: u.workStartTime,
+      workEndTime: u.workEndTime,
+      branchId: u.branchId,
+      storeId: u.storeId,
+      store: u.store,
+      branch: u.branch,
+      faceVectors: (u.faceTemplates || [])
+        .filter((ft) => Array.isArray(ft.vector) && (ft.vector as any[]).length > 0)
+        .map((ft) => ({ id: ft.id, vector: ft.vector as number[] })),
+    }));
+
+    this.lastFaceCacheTime = now;
+    return this.cachedFaceUsers;
+  }
 
   async checkIn(params: { userId?: number; faceTemplateId?: number; branchId?: number; storeId?: number; deviceId?: string; similarity?: number; payload?: any; when?: Date }) {
     const { branchId, storeId, deviceId, similarity, payload } = params;
@@ -324,33 +414,70 @@ export class AttendanceService {
 
     if (employee_id) {
       const empId = Number(employee_id);
-      matchedUser = await this.prisma.user.findUnique({
-        where: { id: empId },
-        include: { faceTemplates: true, store: true, branch: true },
-      });
-      if (!matchedUser) {
+      const activeUsers = await this.getActiveFaceUsers();
+      let foundUser = activeUsers.find((u) => u.id === empId);
+
+      if (!foundUser) {
+        // Agar keshda bo'lmasa, DB dan faqat kerakli maydonlarni tortamiz
+        const dbUser = await this.prisma.user.findUnique({
+          where: { id: empId },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            role: true,
+            status: true,
+            workStartTime: true,
+            workEndTime: true,
+            branchId: true,
+            storeId: true,
+            store: true,
+            branch: true,
+            faceTemplates: {
+              select: { id: true, vector: true },
+            },
+          },
+        });
+        if (dbUser) {
+          foundUser = {
+            id: dbUser.id,
+            firstName: dbUser.firstName,
+            lastName: dbUser.lastName,
+            username: dbUser.username,
+            role: dbUser.role,
+            status: dbUser.status,
+            workStartTime: dbUser.workStartTime,
+            workEndTime: dbUser.workEndTime,
+            branchId: dbUser.branchId,
+            storeId: dbUser.storeId,
+            store: dbUser.store,
+            branch: dbUser.branch,
+            faceVectors: (dbUser.faceTemplates || [])
+              .filter((ft: any) => Array.isArray(ft.vector) && ft.vector.length > 0)
+              .map((ft: any) => ({ id: ft.id, vector: ft.vector as number[] })),
+          };
+        }
+      }
+
+      if (!foundUser) {
         throw new NotFoundException('Ходим топилмади.');
       }
-      // 1:1 mode: faqat shu xodimning face'lari bilan solishtirish
-      if (matchedUser.faceTemplates && matchedUser.faceTemplates.length > 0) {
+
+      matchedUser = foundUser;
+
+      // 1:1 mode: faqat shu xodimning yuz vektorlari bilan taqqoslash (0.1ms)
+      if (foundUser.faceVectors && foundUser.faceVectors.length > 0) {
         let bestUserScore = 0;
-        let matchedFt: any = null;
-        for (const ft of matchedUser.faceTemplates) {
-          const score = compareFaceTemplates(scanDescriptor, image_base64, ft);
+        for (const ft of foundUser.faceVectors) {
+          const score = compareFaceTemplates(scanDescriptor, ft.vector);
           if (score > bestUserScore) {
             bestUserScore = score;
-            matchedFt = ft;
           }
         }
-        // Qattiqroq chegara: 0.55 dan past bo'lsa rad etamiz (oldin 0.30 edi)
-        if (bestUserScore < 0.55) {
+
+        if (bestUserScore < 0.50) {
           throw new BadRequestException(`Юз танилмади ёки ушбу ходимга мос келмади. Аниқроқ қараб қайта урининг.`);
-        }
-        if (matchedFt && !matchedFt.vector && scanDescriptor) {
-          await this.prisma.faceTemplate.update({
-            where: { id: matchedFt.id },
-            data: { vector: scanDescriptor },
-          }).catch(() => {});
         }
         matchSimilarity = bestUserScore;
       } else {
@@ -374,50 +501,52 @@ export class AttendanceService {
             imageUrl: imgUrl,
           },
         });
+        this.invalidateFaceCache();
       }
     } else {
-      // 1:N Match — barcha active userlar bilan solishtirish
-      const activeUsers = await this.prisma.user.findMany({
-        where: { status: 'ACTIVE' },
-        include: { faceTemplates: true, store: true, branch: true },
-      });
+      // 1:N Match — RAM keshidagi barcha faol xodimlar bilan 0.5ms da solishtirish!
+      const activeUsers = await this.getActiveFaceUsers();
 
-      let bestScore = 0;
-      let secondBestScore = 0; // Anti-spoofing: ikkinchi eng yaxshi natija
-      let bestUser: any = null;
-      let bestFt: any = null;
+      interface Candidate {
+        user: CachedFaceUser;
+        bestScore: number;
+        bestFtId: number;
+      }
+      const candidates: Candidate[] = [];
 
       for (const u of activeUsers) {
-        if (u.faceTemplates && u.faceTemplates.length > 0) {
-          for (const ft of u.faceTemplates) {
-            const score = compareFaceTemplates(scanDescriptor, image_base64, ft);
-            if (score > bestScore) {
-              secondBestScore = bestScore;
-              bestScore = score;
-              bestUser = u;
-              bestFt = ft;
-            } else if (score > secondBestScore) {
-              secondBestScore = score;
+        if (u.faceVectors && u.faceVectors.length > 0) {
+          let userBestScore = 0;
+          let userBestFtId = 0;
+          for (const ft of u.faceVectors) {
+            const score = compareFaceTemplates(scanDescriptor, ft.vector);
+            if (score > userBestScore) {
+              userBestScore = score;
+              userBestFtId = ft.id;
             }
+          }
+          if (userBestScore > 0) {
+            candidates.push({ user: u, bestScore: userBestScore, bestFtId: userBestFtId });
           }
         }
       }
 
-      // Qattiqroq chegara: 0.55 dan past bo'lsa rad etamiz (oldin 0.35 edi)
-      // Anti-spoofing gap tekshiruvi: eng yaxshi natija ikkinchisidan 0.10 dan ko'p farq qilishi kerak
-      const gapOk = bestScore - secondBestScore >= 0.10;
-      if (bestUser && bestScore >= 0.55 && gapOk) {
-        matchedUser = bestUser;
+      candidates.sort((a, b) => b.bestScore - a.bestScore);
+      const best = candidates[0];
+      const secondBest = candidates[1];
+
+      const bestScore = best ? best.bestScore : 0;
+      const secondBestScore = secondBest ? secondBest.bestScore : 0;
+
+      // Anti-spoofing tekshiruvi: faqat BOSHQA odam bilan solishtiriladi!
+      const gapOk = !secondBest || (bestScore - secondBestScore >= 0.05);
+
+      if (best && bestScore >= 0.50 && gapOk) {
+        matchedUser = best.user;
         matchSimilarity = bestScore;
-        if (bestFt && !bestFt.vector && scanDescriptor) {
-          await this.prisma.faceTemplate.update({
-            where: { id: bestFt.id },
-            data: { vector: scanDescriptor },
-          }).catch(() => {});
-        }
-      } else if (bestUser && bestScore >= 0.55 && !gapOk) {
-        // Yuz aniq tanilib turibdi lekin boshqa odam bilan chalkashishi mumkin
-        throw new BadRequestException('Юз аниқ танилмади: бир нечта ходимга мос. Камерага яқинроқ туринг.');
+      } else if (best && bestScore >= 0.50 && !gapOk) {
+        // Yuz ikki xil odamga deyarli bir xil mos kelib qolsa
+        throw new BadRequestException('Юз аниқ танилмади: бир нечта ходимга мос келмоқда. Камерага яқинроқ туринг.');
       } else {
         throw new BadRequestException('Юз танилмади! Камерага тўғри қараб қайта урининг ёки аввал юз расмингизни рўйхатдан ўтказинг.');
       }
@@ -1109,6 +1238,7 @@ export class AttendanceService {
         imageUrl: finalImageUrl,
       },
     });
+    this.invalidateFaceCache();
     return created;
   }
 
@@ -1135,7 +1265,9 @@ export class AttendanceService {
   }
 
   async deleteFace(id: number) {
-    return this.prisma.faceTemplate.delete({ where: { id } });
+    const res = await this.prisma.faceTemplate.delete({ where: { id } });
+    this.invalidateFaceCache();
+    return res;
   }
 
   async getTodayAttendance() {

@@ -17,6 +17,23 @@ export class AttendanceController {
     return this.attendanceService.expressScan(body);
   }
 
+  // ===== Diagnostic Camera / GPS Test Endpoint =====
+  @Post('camera-gps-test')
+  cameraGpsTest(@Body() body: any, @UploadedFiles() files?: any) {
+    return {
+      status: 'ok',
+      message: 'Camera and GPS diagnostic data received successfully',
+      receivedAt: new Date().toISOString(),
+      gps: {
+        latitude: body.latitude,
+        longitude: body.longitude,
+        accuracy: body.accuracy,
+      },
+      hasPhoto: Boolean(body.photo || body.image_base64 || (files && files.length)),
+      userAgent: body.userAgent || 'Unknown',
+    };
+  }
+
   // ===== Kiosk Employees List =====
   @Get('attendance/kiosk-employees')
   getKioskEmployees() {
