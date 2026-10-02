@@ -3236,10 +3236,37 @@ export class TransactionService {
       }
     }
 
+    // Basic user select without heavy passport images
+    const userSafeSelect = {
+      id: true,
+      firstName: true,
+      lastName: true,
+      username: true,
+      phone: true,
+      role: true,
+      branchId: true,
+      storeId: true,
+      status: true,
+      position: true,
+      monthlySalary: true,
+      branch: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+
+    const miniUserSelect = {
+      id: true,
+      firstName: true,
+      lastName: true,
+      username: true,
+      phone: true,
+      role: true,
+    };
+
     // Fetch user
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { branch: true }
+      select: userSafeSelect
     });
 
     // Fetch bonuses with date filtering
@@ -3255,9 +3282,9 @@ export class TransactionService {
         } : {})
       },
       include: {
-        user: true,
+        user: { select: miniUserSelect },
         branch: true,
-        createdBy: true
+        createdBy: { select: miniUserSelect }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -3284,8 +3311,8 @@ export class TransactionService {
       },
       include: {
         customer: true,
-        user: true,
-        soldBy: true,
+        user: { select: miniUserSelect },
+        soldBy: { select: miniUserSelect },
         items: {
           include: {
             product: true
@@ -3315,7 +3342,15 @@ export class TransactionService {
       },
       include: {
         product: true,
-        transaction: true
+        transaction: {
+          select: {
+            id: true,
+            createdAt: true,
+            total: true,
+            finalTotal: true,
+            receiptId: true,
+          }
+        }
       }
     });
 
