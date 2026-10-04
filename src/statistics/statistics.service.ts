@@ -347,7 +347,8 @@ export class StatisticsService {
       let totalProfit = 0;
       for (const b of userBonuses) {
         if (b.description) {
-          const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d\s,.'-]+?)(?:\s*(?:som|сўм|so'm|$|,))/i) || b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
+          const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d\s,.'-]+?)\s*(?:som|сўм|so['`]?m)/i) ||
+                              b.description.match(/Sof ortiqcha:\s*([\d,.'-]+)/i);
           if (matchProfit) {
             const valStr = matchProfit[1].replace(/[\s,']/g, '');
             totalProfit += parseFloat(valStr) || 0;
