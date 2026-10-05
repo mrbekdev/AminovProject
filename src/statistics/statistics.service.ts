@@ -1542,10 +1542,22 @@ export class StatisticsService {
     if (startDate || endDate) {
       bonusWhere.createdAt = {};
       if (startDate) {
-        bonusWhere.createdAt.gte = new Date(`${startDate}T00:00:00`);
+        const start = new Date(startDate);
+        const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+        if (!isUTC) {
+          start.setUTCHours(start.getUTCHours() - 5);
+        }
+        bonusWhere.createdAt.gte = start;
       }
       if (endDate) {
-        bonusWhere.createdAt.lte = new Date(`${endDate}T23:59:59`);
+        const end = new Date(endDate);
+        const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+        if (!isUTC) {
+          end.setUTCDate(end.getUTCDate() + 1);
+          end.setUTCHours(end.getUTCHours() - 5);
+          end.setTime(end.getTime() - 1);
+        }
+        bonusWhere.createdAt.lte = end;
       }
     }
 
@@ -1559,9 +1571,10 @@ export class StatisticsService {
     let totalProfit = 0;
     for (const b of bonuses) {
       if (b.description) {
-        const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d,.-]+)/i);
+        const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d\s,.'-]+?)\s*(?:som|сўм|so['`]?m)/i) ||
+                            b.description.match(/Sof ortiqcha:\s*([\d,.'-]+)/i);
         if (matchProfit) {
-          const valStr = matchProfit[1].replace(/,/g, '');
+          const valStr = matchProfit[1].replace(/[\s,']/g, '');
           totalProfit += parseFloat(valStr) || 0;
         }
       }
@@ -1569,12 +1582,12 @@ export class StatisticsService {
 
     // Fetch daily expenses
     const expenses = await this.prisma.dailyExpense.findMany();
-    const startBound = startDate ? new Date(`${startDate}T00:00:00`) : null;
-    const endBound = endDate ? new Date(`${endDate}T23:59:59`) : null;
+    const startBound = startDate ? new Date(bonusWhere.createdAt?.gte || `${startDate}T00:00:00`) : null;
+    const endBound = endDate ? new Date(bonusWhere.createdAt?.lte || `${endDate}T23:59:59`) : null;
 
     const expensesTotal = expenses
       .filter((ex) => {
-        if (branchId) {
+        if (branchId && (ex as any).branchId && (ex as any).branchId !== branchId) {
           return false;
         }
         const createdAt = ex.createdAt ? new Date(ex.createdAt) : null;

@@ -69,11 +69,15 @@ export class UserService {
     // Always handle allowedBranches for all roles
     let finalAllowedBranches = allowedBranches || [];
     if (finalAllowedBranches.length === 0) {
-      const allBranches = await this.prisma.branch.findMany({
-        where: { status: 'ACTIVE' },
-        select: { id: true }
-      });
-      finalAllowedBranches = allBranches.map(b => b.id);
+      if (userData.branchId) {
+        finalAllowedBranches = [userData.branchId];
+      } else {
+        const allBranches = await this.prisma.branch.findMany({
+          where: { status: 'ACTIVE' },
+          select: { id: true }
+        });
+        finalAllowedBranches = allBranches.map(b => b.id);
+      }
     }
 
     data.allowedBranches = {
@@ -170,11 +174,15 @@ export class UserService {
 
       let finalAllowedBranches = allowedBranches;
       if (finalAllowedBranches.length === 0) {
-        const allBranches = await this.prisma.branch.findMany({
-          where: { status: 'ACTIVE' },
-          select: { id: true }
-        });
-        finalAllowedBranches = allBranches.map(b => b.id);
+        if (userData.branchId) {
+          finalAllowedBranches = [userData.branchId];
+        } else if (userData.role === 'ADMIN' || userData.role === 'BIGADMIN') {
+          const allBranches = await this.prisma.branch.findMany({
+            where: { status: 'ACTIVE' },
+            select: { id: true }
+          });
+          finalAllowedBranches = allBranches.map(b => b.id);
+        }
       }
 
       data.allowedBranches = {

@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as zlib from 'zlib';
 
 const execAsync = promisify(exec);
 
@@ -33,7 +34,12 @@ export class TelegramBackupService implements OnModuleInit {
     }
 
     try {
-      this.bot = new TelegramBot(token, { polling: false });
+      this.bot = new TelegramBot(token, {
+        polling: false,
+        request: {
+          timeout: 300000, // 5 minutes timeout for large file uploads
+        } as any,
+      });
       this.isReady = true;
 
       // Create backups directory
@@ -44,10 +50,14 @@ export class TelegramBackupService implements OnModuleInit {
 
       this.logger.log('✅ Telegram Backup Bot tayyor!');
 
+      // Clean any existing leftover backups from server storage immediately
+      this.cleanAllBackups();
+
       // Send startup notification
       this.sendTextMessage(
         '🟢 <b>Aminov DataBase Backup Bot</b> ishga tushdi!\n\n' +
         '📅 Har kuni yarim tunda (soat 00:00 da) database backup olinib yuboriladi.\n' +
+        '🗜️ Katta hajmli bazalar avtomatik ravishda siqiladi (.sql.gz) va kerak bo\'lsa bo\'laklarga bo\'linadi.\n' +
         `🕐 Boshlangan vaqt: ${new Date().toLocaleString('uz-UZ')}`,
       );
     } catch (err) {
@@ -55,10 +65,20 @@ export class TelegramBackupService implements OnModuleInit {
     }
   }
 
+  getStatus() {
+    return {
+      isReady: this.isReady,
+      chatIdConfigured: !!this.chatId,
+      backupDir: this.backupDir,
+    };
+  }
+
   // ─── Run every day at midnight ──────────────────────────────────────────────
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  async runBackup() {
-    if (!this.isReady) return;
+  async runBackup(): Promise<{ success: boolean; message: string; fileName?: string; rawSizeMB?: string; gzSizeMB?: string }> {
+    if (!this.isReady) {
+      return { success: false, message: 'Telegram backup bot tayyor emas yoki token/chatId kiritilmagan' };
+    }
 
     const now = new Date();
     const timestamp = now
@@ -67,17 +87,45 @@ export class TelegramBackupService implements OnModuleInit {
       .replace('T', '_')
       .slice(0, 19);
 
-    const fileName = `aminov_backup_${timestamp}.sql`;
-    const filePath = path.join(this.backupDir, fileName);
+    const baseName = `aminov_backup_${timestamp}`;
+    const rawSqlPath = path.join(this.backupDir, `${baseName}.sql`);
+    const gzFileName = `${baseName}.sql.gz`;
+    const gzFilePath = path.join(this.backupDir, gzFileName);
 
     try {
-      await this.dumpDatabase(filePath);
-      const stats = fs.statSync(filePath);
-      const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
+      this.logger.log(`🔄 Database dump boshlanmoqda...`);
+      const databaseName = await this.dumpDatabase(rawSqlPath);
 
-      await this.sendBackupFile(filePath, fileName, sizeMB, now);
+      const rawStats = fs.statSync(rawSqlPath);
+      const rawSizeMB = (rawStats.size / 1024 / 1024).toFixed(2);
+      this.logger.log(`📦 SQL dump tayyor: ${rawSizeMB} MB. Siqish boshlanmoqda (gzip)...`);
 
-      this.logger.log(`✅ Backup yuborildi: ${fileName} (${sizeMB} MB)`);
+      // Compress SQL to .sql.gz and prepend header via stream without loading entire file to RAM
+      const header = this.buildSqlHeader(databaseName, now);
+      await this.compressSqlFile(rawSqlPath, gzFilePath, header);
+
+      // Clean up raw uncompressed SQL file
+      try {
+        fs.unlinkSync(rawSqlPath);
+      } catch (e) {
+        this.logger.warn(`Vaqtinchalik SQL faylni o'chirishda ogohlantirish: ${e.message}`);
+      }
+
+      const gzStats = fs.statSync(gzFilePath);
+      const gzSizeMB = (gzStats.size / 1024 / 1024).toFixed(2);
+      this.logger.log(`🗜️ Siqilgan fayl tayyor: ${gzSizeMB} MB (Asl hajmi: ${rawSizeMB} MB)`);
+
+      // Send backup file (or chunked parts if > 48MB)
+      await this.sendBackupFiles(gzFilePath, gzFileName, rawSizeMB, gzSizeMB, now);
+
+      this.logger.log(`✅ Backup yuborildi: ${gzFileName} (${gzSizeMB} MB)`);
+      return {
+        success: true,
+        message: 'Backup muvaffaqiyatli olindi va Telegramga yuborildi',
+        fileName: gzFileName,
+        rawSizeMB,
+        gzSizeMB,
+      };
     } catch (err) {
       this.logger.error('❌ Backup xatoligi:', err.message);
       await this.sendTextMessage(
@@ -85,14 +133,18 @@ export class TelegramBackupService implements OnModuleInit {
         `🕐 Vaqt: ${now.toLocaleString('uz-UZ')}\n` +
         `⚠️ Xato: <code>${err.message}</code>`,
       );
+      return {
+        success: false,
+        message: err.message,
+      };
     } finally {
-      // Clean up old backup files (keep last 5)
-      this.cleanOldBackups();
+      // Clean up all temporary backup files from server completely (0 bytes left on disk)
+      this.cleanAllBackups();
     }
   }
 
   // ─── pg_dump database ────────────────────────────────────────────────────────
-  private async dumpDatabase(filePath: string): Promise<void> {
+  private async dumpDatabase(filePath: string): Promise<string> {
     const dbUrl = this.configService.get<string>('DATABASE_URL');
     if (!dbUrl) throw new Error('DATABASE_URL topilmadi');
 
@@ -137,15 +189,38 @@ export class TelegramBackupService implements OnModuleInit {
 
     const command = `"${pgDumpPath}" -U ${user} -h ${host} -p ${port} -d ${database} --no-owner --no-acl -F p -f "${filePath}"`;
 
-    const { stderr } = await execAsync(command, { env });
+    const { stderr } = await execAsync(command, { env, maxBuffer: 1024 * 1024 * 50 });
     if (stderr && !stderr.includes('WARNING')) {
       throw new Error(stderr);
     }
 
-    // Add beautiful header to the dump file
-    const originalContent = fs.readFileSync(filePath, 'utf-8');
-    const header = this.buildSqlHeader(database, new Date());
-    fs.writeFileSync(filePath, header + originalContent);
+    return database;
+  }
+
+  // ─── Compress SQL to .gz with header via streaming ──────────────────────────
+  private async compressSqlFile(
+    rawSqlPath: string,
+    gzFilePath: string,
+    header: string,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const gzip = zlib.createGzip({ level: 9 });
+      const readStream = fs.createReadStream(rawSqlPath);
+      const writeStream = fs.createWriteStream(gzFilePath);
+
+      writeStream.on('finish', () => resolve());
+      writeStream.on('error', (err) => reject(err));
+      readStream.on('error', (err) => reject(err));
+      gzip.on('error', (err) => reject(err));
+
+      gzip.pipe(writeStream);
+
+      // Write header first into gzip
+      gzip.write(Buffer.from(header, 'utf-8'));
+
+      // Pipe the raw SQL file into gzip
+      readStream.pipe(gzip);
+    });
   }
 
   private buildSqlHeader(dbName: string, date: Date): string {
@@ -169,35 +244,124 @@ export class TelegramBackupService implements OnModuleInit {
     );
   }
 
-  // ─── Send backup file to Telegram ───────────────────────────────────────────
-  private async sendBackupFile(
-    filePath: string,
-    fileName: string,
-    sizeMB: string,
+  // ─── Send backup file(s) to Telegram (with automatic splitting if > 48MB) ────
+  private async sendBackupFiles(
+    gzFilePath: string,
+    gzFileName: string,
+    rawSizeMB: string,
+    gzSizeMB: string,
     date: Date,
   ): Promise<void> {
-    const caption =
-      `🗃 <b>Aminov DataBase Ma'lumotlari</b>\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `📅 <b>Sana:</b> ${date.toLocaleDateString('uz-UZ')}\n` +
-      `🕐 <b>Vaqt:</b> ${date.toLocaleTimeString('uz-UZ')}\n` +
-      `📦 <b>Fayl:</b> <code>${fileName}</code>\n` +
-      `💾 <b>Hajmi:</b> ${sizeMB} MB\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `✅ Backup muvaffaqiyatli olindi!`;
+    const MAX_TELEGRAM_FILE_SIZE = 48 * 1024 * 1024; // 48 MB safety margin (Telegram limit is 50 MB)
+    const CHUNK_SIZE = 45 * 1024 * 1024; // 45 MB per chunk
 
-    await this.bot.sendDocument(
-      this.chatId!,
-      fs.createReadStream(filePath),
-      {
-        caption,
-        parse_mode: 'HTML',
-      },
-      {
-        filename: fileName,
-        contentType: 'application/sql',
-      },
+    const stats = fs.statSync(gzFilePath);
+
+    // If file is within Telegram limit (50 MB)
+    if (stats.size <= MAX_TELEGRAM_FILE_SIZE) {
+      const caption =
+        `🗃 <b>Aminov DataBase Ma'lumotlari</b>\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📅 <b>Sana:</b> ${date.toLocaleDateString('uz-UZ')}\n` +
+        `🕐 <b>Vaqt:</b> ${date.toLocaleTimeString('uz-UZ')}\n` +
+        `📦 <b>Fayl:</b> <code>${gzFileName}</code>\n` +
+        `💾 <b>Hajmi:</b> ${gzSizeMB} MB <i>(asl SQL hajmi: ${rawSizeMB} MB)</i>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `✅ Backup muvaffaqiyatli olindi va arxivlandi (.sql.gz)!`;
+
+      await this.bot.sendDocument(
+        this.chatId!,
+        fs.createReadStream(gzFilePath),
+        {
+          caption,
+          parse_mode: 'HTML',
+        },
+        {
+          filename: gzFileName,
+          contentType: 'application/gzip',
+        },
+      );
+      return;
+    }
+
+    // If compressed size is still > 48MB, split into multiple parts
+    const totalParts = Math.ceil(stats.size / CHUNK_SIZE);
+    this.logger.warn(
+      `⚠️ Arxiv hajmi (${gzSizeMB} MB) Telegram 50 MB limitidan oshdi! ${totalParts} ta qismga bo'lib yuborilmoqda...`,
     );
+
+    const partFiles: string[] = [];
+    const buffer = Buffer.alloc(256 * 1024);
+    const fd = fs.openSync(gzFilePath, 'r');
+    try {
+      for (let i = 0; i < totalParts; i++) {
+        const partFileName = `${gzFileName}.part${i + 1}`;
+        const partPath = path.join(this.backupDir, partFileName);
+        const outFd = fs.openSync(partPath, 'w');
+        let bytesWrittenForPart = 0;
+
+        while (bytesWrittenForPart < CHUNK_SIZE) {
+          const bytesToRead = Math.min(buffer.length, CHUNK_SIZE - bytesWrittenForPart);
+          const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, null);
+          if (bytesRead === 0) break;
+          fs.writeSync(outFd, buffer, 0, bytesRead);
+          bytesWrittenForPart += bytesRead;
+        }
+        fs.closeSync(outFd);
+        partFiles.push(partPath);
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    await this.sendTextMessage(
+      `📦 <b>Aminov DataBase Katta Hajmli Backup</b>\n\n` +
+      `⚠️ Fayl hajmi 50 MB dan katta bo'lgani uchun <b>${totalParts} ta qismga</b> bo'lindi.\n` +
+      `📊 Umumiy siqilgan hajm: <b>${gzSizeMB} MB</b> (asl SQL hajmi: <b>${rawSizeMB} MB</b>)\n` +
+      `📅 Sana: ${date.toLocaleDateString('uz-UZ')} ${date.toLocaleTimeString('uz-UZ')}`,
+    );
+
+    for (let i = 0; i < partFiles.length; i++) {
+      const partPath = partFiles[i];
+      const partFileName = path.basename(partPath);
+      const partStats = fs.statSync(partPath);
+      const partSizeMB = (partStats.size / 1024 / 1024).toFixed(2);
+
+      const caption =
+        `🗃 <b>Aminov DataBase (${i + 1}/${totalParts}-qism)</b>\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📦 <b>Fayl:</b> <code>${partFileName}</code>\n` +
+        `💾 <b>Qism hajmi:</b> ${partSizeMB} MB\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `💡 <i>Birlashtirish buyrug'i:</i>\n` +
+        `<code>cat ${gzFileName}.part* > ${gzFileName} && gunzip ${gzFileName}</code>`;
+
+      await this.bot.sendDocument(
+        this.chatId!,
+        fs.createReadStream(partPath),
+        {
+          caption,
+          parse_mode: 'HTML',
+        },
+        {
+          filename: partFileName,
+          contentType: 'application/octet-stream',
+        },
+      );
+
+      if (i < partFiles.length - 1) {
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
+
+    // Clean up temporary part files
+    for (const partPath of partFiles) {
+      try {
+        fs.unlinkSync(partPath);
+      } catch (e) {
+        // ignore
+      }
+    }
   }
 
   // ─── Send plain text message ─────────────────────────────────────────────────
@@ -210,25 +374,28 @@ export class TelegramBackupService implements OnModuleInit {
     }
   }
 
-  // ─── Delete old backup files, keep last 5 ───────────────────────────────────
-  private cleanOldBackups(): void {
+  // ─── Delete all backup files from server disk completely ───────────────────
+  private cleanAllBackups(): void {
     try {
-      const files = fs
-        .readdirSync(this.backupDir)
-        .filter((f) => f.startsWith('aminov_backup_') && f.endsWith('.sql'))
-        .map((f) => ({
-          name: f,
-          time: fs.statSync(path.join(this.backupDir, f)).mtime.getTime(),
-        }))
-        .sort((a, b) => b.time - a.time);
-
-      // Keep only last 5, delete the rest
-      files.slice(5).forEach(({ name }) => {
-        fs.unlinkSync(path.join(this.backupDir, name));
-        this.logger.log(`🗑️  Eski backup o'chirildi: ${name}`);
-      });
+      if (!fs.existsSync(this.backupDir)) return;
+      const files = fs.readdirSync(this.backupDir);
+      for (const file of files) {
+        if (
+          file.startsWith('aminov_backup_') ||
+          file.endsWith('.sql') ||
+          file.endsWith('.sql.gz') ||
+          file.includes('.part')
+        ) {
+          try {
+            fs.unlinkSync(path.join(this.backupDir, file));
+            this.logger.log(`🗑️  Backup server diskidan tozalandi: ${file}`);
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
     } catch (err) {
-      this.logger.warn('Eski backuplarni tozalashda xato:', err.message);
+      this.logger.warn('Backuplarni tozalashda xato:', err.message);
     }
   }
 }

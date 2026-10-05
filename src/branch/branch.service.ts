@@ -37,9 +37,24 @@ export class BranchService {
     });
   }
 
-  async findAll() {
+  async findAll(user?: any) {
+    const where: any = { status: { not: 'DELETED' } };
+
+    if (user && user.role !== 'BIGADMIN' && user.role !== 'ADMIN') {
+      const allowedBranchIds = (user.allowedBranches || [])
+        .map((ab: any) => ab.branchId || ab.branch?.id || ab.id)
+        .filter((id: any) => id != null && !isNaN(Number(id)))
+        .map(Number);
+
+      if (allowedBranchIds.length > 0) {
+        where.id = { in: allowedBranchIds };
+      } else if (user.branchId) {
+        where.id = user.branchId;
+      }
+    }
+
     return this.prisma.branch.findMany({
-      where: { status: { not: 'DELETED' } },
+      where,
       select: {
         id: true,
         name: true,

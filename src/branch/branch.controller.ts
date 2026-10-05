@@ -8,6 +8,8 @@ import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+
 @ApiTags('Branches')
 @Controller('branches')
 @UseGuards(JwtAuthGuard)
@@ -39,8 +41,8 @@ export class BranchController {
 
   @Get()
   @ApiOperation({ summary: 'Barcha filiallarni olish' })
-  async findAll() {
-    return this.branchService.findAll();
+  async findAll(@CurrentUser() user: any) {
+    return this.branchService.findAll(user);
   }
 
   @Put(':id')
