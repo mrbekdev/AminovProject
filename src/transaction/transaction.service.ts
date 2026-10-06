@@ -2005,6 +2005,7 @@ export class TransactionService {
         downPayment: true,
         amountPaid: true,
         creditRepaymentAmount: true,
+        status: true,
         remainingBalance: true,
         createdAt: true,
         customer: {
@@ -2015,6 +2016,7 @@ export class TransactionService {
             payment: true,
             paidAmount: true,
             isPaid: true,
+            remainingBalance: true,
             month: true,
             rating: true,
             installmentType: true,
@@ -2051,22 +2053,64 @@ export class TransactionService {
       let txOutstanding = 0;
       let txPaidOnDebt = 0;
 
+      const isTxCompleted = String(t.status || '').toUpperCase() === 'COMPLETED' ||
+        (t.remainingBalance !== null && t.remainingBalance !== undefined && Number(t.remainingBalance) === 0);
+      const creditRepaid = Number((t as any).creditRepaymentAmount || 0);
+
       const baseAmount = Number((t as any).finalTotal || (t as any).total || 0);
       const downPayment = Number((t as any).downPayment || 0);
       const txDebtMade = Math.max(0, baseAmount - downPayment);
 
       if (schedules.length > 0) {
         txTotalDebt = schedules.reduce((sum, s) => sum + Number(s.payment || 0), 0);
-        txPaidOnDebt = schedules.reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
-        txOutstanding = schedules.reduce((sum, s) => sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0)), 0);
+
+        let schedPaidSum = 0;
+        let schedOutstandingSum = 0;
+
+        for (const s of schedules) {
+          const sPayment = Number(s.payment || 0);
+          const sPaid = Number(s.paidAmount || 0);
+          const sIsPaid = s.isPaid === true ||
+            (s.remainingBalance !== null && s.remainingBalance !== undefined && Number(s.remainingBalance) === 0);
+
+          if (sIsPaid || isTxCompleted) {
+            schedPaidSum += Math.max(sPaid, sPayment);
+            // Outstanding is 0 for paid schedule
+          } else {
+            schedPaidSum += sPaid;
+            schedOutstandingSum += Math.max(0, sPayment - sPaid);
+          }
+        }
+
+        txPaidOnDebt = Math.max(schedPaidSum, creditRepaid);
+
+        if (isTxCompleted || (txTotalDebt > 0 && txPaidOnDebt >= txTotalDebt)) {
+          txOutstanding = 0;
+        } else {
+          txOutstanding = schedOutstandingSum;
+          if (creditRepaid > schedPaidSum) {
+            txOutstanding = Math.max(0, txTotalDebt - txPaidOnDebt);
+          }
+          if (t.remainingBalance !== null && t.remainingBalance !== undefined) {
+            txOutstanding = Math.min(txOutstanding, Math.max(0, Number(t.remainingBalance)));
+          }
+        }
       } else {
-        const creditRepaid = Number((t as any).creditRepaymentAmount || 0);
         const uydanAmount = payments.filter(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()))
           .reduce((s, p) => s + Number(p.amount || 0), 0);
         const debtPortion = uydanAmount > 0 ? uydanAmount : txDebtMade;
         txTotalDebt = debtPortion;
-        txPaidOnDebt = Math.min(debtPortion, creditRepaid);
-        txOutstanding = Math.max(0, debtPortion - creditRepaid);
+
+        if (isTxCompleted || (debtPortion > 0 && creditRepaid >= debtPortion)) {
+          txPaidOnDebt = debtPortion;
+          txOutstanding = 0;
+        } else {
+          txPaidOnDebt = Math.min(debtPortion, creditRepaid);
+          txOutstanding = Math.max(0, debtPortion - creditRepaid);
+          if (t.remainingBalance !== null && t.remainingBalance !== undefined) {
+            txOutstanding = Math.min(txOutstanding, Math.max(0, Number(t.remainingBalance)));
+          }
+        }
       }
 
       // Aggregate rating counts
@@ -2350,20 +2394,56 @@ export class TransactionService {
   async createTransfer(transferData: any) {
     const { fromBranchId, toBranchId, items, soldByUserId, userId, ...data } = transferData;
 
-    // Umumiy summani hisoblash
-    const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const numFromBranchId = Number(fromBranchId);
+    const numToBranchId = Number(toBranchId);
 
-    // Qaysi user o'tkazma qil`ganini aniqlash
+    if (!numFromBranchId || isNaN(numFromBranchId) || !numToBranchId || isNaN(numToBranchId)) {
+      throw new BadRequestException("Ikkala filial ham to'g'ri tanlanishi shart");
+    }
+
+    if (numFromBranchId === numToBranchId) {
+      throw new BadRequestException("Jo'natuvchi va qabul qiluvchi filiallar har xil bo'lishi kerak");
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException("Transfer qilinadigan mahsulotlar ro'yxati bo'sh");
+    }
+
+    // Qaysi user o'tkazma qilganini aniqlash
     const effectiveUserId = soldByUserId || userId || data.userId;
 
     return this.prisma.$transaction(async (tx) => {
+      // 1. O'tkazishdan oldin har bir mahsulotni mavjudligini va yetarli miqdorda ekanligini qat'iy tekshiramiz
+      for (const item of items) {
+        const pId = Number(item.productId);
+        const reqQty = Number(item.quantity) || 0;
+        if (!pId || reqQty <= 0) {
+          throw new BadRequestException("Noto'g'ri mahsulot yoki miqdor ko'rsatilgan");
+        }
+
+        const source = await tx.product.findUnique({ where: { id: pId } });
+        if (!source) {
+          throw new BadRequestException(`Mahsulot topilmadi (ID: ${pId})`);
+        }
+
+        const avail = Number(source.quantity) || 0;
+        if (avail < reqQty) {
+          throw new BadRequestException(
+            `"${source.name}" mahsuloti yetarli emas (Omborda: ${avail} ta, So'ralgan: ${reqQty} ta)`
+          );
+        }
+      }
+
+      // Umumiy summani hisoblash
+      const total = items.reduce((sum, item) => sum + ((Number(item.price) || 0) * (Number(item.quantity) || 0)), 0);
+
       // O'tkazma yaratish
       const transfer = await tx.transaction.create({
         data: {
           ...data,
           type: TransactionType.TRANSFER,
-          fromBranchId: fromBranchId,
-          toBranchId: toBranchId,
+          fromBranchId: numFromBranchId,
+          toBranchId: numToBranchId,
           userId: userId || effectiveUserId,
           soldByUserId: effectiveUserId,
           status: TransactionStatus.PENDING,
@@ -2371,12 +2451,12 @@ export class TransactionService {
           finalTotal: total, // Transfer uchun total va finalTotal bir xil
           items: {
             create: items.map(item => ({
-              productId: item.productId,
-              quantity: item.quantity,
-              price: item.price,
-              sellingPrice: item.sellingPrice || item.price,
-              originalPrice: item.originalPrice || item.price,
-              total: item.price * item.quantity
+              productId: Number(item.productId),
+              quantity: Number(item.quantity),
+              price: Number(item.price) || 0,
+              sellingPrice: Number(item.sellingPrice ?? item.price ?? 0),
+              originalPrice: Number(item.originalPrice ?? item.price ?? 0),
+              total: (Number(item.price) || 0) * (Number(item.quantity) || 0)
             }))
           }
         },
@@ -2608,7 +2688,7 @@ export class TransactionService {
       const itemMarketPrice = Number((item as any).product?.marketPrice ?? sourceProduct.marketPrice ?? 0);
       const itemBonusPct = (item as any).product?.bonusPercentage ?? sourceProduct?.bonusPercentage ?? 0;
       const itemMonths = sourceProduct?.months ?? (item as any).product?.months;
-      const itemCategoryId = (item as any).product?.categoryId || sourceProduct.categoryId;
+      const itemCategoryId = (item as any).product?.categoryId || sourceProduct?.categoryId || 1;
 
       // 5. Maqsad filialga qo'shish yoki yangi yaratish
       if (targetProduct && !shouldCreateNew) {
@@ -3723,15 +3803,31 @@ export class TransactionService {
 
         let paidAmt = 0;
         let remainingAmt = 0;
+        const isTxCompleted = String(t.status || '').toUpperCase() === 'COMPLETED' ||
+          (t.remainingBalance !== null && t.remainingBalance !== undefined && Number(t.remainingBalance) === 0);
         const schedules = (t.paymentSchedules || []).filter((s: any) => s.installmentType !== 'INSTALLMENT');
         if (schedules.length > 0) {
-          remainingAmt = schedules.reduce((sum, s) => sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0)), 0);
-          paidAmt = downAmt + schedules.reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
+          if (isTxCompleted) {
+            remainingAmt = 0;
+            paidAmt = downAmt + schedules.reduce((sum, s) => sum + Math.max(Number(s.paidAmount || 0), Number(s.payment || 0)), 0);
+          } else {
+            remainingAmt = schedules.reduce((sum, s) => {
+              if (s.isPaid || (s.remainingBalance !== null && Number(s.remainingBalance) === 0)) return sum;
+              return sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0));
+            }, 0);
+            paidAmt = downAmt + schedules.reduce((sum, s) => {
+              if (s.isPaid) return sum + Math.max(Number(s.paidAmount || 0), Number(s.payment || 0));
+              return sum + Number(s.paidAmount || 0);
+            }, 0);
+          }
         } else {
           const creditRepaid = Number(t.creditRepaymentAmount || 0);
           const uydanAmount = (t.payments || []).filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
             .reduce((s, p) => s + Number(p.amount || 0), 0);
-          if (uydanAmount > 0) {
+          if (isTxCompleted) {
+            remainingAmt = 0;
+            paidAmt = soldAmt;
+          } else if (uydanAmount > 0) {
             remainingAmt = Math.max(0, uydanAmount - creditRepaid);
             paidAmt = (soldAmt - uydanAmount) + creditRepaid;
           } else if (isDebtPaymentType) {

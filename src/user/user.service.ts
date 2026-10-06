@@ -122,7 +122,6 @@ export class UserService {
       where,
       include: { 
         branch: true,
-        faceTemplates: true,
         allowedBranches: {
           include: {
             branch: true

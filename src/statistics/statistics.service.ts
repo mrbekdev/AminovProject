@@ -1099,10 +1099,14 @@ export class StatisticsService {
           total: true,
           downPayment: true,
           creditRepaymentAmount: true,
+          remainingBalance: true,
+          status: true,
           paymentSchedules: {
             select: {
               payment: true,
               paidAmount: true,
+              isPaid: true,
+              remainingBalance: true,
             }
           },
           payments: {
@@ -1112,12 +1116,22 @@ export class StatisticsService {
       });
 
       for (const t of transactions) {
+        const isTxCompleted = String(t.status || '').toUpperCase() === 'COMPLETED' ||
+          (t.remainingBalance !== null && t.remainingBalance !== undefined && Number(t.remainingBalance) === 0);
         const schedules = t.paymentSchedules || [];
         const payments = t.payments || [];
 
         let outstanding = 0;
-        if (schedules.length > 0) {
-          outstanding = schedules.reduce((sum, s) => sum + Math.max(0, (s.payment || 0) - (s.paidAmount || 0)), 0);
+        if (isTxCompleted) {
+          outstanding = 0;
+        } else if (schedules.length > 0) {
+          outstanding = schedules.reduce((sum, s) => {
+            if (s.isPaid || (s.remainingBalance !== null && Number(s.remainingBalance) === 0)) return sum;
+            return sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0));
+          }, 0);
+          if (t.remainingBalance !== null && t.remainingBalance !== undefined) {
+            outstanding = Math.min(outstanding, Math.max(0, Number(t.remainingBalance)));
+          }
         } else {
           const baseAmount = Number((t as any).finalTotal || (t as any).total || 0);
           const downPayment = Number((t as any).downPayment || 0);
@@ -1125,6 +1139,9 @@ export class StatisticsService {
           const uydanAmount = payments.filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
             .reduce((s, p) => s + Number(p.amount || 0), 0);
           outstanding = Math.max(0, baseAmount - downPayment - creditRepaid) + uydanAmount;
+          if (t.remainingBalance !== null && t.remainingBalance !== undefined) {
+            outstanding = Math.min(outstanding, Math.max(0, Number(t.remainingBalance)));
+          }
         }
         totalOutstandingDebts += outstanding;
 

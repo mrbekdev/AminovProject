@@ -5,9 +5,16 @@ import { UpdateCurrencyExchangeRateDto } from './dto/update-currency-exchange-ra
 
 @Injectable()
 export class CurrencyExchangeRateService {
+  private rateCache = new Map<string, { rate: number; expiresAt: number }>();
+
   constructor(private prisma: PrismaService) {}
 
+  private clearCache() {
+    this.rateCache.clear();
+  }
+
   async create(createCurrencyExchangeRateDto: CreateCurrencyExchangeRateDto, userId: number) {
+    this.clearCache();
     return this.prisma.currencyExchangeRate.create({
       data: {
         ...createCurrencyExchangeRateDto,
@@ -116,6 +123,7 @@ export class CurrencyExchangeRateService {
   }
 
   async update(id: number, updateCurrencyExchangeRateDto: UpdateCurrencyExchangeRateDto) {
+    this.clearCache();
     return this.prisma.currencyExchangeRate.update({
       where: { id },
       data: updateCurrencyExchangeRateDto,
@@ -133,6 +141,7 @@ export class CurrencyExchangeRateService {
   }
 
   async remove(id: number) {
+    this.clearCache();
     return this.prisma.currencyExchangeRate.update({
       where: { id },
       data: { isActive: false },
@@ -140,8 +149,15 @@ export class CurrencyExchangeRateService {
   }
 
   async getCurrentRate(fromCurrency: string, toCurrency: string, branchId?: number) {
-    const rate = await this.findByCurrencies(fromCurrency, toCurrency, branchId);
-    return rate?.rate || 1; // Default to 1 if no rate found
+    const key = `${fromCurrency}_${toCurrency}_${branchId || 'global'}`;
+    const cached = this.rateCache.get(key);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.rate;
+    }
+    const rateRecord = await this.findByCurrencies(fromCurrency, toCurrency, branchId);
+    const rateVal = rateRecord?.rate || 1;
+    this.rateCache.set(key, { rate: rateVal, expiresAt: Date.now() + 60000 });
+    return rateVal;
   }
 
   async convertCurrency(amount: number, fromCurrency: string, toCurrency: string, branchId?: number) {
