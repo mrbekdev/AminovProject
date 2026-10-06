@@ -33,9 +33,10 @@ async function bootstrap() {
     res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, ' + (req.headers['access-control-request-headers'] || '*'));
     res.setHeader('Access-Control-Expose-Headers', '*');
+    res.setHeader('Access-Control-Max-Age', '86400');
 
     if (req.method === 'OPTIONS') {
-      res.status(200).end();
+      res.status(204).end();
       return;
     }
     next();
@@ -47,6 +48,7 @@ async function bootstrap() {
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: '*',
     exposedHeaders: '*',
+    maxAge: 86400,
   });
 
   app.use(json({ limit: '2000mb' }));
