@@ -20,7 +20,7 @@ interface AuthenticatedSocket extends Socket {
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: true,
     methods: ['GET', 'POST'],
     credentials: true,
   },

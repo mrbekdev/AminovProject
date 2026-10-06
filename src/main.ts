@@ -21,27 +21,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  // Global Unrestricted CORS Middleware
-  app.use((req: any, res: any, next: any) => {
-    const origin = req.headers.origin;
-    if (origin) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-    } else {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, ' + (req.headers['access-control-request-headers'] || '*'));
-    res.setHeader('Access-Control-Expose-Headers', '*');
-    res.setHeader('Access-Control-Max-Age', '86400');
-
-    if (req.method === 'OPTIONS') {
-      res.status(204).end();
-      return;
-    }
-    next();
-  });
-
+  // Enable unrestricted CORS with full origin reflection, credentials, and preflight caching
   app.enableCors({
     origin: true,
     credentials: true,
