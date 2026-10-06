@@ -26,8 +26,6 @@ async function bootstrap() {
     origin: true,
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: '*',
-    exposedHeaders: '*',
     maxAge: 86400,
   });
 
