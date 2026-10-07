@@ -407,10 +407,125 @@ async update(
   const isMarketPriceUpdated = updateProductDto.marketPrice !== undefined && updateProductDto.marketPrice !== product.marketPrice;
   const isBonusUpdated = updateProductDto.bonusPercentage !== undefined && updateProductDto.bonusPercentage !== product.bonusPercentage;
 
+  const targetBranchId = updateProductDto.branchId !== undefined ? updateProductDto.branchId : product.branchId;
+  const targetBarcode = updateProductDto.barcode !== undefined ? updateProductDto.barcode : product.barcode;
+
+  // If changing branch or barcode, check for collision on unique [barcode, branchId]
+  if (targetBarcode && (targetBranchId !== product.branchId || (updateProductDto.barcode && updateProductDto.barcode !== product.barcode))) {
+    const existingInTarget = await prismaClient.product.findFirst({
+      where: {
+        barcode: targetBarcode,
+        branchId: targetBranchId,
+        id: { not: id },
+      },
+    });
+
+    if (existingInTarget) {
+      if (existingInTarget.isDeleted) {
+        // Soft-deleted record in target branch has this barcode.
+        // Rename its barcode to release the unique constraint:
+        await prismaClient.product.update({
+          where: { id: existingInTarget.id },
+          data: {
+            barcode: `${existingInTarget.barcode}_old_${existingInTarget.id}_${Date.now()}`,
+          },
+        });
+      } else {
+        // Target branch already has an ACTIVE product with this barcode!
+        // Merge this product into the existing target product:
+        const transferQty = updateProductDto.quantity !== undefined ? updateProductDto.quantity : product.quantity;
+        const newMergedQty = (existingInTarget.quantity || 0) + transferQty;
+
+        const mergedProduct = await prismaClient.product.update({
+          where: { id: existingInTarget.id },
+          data: {
+            name: updateProductDto.name ?? existingInTarget.name,
+            model: updateProductDto.model !== undefined ? updateProductDto.model : existingInTarget.model,
+            categoryId: updateProductDto.categoryId ?? existingInTarget.categoryId,
+            price: updateProductDto.price !== undefined ? updateProductDto.price : existingInTarget.price,
+            marketPrice: updateProductDto.marketPrice !== undefined ? updateProductDto.marketPrice : existingInTarget.marketPrice,
+            months: updateProductDto.months !== undefined ? updateProductDto.months : existingInTarget.months,
+            bonusPercentage: updateProductDto.bonusPercentage !== undefined ? updateProductDto.bonusPercentage : existingInTarget.bonusPercentage,
+            quantity: newMergedQty,
+            status: newMergedQty > 0 ? 'IN_STORE' : existingInTarget.status,
+            isDeleted: false,
+            deletedAt: null,
+          },
+          include: {
+            category: true,
+            branch: true,
+          },
+        });
+
+        // Soft delete the original source product from the old branch
+        await prismaClient.product.update({
+          where: { id: product.id },
+          data: {
+            quantity: 0,
+            status: 'SOLD',
+            isDeleted: true,
+            deletedAt: new Date(),
+          },
+        });
+
+        // Convert price to som for display
+        const priceInSom = await this.currencyExchangeRateService.convertCurrency(
+          mergedProduct.price,
+          'USD',
+          'UZS',
+          mergedProduct.branchId,
+        );
+
+        // Sync other products if price or bonus changed
+        const isTargetPriceUpdated = updateProductDto.price !== undefined && updateProductDto.price !== existingInTarget.price;
+        const isTargetMarketPriceUpdated = updateProductDto.marketPrice !== undefined && updateProductDto.marketPrice !== existingInTarget.marketPrice;
+        const isTargetBonusUpdated = updateProductDto.bonusPercentage !== undefined && updateProductDto.bonusPercentage !== existingInTarget.bonusPercentage;
+
+        if ((isTargetPriceUpdated || isTargetMarketPriceUpdated || isTargetBonusUpdated) && mergedProduct.name && mergedProduct.model) {
+          const updateData: any = {};
+          if (isTargetPriceUpdated) updateData.price = mergedProduct.price;
+          if (isTargetMarketPriceUpdated) updateData.marketPrice = mergedProduct.marketPrice;
+          if (isTargetBonusUpdated) updateData.bonusPercentage = mergedProduct.bonusPercentage;
+
+          await prismaClient.product.updateMany({
+            where: {
+              name: mergedProduct.name,
+              model: mergedProduct.model,
+              id: { not: mergedProduct.id },
+            },
+            data: updateData,
+          });
+        }
+
+        try {
+          await this.historyService.createLog({
+            productId: mergedProduct.id,
+            actionType: 'UPDATED',
+            performedById: userId,
+            description: `Filial o'zgartirildi: "${product.branchId}" ➔ "${targetBranchId}" (Mavjud tovar bilan birlashtirildi, ${transferQty} dona qo'shildi)`,
+            oldValues: { branchId: product.branchId, quantity: existingInTarget.quantity },
+            newValues: { branchId: targetBranchId, quantity: newMergedQty },
+            quantityChange: transferQty,
+          });
+        } catch (err) {
+          console.error('Error logging merged product history:', err);
+        }
+
+        return {
+          ...mergedProduct,
+          priceInSom,
+          priceInDollar: mergedProduct.price,
+          _mergedFromId: id,
+        };
+      }
+    }
+  }
+
   const updatedProduct = await prismaClient.product.update({
     where: { id },
     data: {
       name: updateProductDto.name,
+      barcode: updateProductDto.barcode !== undefined ? updateProductDto.barcode : undefined,
       categoryId: updateProductDto.categoryId,
       branchId: updateProductDto.branchId,
       price: updateProductDto.price,
@@ -420,6 +535,10 @@ async update(
       status: updateProductDto.status,
       quantity: updateProductDto.quantity,
       bonusPercentage: updateProductDto.bonusPercentage,
+    },
+    include: {
+      category: true,
+      branch: true,
     },
   });
 
@@ -458,6 +577,9 @@ async update(
   // Log update history
   try {
     const changes: string[] = [];
+    if (updateProductDto.branchId !== undefined && updateProductDto.branchId !== product.branchId) {
+      changes.push(`Filial: ${product.branchId} ➔ ${updateProductDto.branchId}`);
+    }
     if (updateProductDto.name && updateProductDto.name !== product.name) {
       changes.push(`Nomi: "${product.name}" ➔ "${updateProductDto.name}"`);
     }
@@ -1138,16 +1260,7 @@ return this.prisma.$transaction(async (tx) => {
         });
 
         if (found) {
-          if (found.isDeleted) {
-            targetProduct = found;
-          } else {
-            // Check if same product or different active product
-            const isSame = normalize(found.name) === normalize(actualName) &&
-                           normalize(found.model) === normalize(actualModel);
-            if (isSame) {
-              targetProduct = found;
-            }
-          }
+          targetProduct = found;
         }
       } else {
         // 2. Only if no barcode at all: Fallback by name and model matching

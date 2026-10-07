@@ -383,6 +383,11 @@ export class AttendanceController {
     return this.attendanceService.createManual(body);
   }
 
+  @Post('attendance/manual-mark')
+  manualMark(@Body() body: any) {
+    return this.attendanceService.createManual(body);
+  }
+
   @Get('attendance/today')
   getToday() {
     return this.attendanceService.getTodayAttendance();
@@ -405,6 +410,11 @@ export class AttendanceController {
 
   @Patch('attendance/:id')
   update(@Param('id') id: string, @Body() body: any) {
+    return this.attendanceService.update(+id, body);
+  }
+
+  @Put('attendance/:id')
+  updatePut(@Param('id') id: string, @Body() body: any) {
     return this.attendanceService.update(+id, body);
   }
 

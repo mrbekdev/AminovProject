@@ -13,6 +13,9 @@ const TASK_INCLUDE = {
           lastName: true,
           username: true,
           role: true,
+          branch: {
+            select: { id: true, name: true },
+          },
         },
       },
       soldBy: {
@@ -22,6 +25,9 @@ const TASK_INCLUDE = {
           lastName: true,
           username: true,
           role: true,
+          branch: {
+            select: { id: true, name: true },
+          },
         },
       },
       fromBranch: {
@@ -50,6 +56,7 @@ const TASK_INCLUDE = {
               barcode: true,
               price: true,
               marketPrice: true,
+              branchId: true,
               branch: {
                 select: { id: true, name: true },
               },
@@ -65,6 +72,7 @@ const TASK_INCLUDE = {
               name: true,
               model: true,
               barcode: true,
+              branchId: true,
               branch: {
                 select: { id: true, name: true },
               },

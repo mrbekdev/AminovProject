@@ -1111,42 +1111,203 @@ export class AttendanceService {
     });
   }
 
+  async recalculateAttendanceMetrics(params: {
+    userId: number;
+    date: Date;
+    checkInAt: Date | null;
+    checkOutAt: Date | null;
+    customPenalty?: number | null;
+    customBonus?: number | null;
+    customStatus?: string | null;
+    notes?: string | null;
+    user?: any;
+    store?: any;
+  }) {
+    const { userId, date, checkInAt, checkOutAt, customPenalty, customBonus, customStatus, notes } = params;
+
+    const user = params.user || (await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { store: true },
+    }));
+    if (!user) throw new NotFoundException('User not found');
+
+    const store = params.store || user.store;
+    const lateToleranceMin = store?.lateToleranceMin ?? 15;
+    const earlyLeaveToleranceMin = store?.earlyLeaveToleranceMin ?? 15;
+    const latePenaltyPerMin = store?.latePenaltyPerMin ?? 500;
+    const earlyBonusPerMin = store?.earlyBonusPerMin ?? 500;
+
+    const workStartTimeStr = user.workStartTime || '09:00';
+    const workEndTimeStr = user.workEndTime || '18:00';
+
+    const [startH, startM] = workStartTimeStr.split(':').map(Number);
+    const [endH, endM] = workEndTimeStr.split(':').map(Number);
+
+    const { year, month, day: tDay } = getTashkentDate(date);
+    const tashkentMidnightUTC = Date.UTC(year, month, tDay, 0, 0, 0, 0) - 5 * 60 * 60 * 1000;
+    const workStart = new Date(tashkentMidnightUTC + (startH * 60 + startM) * 60 * 1000);
+    let workEnd = new Date(tashkentMidnightUTC + (endH * 60 + endM) * 60 * 1000);
+    if (workEnd <= workStart) {
+      workEnd = new Date(+workEnd + 24 * 60 * 60 * 1000);
+    }
+
+    let lateMinutes = 0;
+    let latePenalty = 0;
+    let earlyArrivalMinutes = 0;
+    let earlyArrivalBonus = 0;
+
+    if (checkInAt) {
+      if (checkInAt > workStart) {
+        const diff = Math.round((+checkInAt - +workStart) / 60000);
+        if (diff > lateToleranceMin) {
+          lateMinutes = diff;
+          latePenalty = lateMinutes * latePenaltyPerMin;
+        }
+      } else {
+        const earlyDiff = Math.round((+workStart - +checkInAt) / 60000);
+        if (earlyDiff > 0 && earlyDiff <= 180) {
+          earlyArrivalMinutes = earlyDiff;
+          earlyArrivalBonus = earlyArrivalMinutes * earlyBonusPerMin;
+        }
+      }
+    }
+
+    let earlyLeaveMinutes = 0;
+    let earlyLeavePenalty = 0;
+    let overtimeMinutes = 0;
+    let overtimeBonus = 0;
+
+    if (checkOutAt) {
+      if (checkOutAt < workEnd) {
+        const earlyLeaveDiff = Math.round((+workEnd - +checkOutAt) / 60000);
+        if (earlyLeaveDiff > earlyLeaveToleranceMin) {
+          earlyLeaveMinutes = earlyLeaveDiff;
+          earlyLeavePenalty = earlyLeaveMinutes * latePenaltyPerMin;
+        }
+      } else {
+        const overtimeDiff = Math.round((+checkOutAt - +workEnd) / 60000);
+        if (overtimeDiff > 0 && overtimeDiff <= 360) {
+          overtimeMinutes = overtimeDiff;
+          overtimeBonus = overtimeMinutes * earlyBonusPerMin;
+        }
+      }
+    }
+
+    const totalMinutes = checkInAt && checkOutAt
+      ? Math.max(0, Math.round((+checkOutAt - +checkInAt) / 60000))
+      : 0;
+
+    const penaltyAmount = customPenalty !== undefined && customPenalty !== null && !isNaN(Number(customPenalty))
+      ? Number(customPenalty)
+      : (latePenalty + earlyLeavePenalty);
+
+    const bonusAmount = customBonus !== undefined && customBonus !== null && !isNaN(Number(customBonus))
+      ? Number(customBonus)
+      : (earlyArrivalBonus + overtimeBonus);
+
+    let status = customStatus;
+    if (status === 'ON_TIME' || status === 'PRESENT') {
+      status = 'PRESENT';
+    } else if (status === 'EARLY_LEAVE' || status === 'LEFT_EARLY') {
+      status = 'LEFT_EARLY';
+    } else if (status === 'LATE') {
+      status = 'LATE';
+    } else if (status === 'ABSENT') {
+      status = 'ABSENT';
+    } else if (!status || status === 'AUTO') {
+      if (lateMinutes > 0) status = 'LATE';
+      else if (earlyLeaveMinutes > 0) status = 'LEFT_EARLY';
+      else if (checkInAt) status = 'PRESENT';
+      else status = 'ABSENT';
+    }
+
+    return {
+      userId,
+      date,
+      checkInAt,
+      checkOutAt,
+      totalMinutes,
+      lateMinutes,
+      earlyLeaveMinutes,
+      penaltyAmount,
+      bonusAmount,
+      status: status as any,
+      notes,
+    };
+  }
+
   // ===== Create Manual Attendance =====
   async createManual(dayData: any) {
     const userId = Number(dayData.userId || dayData.employee_id);
-    const date = startOfDayUTC(new Date(dayData.date));
+    if (!userId) throw new BadRequestException('userId is required');
 
-    let checkInAt = dayData.checkInAt ? new Date(dayData.checkInAt) : null;
-    let checkOutAt = dayData.checkOutAt ? new Date(dayData.checkOutAt) : null;
+    const dateStr = dayData.date
+      ? (typeof dayData.date === 'string' && dayData.date.includes('T') ? dayData.date.split('T')[0] : String(dayData.date).slice(0, 10))
+      : getTashkentDate().year + '-' + String(getTashkentDate().month + 1).padStart(2, '0') + '-' + String(getTashkentDate().day).padStart(2, '0');
+    const targetDate = startOfDayUTC(new Date(dateStr));
 
-    if (!checkInAt && dayData.check_in_time) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { store: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    let checkInAt: Date | null = null;
+    if (dayData.checkInAt) {
+      checkInAt = new Date(dayData.checkInAt);
+    } else if (dayData.check_in_time) {
       const timeStr = dayData.check_in_time.length === 5 ? `${dayData.check_in_time}:00` : dayData.check_in_time;
-      checkInAt = new Date(`${dayData.date}T${timeStr}+05:00`);
-    }
-    if (!checkOutAt && dayData.check_out_time) {
-      const timeStr = dayData.check_out_time.length === 5 ? `${dayData.check_out_time}:00` : dayData.check_out_time;
-      checkOutAt = new Date(`${dayData.date}T${timeStr}+05:00`);
+      checkInAt = new Date(`${dateStr}T${timeStr}+05:00`);
     }
 
-    const totalMinutes = checkInAt && checkOutAt ? Math.max(0, Math.round((+checkOutAt - +checkInAt) / 60000)) : 0;
+    let checkOutAt: Date | null = null;
+    if (dayData.checkOutAt) {
+      checkOutAt = new Date(dayData.checkOutAt);
+    } else if (dayData.check_out_time) {
+      const timeStr = dayData.check_out_time.length === 5 ? `${dayData.check_out_time}:00` : dayData.check_out_time;
+      checkOutAt = new Date(`${dateStr}T${timeStr}+05:00`);
+    }
+
+    const metrics = await this.recalculateAttendanceMetrics({
+      userId,
+      date: targetDate,
+      checkInAt,
+      checkOutAt,
+      customPenalty: dayData.penalty_amount ?? dayData.penaltyAmount,
+      customBonus: dayData.bonus_amount ?? dayData.bonusAmount,
+      customStatus: dayData.status,
+      notes: dayData.notes || 'Qo\'lda kiritildi (Admin)',
+      user,
+      store: user.store,
+    });
 
     return this.prisma.attendanceDay.upsert({
-      where: { userId_date: { userId, date } },
+      where: { userId_date: { userId, date: targetDate } },
       create: {
         userId,
-        date,
-        checkInAt,
-        checkOutAt,
-        totalMinutes,
-        notes: dayData.notes || 'Qo\'lda kiritildi (Admin)',
-        status: (dayData.status as any) || 'PRESENT',
+        branchId: user.branchId ?? null,
+        storeId: user.storeId ?? null,
+        date: metrics.date,
+        checkInAt: metrics.checkInAt,
+        checkOutAt: metrics.checkOutAt,
+        totalMinutes: metrics.totalMinutes,
+        lateMinutes: metrics.lateMinutes,
+        earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+        penaltyAmount: metrics.penaltyAmount,
+        bonusAmount: metrics.bonusAmount,
+        status: metrics.status,
+        notes: metrics.notes,
       },
       update: {
-        checkInAt,
-        checkOutAt,
-        totalMinutes,
-        notes: dayData.notes || 'Qo\'lda kiritildi (Admin)',
-        status: (dayData.status as any) || 'PRESENT',
+        checkInAt: metrics.checkInAt,
+        checkOutAt: metrics.checkOutAt,
+        totalMinutes: metrics.totalMinutes,
+        lateMinutes: metrics.lateMinutes,
+        earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+        penaltyAmount: metrics.penaltyAmount,
+        bonusAmount: metrics.bonusAmount,
+        status: metrics.status,
+        notes: metrics.notes,
       },
     });
   }
@@ -1189,7 +1350,138 @@ export class AttendanceService {
   }
 
   async update(id: number, data: any) {
-    return this.prisma.attendanceDay.update({ where: { id }, data });
+    const existing = await this.prisma.attendanceDay.findUnique({
+      where: { id },
+      include: { user: { include: { store: true } }, store: true },
+    });
+    if (!existing) throw new NotFoundException('Attendance record not found');
+
+    const dateStr = data.date
+      ? (typeof data.date === 'string' && data.date.includes('T') ? data.date.split('T')[0] : String(data.date).slice(0, 10))
+      : existing.date.toISOString().split('T')[0];
+    const targetDate = startOfDayUTC(new Date(dateStr));
+
+    const parseTime = (timeVal: any): Date | null => {
+      if (!timeVal || timeVal === '—' || timeVal === '-' || timeVal === 'null') return null;
+      if (typeof timeVal === 'string') {
+        if (timeVal.includes('T') || timeVal.includes('Z')) {
+          const parsed = new Date(timeVal);
+          if (!isNaN(parsed.getTime())) return parsed;
+        }
+        let clean = timeVal.trim();
+        if (clean.includes(' ')) {
+          const parts = clean.split(' ');
+          clean = parts[parts.length - 1];
+        }
+        const tParts = clean.split(':');
+        if (tParts.length >= 2) {
+          const h = tParts[0].padStart(2, '0');
+          const m = tParts[1].padStart(2, '0');
+          const s = tParts[2] ? tParts[2].padStart(2, '0') : '00';
+          return new Date(`${dateStr}T${h}:${m}:${s}+05:00`);
+        }
+      } else if (timeVal instanceof Date && !isNaN(timeVal.getTime())) {
+        return timeVal;
+      }
+      return null;
+    };
+
+    let checkInAt: Date | null = existing.checkInAt;
+    if (data.check_in_time !== undefined) {
+      checkInAt = parseTime(data.check_in_time);
+    } else if (data.checkInAt !== undefined) {
+      checkInAt = parseTime(data.checkInAt);
+    }
+
+    let checkOutAt: Date | null = existing.checkOutAt;
+    if (data.check_out_time !== undefined) {
+      checkOutAt = parseTime(data.check_out_time);
+    } else if (data.checkOutAt !== undefined) {
+      checkOutAt = parseTime(data.checkOutAt);
+    }
+
+    const customPenalty = data.penalty_amount !== undefined ? data.penalty_amount : data.penaltyAmount;
+    const customBonus = data.bonus_amount !== undefined ? data.bonus_amount : data.bonusAmount;
+    const customStatus = data.status;
+    const notes = data.notes !== undefined ? data.notes : (existing.notes || 'Admin tomonidan tahrirlandi');
+
+    const metrics = await this.recalculateAttendanceMetrics({
+      userId: existing.userId,
+      date: targetDate,
+      checkInAt,
+      checkOutAt,
+      customPenalty,
+      customBonus,
+      customStatus,
+      notes,
+      user: existing.user,
+      store: existing.store || existing.user?.store,
+    });
+
+    const updated = await this.prisma.attendanceDay.update({
+      where: { id },
+      data: {
+        date: metrics.date,
+        checkInAt: metrics.checkInAt,
+        checkOutAt: metrics.checkOutAt,
+        totalMinutes: metrics.totalMinutes,
+        lateMinutes: metrics.lateMinutes,
+        earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+        penaltyAmount: metrics.penaltyAmount,
+        bonusAmount: metrics.bonusAmount,
+        status: metrics.status,
+        notes: metrics.notes,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            role: true,
+            workStartTime: true,
+            workEndTime: true,
+            monthlySalary: true,
+          },
+        },
+        branch: { select: { id: true, name: true } },
+        store: { select: { id: true, storeName: true, latePenaltyPerMin: true, earlyBonusPerMin: true } },
+      },
+    });
+
+    const checkInFormatted = updated.checkInAt
+      ? new Date(updated.checkInAt).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent' })
+      : null;
+    const checkOutFormatted = updated.checkOutAt
+      ? new Date(updated.checkOutAt).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent' })
+      : null;
+    const dateFormatted = updated.date.toISOString().split('T')[0];
+    const empName = `${updated.user?.firstName || ''} ${updated.user?.lastName || ''}`.trim() || updated.user?.username || '';
+
+    return {
+      ...updated,
+      employee_id: updated.userId,
+      employee_name: empName,
+      check_in_time: updated.checkInAt ? updated.checkInAt.toISOString() : null,
+      check_out_time: updated.checkOutAt ? updated.checkOutAt.toISOString() : null,
+      total_minutes: updated.totalMinutes || 0,
+      work_hours: updated.totalMinutes ? Math.round((updated.totalMinutes / 60) * 100) / 100 : 0,
+      late_minutes: updated.lateMinutes || 0,
+      early_leave_minutes: updated.earlyLeaveMinutes || 0,
+      penalty_amount: updated.penaltyAmount || 0,
+      bonus_amount: updated.bonusAmount || 0,
+      // Backward compatibility Cyrillic keys
+      'Ходим': empName,
+      'Сана': dateFormatted,
+      'Келиш вақти': checkInFormatted ? `${dateFormatted} ${checkInFormatted}` : '',
+      'Кетиш вақти': checkOutFormatted ? `${dateFormatted} ${checkOutFormatted}` : '',
+      'Ишланган вақт (дақиқа)': updated.totalMinutes || 0,
+      'Ишланган соат': updated.totalMinutes ? Math.round((updated.totalMinutes / 60) * 100) / 100 : 0,
+      'Кечикиш (дақиқа)': updated.lateMinutes || 0,
+      'Эрта кетиш (дақиқа)': updated.earlyLeaveMinutes || 0,
+      'Статус': updated.status === 'LATE' ? 'Кечикди' : updated.status === 'PRESENT' ? 'Ўз вақтида' : updated.status === 'LEFT_EARLY' ? 'Эрта кетди' : updated.status,
+    };
   }
 
   async remove(id: number, userId?: number) {

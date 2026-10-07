@@ -1488,19 +1488,36 @@ export class TransactionService {
       },
       include: {
         customer: true,
+        fromBranch: true,
+        toBranch: true,
+        soldBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            role: true,
+            branch: { select: { id: true, name: true } },
+          },
+        },
         items: {
           include: {
-            product: true
-          }
+            product: {
+              include: {
+                branch: true,
+              },
+            },
+          },
         },
         user: {
           select: {
             id: true,
             firstName: true,
             lastName: true,
-            phone: true
-          }
-        }
+            phone: true,
+            branch: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: {
         createdAt: 'desc'
@@ -1914,6 +1931,93 @@ export class TransactionService {
     };
   }
 
+  /**
+   * Bitta tranzaksiya bo'yicha qarzni ishonchli hisoblash (UYDAN / CREDIT).
+   * finalTotal yoki paymentSchedule 0 bo'lib qolgan holatlarda ham (qaytarish/almashtirishdan keyin)
+   * qarz UYDAN to'lovlari -> task.uydanAmount -> mahsulotlar summasi orqali tiklanadi.
+   */
+  private computeDebtTx(t: any) {
+    const num = (v: any) => {
+      const n = Number(v || 0);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const payments: any[] = Array.isArray(t?.payments) ? t.payments : [];
+    const items: any[] = Array.isArray(t?.items) ? t.items : [];
+    const tasks: any[] = Array.isArray(t?.tasks) ? t.tasks : [];
+    const schedules: any[] = (Array.isArray(t?.paymentSchedules) ? t.paymentSchedules : []).filter(
+      (s: any) => !['INSTALLMENT', 'PARTNER'].includes(String(s?.installmentType || '').toUpperCase()),
+    );
+
+    const uydanPay = payments
+      .filter((p: any) => ['UYDAN', 'HOME'].includes(String(p?.method || '').toUpperCase()))
+      .reduce((s: number, p: any) => s + num(p?.amount), 0);
+    const taskUydan = tasks.reduce((m: number, k: any) => Math.max(m, num(k?.uydanAmount)), 0);
+    const itemsSum = items
+      .filter((it: any) => String(it?.status || '').toUpperCase() !== 'RETURNED')
+      .reduce((s: number, it: any) => {
+        const lineTotal = num(it?.total) || num(it?.sellingPrice ?? it?.price) * num(it?.quantity);
+        return s + Math.max(0, lineTotal);
+      }, 0);
+    const downPayment = num(t?.downPayment);
+    const creditRepaid = num(t?.creditRepaymentAmount);
+    const schedTotal = schedules.reduce((s: number, sc: any) => s + num(sc?.payment), 0);
+
+    let sold = num(t?.finalTotal) || num(t?.total) || itemsSum;
+    let debt = 0;
+    let paidOnDebt = 0;
+    let outstanding = 0;
+
+    if (schedules.length > 0 && schedTotal > 0) {
+      debt = schedTotal;
+      let schedPaidSum = 0;
+      let schedOutstandingSum = 0;
+      for (const s of schedules) {
+        const sPayment = num(s.payment);
+        const sPaid = num(s.paidAmount);
+        const sIsPaid = s.isPaid === true || (sPayment > 0 && sPaid >= sPayment);
+        if (sIsPaid) {
+          schedPaidSum += Math.max(sPaid, sPayment);
+        } else {
+          schedPaidSum += Math.max(0, sPaid);
+          schedOutstandingSum += Math.max(0, sPayment - sPaid);
+        }
+      }
+      if (schedPaidSum >= debt || schedOutstandingSum <= 0) {
+        paidOnDebt = debt;
+        outstanding = 0;
+      } else if (creditRepaid > schedPaidSum) {
+        const extra = creditRepaid - schedPaidSum;
+        paidOnDebt = Math.min(debt, schedPaidSum + extra);
+        outstanding = Math.max(0, schedOutstandingSum - extra);
+      } else {
+        paidOnDebt = Math.min(debt, schedPaidSum);
+        outstanding = schedOutstandingSum;
+      }
+    } else {
+      if (uydanPay > 0) debt = uydanPay;
+      else if (taskUydan > 0) debt = taskUydan;
+      else debt = Math.max(0, sold - downPayment);
+      paidOnDebt = Math.min(debt, creditRepaid);
+      outstanding = Math.max(0, debt - creditRepaid);
+    }
+
+    if (sold <= 0) sold = debt + downPayment;
+    if (sold < debt) sold = debt;
+    const upfront = Math.max(0, sold - debt);
+
+    return {
+      sold,
+      debt,
+      upfront,
+      downPayment,
+      paidOnDebt,
+      totalPaid: upfront + paidOnDebt,
+      outstanding,
+      schedules,
+      hasUydanSignal: uydanPay > 0 || taskUydan > 0,
+    };
+  }
+
   async getDebtCustomers(params: {
     branchId?: number;
     page?: number;
@@ -2024,6 +2128,12 @@ export class TransactionService {
         },
         payments: {
           select: { method: true, amount: true }
+        },
+        tasks: {
+          select: { uydanAmount: true, uydanCollectedAmount: true }
+        },
+        items: {
+          select: { price: true, sellingPrice: true, quantity: true, total: true, status: true }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -2043,75 +2153,17 @@ export class TransactionService {
       const hasInstallmentPayment = payments.some(p => ['INSTALLMENT'].includes(String(p.method || '').toUpperCase()));
       if (hasPartnerPayment || hasInstallmentPayment) continue;
 
-      const schedules = (t.paymentSchedules || []).filter((s: any) => !s.installmentType || !['INSTALLMENT', 'installment'].includes(String(s.installmentType)));
-      const hasUydanPayment = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase())) || ['UYDAN', 'CREDIT'].includes(String(t.paymentType || '').toUpperCase());
+      const debtInfo = this.computeDebtTx(t);
+      const schedules = debtInfo.schedules;
+      const hasUydanMethod = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()));
+      const hasUydanPayment = hasUydanMethod || debtInfo.hasUydanSignal || ['UYDAN', 'CREDIT'].includes(String(t.paymentType || '').toUpperCase());
 
       if (!hasUydanPayment && schedules.length === 0) continue;
 
-      // Calculate outstanding debt correctly for UYDAN and credit/debt
-      let txTotalDebt = 0;
-      let txOutstanding = 0;
-      let txPaidOnDebt = 0;
-
-      const isTxCompleted = String(t.status || '').toUpperCase() === 'COMPLETED' ||
-        (t.remainingBalance !== null && t.remainingBalance !== undefined && Number(t.remainingBalance) === 0);
-      const creditRepaid = Number((t as any).creditRepaymentAmount || 0);
-
-      const baseAmount = Number((t as any).finalTotal || (t as any).total || 0);
-      const downPayment = Number((t as any).downPayment || 0);
-      const txDebtMade = Math.max(0, baseAmount - downPayment);
-
-      if (schedules.length > 0) {
-        txTotalDebt = schedules.reduce((sum, s) => sum + Number(s.payment || 0), 0);
-
-        let schedPaidSum = 0;
-        let schedOutstandingSum = 0;
-
-        for (const s of schedules) {
-          const sPayment = Number(s.payment || 0);
-          const sPaid = Number(s.paidAmount || 0);
-          const sIsPaid = s.isPaid === true ||
-            (s.remainingBalance !== null && s.remainingBalance !== undefined && Number(s.remainingBalance) === 0);
-
-          if (sIsPaid || isTxCompleted) {
-            schedPaidSum += Math.max(sPaid, sPayment);
-            // Outstanding is 0 for paid schedule
-          } else {
-            schedPaidSum += sPaid;
-            schedOutstandingSum += Math.max(0, sPayment - sPaid);
-          }
-        }
-
-        txPaidOnDebt = Math.max(schedPaidSum, creditRepaid);
-
-        if (isTxCompleted || (txTotalDebt > 0 && txPaidOnDebt >= txTotalDebt)) {
-          txOutstanding = 0;
-        } else {
-          txOutstanding = schedOutstandingSum;
-          if (creditRepaid > schedPaidSum) {
-            txOutstanding = Math.max(0, txTotalDebt - txPaidOnDebt);
-          }
-          if (t.remainingBalance !== null && t.remainingBalance !== undefined) {
-            txOutstanding = Math.min(txOutstanding, Math.max(0, Number(t.remainingBalance)));
-          }
-        }
-      } else {
-        const uydanAmount = payments.filter(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()))
-          .reduce((s, p) => s + Number(p.amount || 0), 0);
-        const debtPortion = uydanAmount > 0 ? uydanAmount : txDebtMade;
-        txTotalDebt = debtPortion;
-
-        if (isTxCompleted || (debtPortion > 0 && creditRepaid >= debtPortion)) {
-          txPaidOnDebt = debtPortion;
-          txOutstanding = 0;
-        } else {
-          txPaidOnDebt = Math.min(debtPortion, creditRepaid);
-          txOutstanding = Math.max(0, debtPortion - creditRepaid);
-          if (t.remainingBalance !== null && t.remainingBalance !== undefined) {
-            txOutstanding = Math.min(txOutstanding, Math.max(0, Number(t.remainingBalance)));
-          }
-        }
-      }
+      // Qarz hisob-kitobi (umumiy helper orqali — UI va Excel bilan bir xil)
+      const txTotalDebt = debtInfo.debt;
+      const txOutstanding = debtInfo.outstanding;
+      const txPaidOnDebt = debtInfo.paidOnDebt;
 
       // Aggregate rating counts
       let goodMonths = 0;
@@ -2410,7 +2462,14 @@ export class TransactionService {
     }
 
     // Qaysi user o'tkazma qilganini aniqlash
-    const effectiveUserId = soldByUserId || userId || data.userId;
+    let effectiveUserId = Number(soldByUserId || userId || data.userId);
+    if (!effectiveUserId || isNaN(effectiveUserId)) {
+      const adminUser = await this.prisma.user.findFirst({
+        where: { role: { in: ['BIGADMIN', 'ADMIN'] } },
+        select: { id: true }
+      });
+      effectiveUserId = adminUser?.id || 1;
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // 1. O'tkazishdan oldin har bir mahsulotni mavjudligini va yetarli miqdorda ekanligini qat'iy tekshiramiz
@@ -2444,7 +2503,7 @@ export class TransactionService {
           type: TransactionType.TRANSFER,
           fromBranchId: numFromBranchId,
           toBranchId: numToBranchId,
-          userId: userId || effectiveUserId,
+          userId: Number(userId) || effectiveUserId,
           soldByUserId: effectiveUserId,
           status: TransactionStatus.PENDING,
           total: total,
@@ -2624,37 +2683,24 @@ export class TransactionService {
 
       // 4. Maqsad filialda mahsulotni topish
       let targetProduct: any = null;
-      let shouldCreateNew = false;
 
-      const barcode = ((item as any).product?.barcode || sourceProduct.barcode || '').trim();
+      const rawBarcode = ((item as any).product?.barcode || sourceProduct.barcode || '').trim();
+      const barcode = rawBarcode || null;
       const itemName = (item as any).product?.name || sourceProduct.name;
-      const itemModel = (item as any).product?.model || sourceProduct.model || '';
-
-      const normalize = (str?: string | null) => (str || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const rawModel = ((item as any).product?.model ?? sourceProduct.model ?? '').trim();
+      const itemModel = rawModel === 'N/A' ? '' : rawModel;
 
       if (barcode) {
-        const existingByBarcode = await tx.product.findFirst({
-          where: { barcode, branchId: transfer.toBranchId }
-        });
-
-        if (existingByBarcode) {
-          if (existingByBarcode.isDeleted) {
-            // O'chirilgan holatda bo'lsa: ushbu barcode slotini yangilab aktivlashtiramiz
-            targetProduct = existingByBarcode;
-          } else {
-            // O'chirilmagan (aktiv) holatda bo'lsa: aynan shu tovarmi yoki boshqa tovarmi tekshiramiz
-            const isSameProduct = normalize(existingByBarcode.name) === normalize(itemName) &&
-                                  normalize(existingByBarcode.model) === normalize(itemModel);
-
-            if (isSameProduct) {
-              // Aynan shu tovar: mavjud tovar sonini oshiramiz
-              targetProduct = existingByBarcode;
-            } else {
-              // Boshqa tovar o'chirilmagan holda turibdi: unga tegmaymiz, yangidan yaratamiz!
-              shouldCreateNew = true;
-            }
+        // Barcode mavjud bo'lsa: maqsad filialda AYNAN SHU barcode bo'yicha qidiramiz
+        targetProduct = await tx.product.findFirst({
+          where: {
+            OR: [
+              { barcode: barcode },
+              { barcode: rawBarcode }
+            ],
+            branchId: transfer.toBranchId
           }
-        }
+        });
       } else {
         // Faqat barcode umuman bo'lmagandagina name + model bo'yicha qidiramiz
         const searchConditions: any = {
@@ -2669,16 +2715,17 @@ export class TransactionService {
             { branchId: transfer.toBranchId }
           ]
         };
-        if (itemModel && itemModel.trim()) {
+        if (itemModel) {
           searchConditions.AND.push({
             OR: [
               { model: { equals: itemModel, mode: 'insensitive' } },
               { model: { contains: itemModel, mode: 'insensitive' } },
-              { model: { contains: itemModel.trim(), mode: 'insensitive' } }
             ]
           });
         } else {
-          searchConditions.AND.push({ OR: [{ model: null }, { model: '' }, { model: { equals: '', mode: 'insensitive' } }] });
+          searchConditions.AND.push({
+            OR: [{ model: null }, { model: '' }, { model: 'N/A' }]
+          });
         }
         targetProduct = await tx.product.findFirst({ where: searchConditions });
       }
@@ -2688,28 +2735,38 @@ export class TransactionService {
       const itemMarketPrice = Number((item as any).product?.marketPrice ?? sourceProduct.marketPrice ?? 0);
       const itemBonusPct = (item as any).product?.bonusPercentage ?? sourceProduct?.bonusPercentage ?? 0;
       const itemMonths = sourceProduct?.months ?? (item as any).product?.months;
-      const itemCategoryId = (item as any).product?.categoryId || sourceProduct?.categoryId || 1;
+
+      // CategoryId ni xavfsiz aniqlash (mavjud bo'lmagan ID tushib qolmasligi uchun)
+      let targetCategoryId = (item as any).product?.categoryId || sourceProduct?.categoryId;
+      if (targetCategoryId) {
+        const catExists = await tx.category.findUnique({ where: { id: targetCategoryId } });
+        if (!catExists) targetCategoryId = null;
+      }
+      if (!targetCategoryId) {
+        const firstCat = await tx.category.findFirst({ select: { id: true } });
+        targetCategoryId = firstCat?.id || 3;
+      }
 
       // 5. Maqsad filialga qo'shish yoki yangi yaratish
-      if (targetProduct && !shouldCreateNew) {
-        // MUHIM: Eng yangi holatni o'qib, unga qo'shamiz (race condition oldini olish)
+      if (targetProduct) {
+        // Maqsad filialda mahsulot topildi (aktiv yoki o'chirilgan)
+        // Barcode ASLO O'ZGARTIRILMAYDI! Faqat tovar soni oshiriladi
         const freshTarget = await tx.product.findUnique({ where: { id: targetProduct.id } });
         const isDeleted = freshTarget?.isDeleted || false;
-        // Agar mahsulot o'chirilgan (isDeleted: true) bo'lsa, avvalgi quantity=0 deb hisoblanadi va yangi transferQty ga aylanadi
         const currentTargetQty = isDeleted ? 0 : Math.max(0, Number(freshTarget?.quantity) || 0);
         const newQuantity = currentTargetQty + transferQty;
 
         await tx.product.update({
           where: { id: targetProduct.id },
           data: {
-            name: itemName,
-            model: itemModel,
-            barcode: barcode || freshTarget?.barcode,
-            price: isDeleted ? itemPrice : (itemPrice > 0 ? itemPrice : (freshTarget?.price ?? 0)),
-            marketPrice: isDeleted ? itemMarketPrice : (itemMarketPrice > 0 ? itemMarketPrice : (freshTarget?.marketPrice ?? 0)),
-            bonusPercentage: isDeleted ? itemBonusPct : (itemBonusPct || freshTarget?.bonusPercentage || 0),
-            months: isDeleted ? itemMonths : (itemMonths || freshTarget?.months),
-            categoryId: isDeleted ? itemCategoryId : (itemCategoryId || freshTarget?.categoryId),
+            name: freshTarget?.name || itemName,
+            model: freshTarget?.model ?? itemModel,
+            barcode: freshTarget?.barcode || barcode,
+            price: isDeleted ? itemPrice : (freshTarget?.price ? freshTarget.price : itemPrice),
+            marketPrice: isDeleted ? itemMarketPrice : (freshTarget?.marketPrice ? freshTarget.marketPrice : itemMarketPrice),
+            bonusPercentage: isDeleted ? itemBonusPct : (freshTarget?.bonusPercentage ?? itemBonusPct),
+            months: isDeleted ? itemMonths : (freshTarget?.months ?? itemMonths),
+            categoryId: freshTarget?.categoryId || targetCategoryId,
             quantity: newQuantity,
             status: 'IN_WAREHOUSE',
             isDeleted: false,
@@ -2717,55 +2774,31 @@ export class TransactionService {
           }
         });
       } else {
-        // Yangi mahsulot yaratish
-        // Agar ayni barcode boshqa aktiv tovar tomonidan egallangan bo'lsa (shouldCreateNew=true), unga tegilmasligi uchun yangi unique barcode beriladi
+        // Maqsad filialda mahsulot hali mavjud emas: yangi yaratamiz
+        // BARCODE NI ASLO O'ZGARTIRMAYMIZ! Agar manba tovardagi barcode bor bo'lsa, AYNAN O'SHA BARCODE saqlanadi!
         let safeBarcode = barcode;
-        if (!safeBarcode || shouldCreateNew) {
+        if (!safeBarcode) {
+          // Faqat va faqat manba tovarning o'zida umuman barcode bo'lmagandagina generateUniqueBarcode ishlatiladi
           safeBarcode = await this.generateUniqueBarcode(tx);
         }
 
-        try {
-          await tx.product.create({
-            data: {
-              name: itemName,
-              barcode: safeBarcode,
-              model: itemModel,
-              price: itemPrice,
-              marketPrice: itemMarketPrice,
-              quantity: transferQty,
-              status: 'IN_WAREHOUSE',
-              branchId: transfer.toBranchId,
-              categoryId: itemCategoryId,
-              bonusPercentage: itemBonusPct,
-              months: itemMonths,
-              isDeleted: false,
-              deletedAt: null
-            }
-          });
-        } catch (error: any) {
-          if (error?.code === 'P2002') {
-            const fallbackBarcode = await this.generateUniqueBarcode(tx);
-            await tx.product.create({
-              data: {
-                name: itemName,
-                barcode: fallbackBarcode,
-                model: itemModel,
-                price: itemPrice,
-                marketPrice: itemMarketPrice,
-                quantity: transferQty,
-                status: 'IN_WAREHOUSE',
-                branchId: transfer.toBranchId,
-                categoryId: itemCategoryId,
-                bonusPercentage: itemBonusPct,
-                months: itemMonths,
-                isDeleted: false,
-                deletedAt: null
-              }
-            });
-          } else {
-            throw error;
+        await tx.product.create({
+          data: {
+            name: itemName,
+            barcode: safeBarcode,
+            model: itemModel || null,
+            price: itemPrice,
+            marketPrice: itemMarketPrice,
+            quantity: transferQty,
+            status: 'IN_WAREHOUSE',
+            branchId: transfer.toBranchId,
+            categoryId: targetCategoryId,
+            bonusPercentage: itemBonusPct,
+            months: itemMonths || null,
+            isDeleted: false,
+            deletedAt: null
           }
-        }
+        });
       }
 
       // 6. Agar transfer cheklangan bo'lsa, transactionItem miqdorini moslash
@@ -3715,6 +3748,7 @@ export class TransactionService {
         fromBranch: true,
         payments: true,
         paymentSchedules: true,
+        tasks: { select: { uydanAmount: true, uydanCollectedAmount: true } },
         items: {
           include: {
             product: true
@@ -3736,6 +3770,12 @@ export class TransactionService {
 
       const cust = t.customer;
       if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
+
+      // getDebtCustomers bilan bir xil filtr
+      const dInfo = this.computeDebtTx(t);
+      const hasUydanMethod = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()));
+      const isDebtTx = hasUydanMethod || dInfo.hasUydanSignal || ['UYDAN', 'CREDIT'].includes(String(t.paymentType || '').toUpperCase());
+      if (!isDebtTx && dInfo.schedules.length === 0) continue;
 
       if (!customerMap.has(cust.id)) {
         customerMap.set(cust.id, {
@@ -3796,54 +3836,14 @@ export class TransactionService {
 
         if (isReturned) continue;
 
-        const soldAmt = Number(t.finalTotal || t.total || 0);
-        const downAmt = Number(t.downPayment || 0);
-        const isDebtPaymentType = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType || '');
-        const debtMade = isDebtPaymentType ? Math.max(0, soldAmt - downAmt) : 0;
+        // Umumiy helper — ro'yxat va UI bilan bir xil natija
+        const info = this.computeDebtTx(t);
 
-        let paidAmt = 0;
-        let remainingAmt = 0;
-        const isTxCompleted = String(t.status || '').toUpperCase() === 'COMPLETED' ||
-          (t.remainingBalance !== null && t.remainingBalance !== undefined && Number(t.remainingBalance) === 0);
-        const schedules = (t.paymentSchedules || []).filter((s: any) => s.installmentType !== 'INSTALLMENT');
-        if (schedules.length > 0) {
-          if (isTxCompleted) {
-            remainingAmt = 0;
-            paidAmt = downAmt + schedules.reduce((sum, s) => sum + Math.max(Number(s.paidAmount || 0), Number(s.payment || 0)), 0);
-          } else {
-            remainingAmt = schedules.reduce((sum, s) => {
-              if (s.isPaid || (s.remainingBalance !== null && Number(s.remainingBalance) === 0)) return sum;
-              return sum + Math.max(0, Number(s.payment || 0) - Number(s.paidAmount || 0));
-            }, 0);
-            paidAmt = downAmt + schedules.reduce((sum, s) => {
-              if (s.isPaid) return sum + Math.max(Number(s.paidAmount || 0), Number(s.payment || 0));
-              return sum + Number(s.paidAmount || 0);
-            }, 0);
-          }
-        } else {
-          const creditRepaid = Number(t.creditRepaymentAmount || 0);
-          const uydanAmount = (t.payments || []).filter(p => String(p.method || '').toUpperCase() === 'UYDAN')
-            .reduce((s, p) => s + Number(p.amount || 0), 0);
-          if (isTxCompleted) {
-            remainingAmt = 0;
-            paidAmt = soldAmt;
-          } else if (uydanAmount > 0) {
-            remainingAmt = Math.max(0, uydanAmount - creditRepaid);
-            paidAmt = (soldAmt - uydanAmount) + creditRepaid;
-          } else if (isDebtPaymentType) {
-            remainingAmt = Math.max(0, soldAmt - downAmt - creditRepaid);
-            paidAmt = downAmt + creditRepaid;
-          } else {
-            remainingAmt = 0;
-            paidAmt = soldAmt;
-          }
-        }
-
-        totalSold += soldAmt;
-        totalDebt += debtMade;
-        totalDown += downAmt;
-        totalPaid += paidAmt;
-        totalRemaining += remainingAmt;
+        totalSold += info.sold;
+        totalDebt += info.debt;
+        totalDown += info.upfront;
+        totalPaid += info.totalPaid;
+        totalRemaining += info.outstanding;
       }
 
       // Customer-level filtering
@@ -3854,7 +3854,7 @@ export class TransactionService {
       if (paymentStatus === 'HAS_REMAINING' && totalRemaining <= 0) continue;
 
       rows.push({
-        'Holat': returnedTxIds.length > 0 ? 'Qaytarilgan bor' : '-',
+        'Holat': returnedTxIds.length > 0 ? 'Qaytarilgan bor' : (totalRemaining > 0 ? 'Qarzi bor' : 'To\'langan'),
         'Qaytarilgan TX ID': returnedTxIds.length ? returnedTxIds.join(', ') : '-',
         'Marketing': Array.from(marketingNames).join(', ') || '-',
         'Kassir': Array.from(cashierNames).join(', ') || '-',
@@ -3862,11 +3862,34 @@ export class TransactionService {
         'Telefon': cust.phone || '-',
         'Mahsulotlar (name + model)': Array.from(productSet).join(' | ') || '-',
         'Bonus qo\'shilganlar': Array.from(bonusSet).join(' | ') || '-',
-        'Jami sotib olgan (so\'m)': totalSold,
-        'Qarz qilgan (so\'m)': totalDebt,
-        'Oldindan bergan (so\'m)': totalDown,
-        'Jami to\'lov qilgan (so\'m)': totalPaid,
-        'Qarzi qolgan (so\'m)': totalRemaining
+        'Jami sotib olgan (so\'m)': Math.round(totalSold),
+        'Qarz qilgan (so\'m)': Math.round(totalDebt),
+        'Oldindan bergan (so\'m)': Math.round(totalDown),
+        'Jami to\'lov qilgan (so\'m)': Math.round(totalPaid),
+        'Qarzi qolgan (so\'m)': Math.round(totalRemaining)
+      });
+    }
+
+    // Qarzi borlar birinchi (eng katta qarzdan boshlab)
+    rows.sort((a, b) => Number(b['Qarzi qolgan (so\'m)'] || 0) - Number(a['Qarzi qolgan (so\'m)'] || 0));
+
+    if (rows.length > 0) {
+      const sumCol = (key: string) => rows.reduce((s, r) => s + Number(r[key] || 0), 0);
+      const debtorsCount = rows.filter(r => Number(r['Qarzi qolgan (so\'m)'] || 0) > 0).length;
+      rows.push({
+        'Holat': 'JAMI',
+        'Qaytarilgan TX ID': '',
+        'Marketing': '',
+        'Kassir': '',
+        'Mijoz': `${rows.length} ta mijoz (${debtorsCount} ta qarzdor)`,
+        'Telefon': '',
+        'Mahsulotlar (name + model)': '',
+        'Bonus qo\'shilganlar': '',
+        'Jami sotib olgan (so\'m)': sumCol('Jami sotib olgan (so\'m)'),
+        'Qarz qilgan (so\'m)': sumCol('Qarz qilgan (so\'m)'),
+        'Oldindan bergan (so\'m)': sumCol('Oldindan bergan (so\'m)'),
+        'Jami to\'lov qilgan (so\'m)': sumCol('Jami to\'lov qilgan (so\'m)'),
+        'Qarzi qolgan (so\'m)': sumCol('Qarzi qolgan (so\'m)')
       });
     }
 
