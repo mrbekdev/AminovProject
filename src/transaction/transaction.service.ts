@@ -2022,6 +2022,7 @@ export class TransactionService {
     branchId?: number;
     page?: number;
     limit?: number;
+    all?: boolean;
     search?: string;
     startDate?: string;
     endDate?: string;
@@ -2029,7 +2030,7 @@ export class TransactionService {
     paymentStatus?: string; // ALL, FULLY_PAID, HAS_REMAINING, UYDAN
     cashierId?: number;
   }) {
-    const { branchId, page = 1, limit = 50, search, startDate, endDate, hasOutstanding, paymentStatus, cashierId } = params;
+    const { branchId, page = 1, limit = 50, all, search, startDate, endDate, hasOutstanding, paymentStatus, cashierId } = params;
     const skip = (page - 1) * limit;
 
     // Build where clause: strictly exclude INSTALLMENT and PARTNER, and only allow UYDAN transactions
@@ -2296,7 +2297,7 @@ export class TransactionService {
 
     // Apply pagination
     const total = customers.length;
-    const paginatedCustomers = customers.slice(skip, skip + limit);
+    const paginatedCustomers = (all || limit >= 1000 || limit <= 0) ? customers : customers.slice(skip, skip + limit);
 
     return {
       customers: paginatedCustomers,
@@ -3738,20 +3739,54 @@ export class TransactionService {
 
     if (where.AND.length === 0) delete where.AND;
 
-    // Load ALL matching transactions with complete details in one query
-    const transactions = await this.prisma.transaction.findMany({
+    // Load ALL matching transactions with only necessary fields for speed & memory efficiency
+    const transactions: any[] = await (this.prisma.transaction.findMany as any)({
       where,
-      include: {
-        customer: true,
-        user: true,
-        soldBy: true,
-        fromBranch: true,
-        payments: true,
-        paymentSchedules: true,
+      select: {
+        id: true,
+        status: true,
+        paymentType: true,
+        partnerName: true,
+        finalTotal: true,
+        total: true,
+        downPayment: true,
+        creditRepaymentAmount: true,
+        createdAt: true,
+        customer: {
+          select: { id: true, fullName: true, phone: true }
+        },
+        user: {
+          select: { role: true, firstName: true, lastName: true, username: true }
+        },
+        soldBy: {
+          select: { role: true, firstName: true, lastName: true, username: true }
+        },
+        fromBranch: {
+          select: { id: true, name: true }
+        },
+        payments: {
+          select: { method: true, amount: true }
+        },
+        paymentSchedules: {
+          select: {
+            payment: true,
+            paidAmount: true,
+            isPaid: true,
+            remainingBalance: true,
+            installmentType: true,
+          }
+        },
         tasks: { select: { uydanAmount: true, uydanCollectedAmount: true } },
         items: {
-          include: {
-            product: true
+          select: {
+            price: true,
+            sellingPrice: true,
+            quantity: true,
+            total: true,
+            status: true,
+            product: {
+              select: { name: true, model: true }
+            }
           }
         }
       },
