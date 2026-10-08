@@ -202,6 +202,21 @@ export class TransactionController {
     return this.transactionService.getTransfersByBranch(parseInt(branchId));
   }
 
+  @Get('sellers-sales-summary')
+  getSellersSalesSummary(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('branchId') branchId?: string,
+    @Query('userId') userId?: string,
+  ) {
+    return this.transactionService.getSellersSalesSummary({
+      startDate,
+      endDate,
+      branchId: branchId && branchId !== 'ALL' ? parseInt(branchId) : undefined,
+      userId: userId ? parseInt(userId) : undefined,
+    });
+  }
+
   @Get('user-report/:userId')
   getUserReport(
     @Param('userId') userId: string,

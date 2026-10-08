@@ -3994,4 +3994,97 @@ export class TransactionService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  async getSellersSalesSummary(params: {
+    startDate?: string;
+    endDate?: string;
+    branchId?: number;
+    userId?: number;
+  }) {
+    const { startDate, endDate, branchId, userId } = params;
+
+    const where: any = {
+      status: { not: TransactionStatus.CANCELLED },
+      type: TransactionType.SALE,
+    };
+
+    if (startDate || endDate) {
+      const dateCond: any = {};
+      if (startDate) dateCond.gte = new Date(startDate);
+      if (endDate) {
+        const endD = new Date(endDate);
+        endD.setHours(23, 59, 59, 999);
+        dateCond.lte = endD;
+      }
+      where.createdAt = dateCond;
+    }
+
+    if (branchId) {
+      where.OR = [
+        { fromBranchId: branchId },
+        { toBranchId: branchId },
+      ];
+    }
+
+    if (userId) {
+      const userCondition = { OR: [{ soldByUserId: userId }, { userId }] };
+      if (where.OR) {
+        where.AND = [userCondition];
+      } else {
+        where.OR = userCondition.OR;
+      }
+    }
+
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      select: {
+        id: true,
+        soldByUserId: true,
+        userId: true,
+        fromBranchId: true,
+        finalTotal: true,
+        total: true,
+        paymentType: true,
+      },
+    });
+
+    const summary: Record<number, any> = {};
+
+    for (const tx of transactions) {
+      const sId = tx.soldByUserId || tx.userId;
+      if (!sId) continue;
+
+      const som = Number(tx.finalTotal || tx.total || 0);
+
+      if (!summary[sId]) {
+        summary[sId] = {
+          totalSales: 0,
+          totalSalesInSom: 0,
+          transactionCount: 0,
+          cashSales: 0,
+          cardSales: 0,
+          creditSales: 0,
+          branches: [],
+        };
+      }
+
+      summary[sId].totalSalesInSom += som;
+      summary[sId].transactionCount += 1;
+
+      if (tx.fromBranchId && !summary[sId].branches.includes(tx.fromBranchId)) {
+        summary[sId].branches.push(tx.fromBranchId);
+      }
+
+      const pType = String(tx.paymentType || '').toUpperCase();
+      if (pType === 'CASH') {
+        summary[sId].cashSales += som;
+      } else if (pType === 'CARD') {
+        summary[sId].cardSales += som;
+      } else if (pType === 'CREDIT' || pType === 'INSTALLMENT') {
+        summary[sId].creditSales += som;
+      }
+    }
+
+    return summary;
+  }
 }
