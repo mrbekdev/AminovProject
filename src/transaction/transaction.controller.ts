@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
   Res,
+  StreamableFile,
 } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -164,7 +165,7 @@ export class TransactionController {
     @Query('hasOutstanding') hasOutstanding?: string,
     @Query('paymentStatus') paymentStatus?: string,
     @Query('cashierId') cashierId?: string,
-    @Res() res?: any
+    @Res({ passthrough: true }) res?: any
   ) {
     const buffer = await this.transactionService.exportDebtCustomersToExcel({
       branchId: branchId ? parseInt(branchId) : undefined,
@@ -176,15 +177,15 @@ export class TransactionController {
       cashierId: cashierId ? parseInt(cashierId) : undefined,
     });
 
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename=kredit_mijozlari.xlsx',
-    );
-    res.end(buffer);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename=kredit_mijozlari.xlsx',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': '*',
+    });
+    return new StreamableFile(buffer);
   }
 
   @Get('pending-transfers')
