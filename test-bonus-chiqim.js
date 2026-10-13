@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const API_URL = 'https://alikafecrmm.uz';
+const API_URL = 'http://localhost:4000';
 
 // Test data
 const testData = {

@@ -124,7 +124,13 @@ export class AttendanceController {
         isHidden: true,
         branch: { select: { id: true, name: true } },
         store: { select: { id: true, storeName: true } },
+        _count: {
+          select: {
+            faceTemplates: true,
+          },
+        },
         faceTemplates: {
+          take: 1,
           select: {
             id: true,
             imageUrl: true,
@@ -135,11 +141,13 @@ export class AttendanceController {
     });
 
     return users.map(u => {
-      const faceEncodings = u.faceTemplates.map(ft => ({
-        id: ft.id,
-        imageUrl: ft.imageUrl || '',
-        image_path: ft.imageUrl || '',
-      }));
+      const faceCount = u._count?.faceTemplates ?? u.faceTemplates.length;
+      const firstFace = u.faceTemplates[0];
+      const faceEncodings = firstFace ? [{
+        id: firstFace.id,
+        imageUrl: firstFace.imageUrl || '',
+        image_path: firstFace.imageUrl || '',
+      }] : [];
 
       return {
         id: u.id,
@@ -166,8 +174,8 @@ export class AttendanceController {
         passportBack: '',
         is_hidden: Boolean(u.isHidden),
         isHidden: Boolean(u.isHidden),
-        has_face: u.faceTemplates.length > 0,
-        face_count: u.faceTemplates.length,
+        has_face: faceCount > 0,
+        face_count: faceCount,
         faceTemplates: faceEncodings,
         face_encodings: faceEncodings,
       };

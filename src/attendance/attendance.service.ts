@@ -24,6 +24,58 @@ function getFirstDayOfMonthUTC() {
   return new Date(Date.UTC(year, month, 1));
 }
 
+function parseAttendanceDateTime(timeVal: any, baseDateStr: string): Date | null {
+  if (!timeVal || timeVal === '—' || timeVal === '-' || timeVal === 'null' || timeVal === 'undefined') {
+    return null;
+  }
+  if (timeVal instanceof Date) {
+    return isNaN(timeVal.getTime()) ? null : timeVal;
+  }
+  if (typeof timeVal !== 'string') {
+    return null;
+  }
+  const clean = timeVal.trim();
+  if (!clean || clean === 'Invalid Date') {
+    return null;
+  }
+
+  // 1. If it's a full ISO or datetime string containing 'T' or 'Z'
+  if (clean.includes('T') || clean.includes('Z')) {
+    if (clean.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(clean)) {
+      const d = new Date(clean);
+      if (!isNaN(d.getTime())) return d;
+    }
+    const withTz = new Date(`${clean}+05:00`);
+    if (!isNaN(withTz.getTime())) return withTz;
+    const d = new Date(clean);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // 2. Format with space: "YYYY-MM-DD HH:mm:ss"
+  if (clean.includes(' ') && clean.includes('-')) {
+    const parts = clean.split(' ');
+    const withTz = new Date(`${parts[0]}T${parts[1]}+05:00`);
+    if (!isNaN(withTz.getTime())) return withTz;
+  }
+
+  // 3. Just time string: "HH:mm" or "HH:mm:ss"
+  let timeOnly = clean;
+  if (timeOnly.includes(' ')) {
+    const parts = timeOnly.split(' ');
+    timeOnly = parts[parts.length - 1];
+  }
+  const tParts = timeOnly.split(':');
+  if (tParts.length >= 2) {
+    const h = tParts[0].padStart(2, '0');
+    const m = tParts[1].padStart(2, '0');
+    const s = tParts[2] ? tParts[2].padStart(2, '0') : '00';
+    const d = new Date(`${baseDateStr}T${h}:${m}:${s}+05:00`);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  return null;
+}
+
 function getDistanceFromLatLonInMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -1022,8 +1074,8 @@ export class AttendanceService {
           employee_name: empName,
           department_name: getRoleText(d.user?.role || ''),
           store_name: d.store?.storeName || d.branch?.name || 'Bosh Do\'kon',
-          check_in_time: d.checkInAt ? d.checkInAt.toISOString() : null,
-          check_out_time: d.checkOutAt ? d.checkOutAt.toISOString() : null,
+          check_in_time: d.checkInAt ? (checkInFormatted ? `${dateFormatted}T${checkInFormatted}:00+05:00` : d.checkInAt.toISOString()) : null,
+          check_out_time: d.checkOutAt ? (checkOutFormatted ? `${dateFormatted}T${checkOutFormatted}:00+05:00` : d.checkOutAt.toISOString()) : null,
           total_minutes: d.totalMinutes || 0,
           work_hours: d.totalMinutes ? Math.round((d.totalMinutes / 60) * 100) / 100 : 0,
           late_minutes: lateMins,
@@ -1151,20 +1203,23 @@ export class AttendanceService {
       workEnd = new Date(+workEnd + 24 * 60 * 60 * 1000);
     }
 
+    const validCheckInAt = checkInAt instanceof Date && !isNaN(checkInAt.getTime()) ? checkInAt : null;
+    const validCheckOutAt = checkOutAt instanceof Date && !isNaN(checkOutAt.getTime()) ? checkOutAt : null;
+
     let lateMinutes = 0;
     let latePenalty = 0;
     let earlyArrivalMinutes = 0;
     let earlyArrivalBonus = 0;
 
-    if (checkInAt) {
-      if (checkInAt > workStart) {
-        const diff = Math.round((+checkInAt - +workStart) / 60000);
+    if (validCheckInAt) {
+      if (validCheckInAt > workStart) {
+        const diff = Math.round((+validCheckInAt - +workStart) / 60000);
         if (diff > lateToleranceMin) {
           lateMinutes = diff;
           latePenalty = lateMinutes * latePenaltyPerMin;
         }
       } else {
-        const earlyDiff = Math.round((+workStart - +checkInAt) / 60000);
+        const earlyDiff = Math.round((+workStart - +validCheckInAt) / 60000);
         if (earlyDiff > 0 && earlyDiff <= 180) {
           earlyArrivalMinutes = earlyDiff;
           earlyArrivalBonus = earlyArrivalMinutes * earlyBonusPerMin;
@@ -1177,15 +1232,15 @@ export class AttendanceService {
     let overtimeMinutes = 0;
     let overtimeBonus = 0;
 
-    if (checkOutAt) {
-      if (checkOutAt < workEnd) {
-        const earlyLeaveDiff = Math.round((+workEnd - +checkOutAt) / 60000);
+    if (validCheckOutAt) {
+      if (validCheckOutAt < workEnd) {
+        const earlyLeaveDiff = Math.round((+workEnd - +validCheckOutAt) / 60000);
         if (earlyLeaveDiff > earlyLeaveToleranceMin) {
           earlyLeaveMinutes = earlyLeaveDiff;
           earlyLeavePenalty = earlyLeaveMinutes * latePenaltyPerMin;
         }
       } else {
-        const overtimeDiff = Math.round((+checkOutAt - +workEnd) / 60000);
+        const overtimeDiff = Math.round((+validCheckOutAt - +workEnd) / 60000);
         if (overtimeDiff > 0 && overtimeDiff <= 360) {
           overtimeMinutes = overtimeDiff;
           overtimeBonus = overtimeMinutes * earlyBonusPerMin;
@@ -1193,8 +1248,8 @@ export class AttendanceService {
       }
     }
 
-    const totalMinutes = checkInAt && checkOutAt
-      ? Math.max(0, Math.round((+checkOutAt - +checkInAt) / 60000))
+    const totalMinutes = validCheckInAt && validCheckOutAt
+      ? Math.max(0, Math.round((+validCheckOutAt - +validCheckInAt) / 60000))
       : 0;
 
     const penaltyAmount = customPenalty !== undefined && customPenalty !== null && !isNaN(Number(customPenalty))
@@ -1217,20 +1272,20 @@ export class AttendanceService {
     } else if (!status || status === 'AUTO') {
       if (lateMinutes > 0) status = 'LATE';
       else if (earlyLeaveMinutes > 0) status = 'LEFT_EARLY';
-      else if (checkInAt) status = 'PRESENT';
+      else if (validCheckInAt) status = 'PRESENT';
       else status = 'ABSENT';
     }
 
     return {
       userId,
       date,
-      checkInAt,
-      checkOutAt,
-      totalMinutes,
-      lateMinutes,
-      earlyLeaveMinutes,
-      penaltyAmount,
-      bonusAmount,
+      checkInAt: validCheckInAt,
+      checkOutAt: validCheckOutAt,
+      totalMinutes: isNaN(totalMinutes) ? 0 : totalMinutes,
+      lateMinutes: isNaN(lateMinutes) ? 0 : lateMinutes,
+      earlyLeaveMinutes: isNaN(earlyLeaveMinutes) ? 0 : earlyLeaveMinutes,
+      penaltyAmount: isNaN(penaltyAmount) ? 0 : penaltyAmount,
+      bonusAmount: isNaN(bonusAmount) ? 0 : bonusAmount,
       status: status as any,
       notes,
     };
@@ -1252,21 +1307,8 @@ export class AttendanceService {
     });
     if (!user) throw new NotFoundException('User not found');
 
-    let checkInAt: Date | null = null;
-    if (dayData.checkInAt) {
-      checkInAt = new Date(dayData.checkInAt);
-    } else if (dayData.check_in_time) {
-      const timeStr = dayData.check_in_time.length === 5 ? `${dayData.check_in_time}:00` : dayData.check_in_time;
-      checkInAt = new Date(`${dateStr}T${timeStr}+05:00`);
-    }
-
-    let checkOutAt: Date | null = null;
-    if (dayData.checkOutAt) {
-      checkOutAt = new Date(dayData.checkOutAt);
-    } else if (dayData.check_out_time) {
-      const timeStr = dayData.check_out_time.length === 5 ? `${dayData.check_out_time}:00` : dayData.check_out_time;
-      checkOutAt = new Date(`${dateStr}T${timeStr}+05:00`);
-    }
+    const checkInAt = parseAttendanceDateTime(dayData.checkInAt ?? dayData.check_in_time, dateStr);
+    const checkOutAt = parseAttendanceDateTime(dayData.checkOutAt ?? dayData.check_out_time, dateStr);
 
     const metrics = await this.recalculateAttendanceMetrics({
       userId,
@@ -1361,43 +1403,14 @@ export class AttendanceService {
       : existing.date.toISOString().split('T')[0];
     const targetDate = startOfDayUTC(new Date(dateStr));
 
-    const parseTime = (timeVal: any): Date | null => {
-      if (!timeVal || timeVal === '—' || timeVal === '-' || timeVal === 'null') return null;
-      if (typeof timeVal === 'string') {
-        if (timeVal.includes('T') || timeVal.includes('Z')) {
-          const parsed = new Date(timeVal);
-          if (!isNaN(parsed.getTime())) return parsed;
-        }
-        let clean = timeVal.trim();
-        if (clean.includes(' ')) {
-          const parts = clean.split(' ');
-          clean = parts[parts.length - 1];
-        }
-        const tParts = clean.split(':');
-        if (tParts.length >= 2) {
-          const h = tParts[0].padStart(2, '0');
-          const m = tParts[1].padStart(2, '0');
-          const s = tParts[2] ? tParts[2].padStart(2, '0') : '00';
-          return new Date(`${dateStr}T${h}:${m}:${s}+05:00`);
-        }
-      } else if (timeVal instanceof Date && !isNaN(timeVal.getTime())) {
-        return timeVal;
-      }
-      return null;
-    };
-
     let checkInAt: Date | null = existing.checkInAt;
-    if (data.check_in_time !== undefined) {
-      checkInAt = parseTime(data.check_in_time);
-    } else if (data.checkInAt !== undefined) {
-      checkInAt = parseTime(data.checkInAt);
+    if (data.check_in_time !== undefined || data.checkInAt !== undefined) {
+      checkInAt = parseAttendanceDateTime(data.check_in_time ?? data.checkInAt, dateStr);
     }
 
     let checkOutAt: Date | null = existing.checkOutAt;
-    if (data.check_out_time !== undefined) {
-      checkOutAt = parseTime(data.check_out_time);
-    } else if (data.checkOutAt !== undefined) {
-      checkOutAt = parseTime(data.checkOutAt);
+    if (data.check_out_time !== undefined || data.checkOutAt !== undefined) {
+      checkOutAt = parseAttendanceDateTime(data.check_out_time ?? data.checkOutAt, dateStr);
     }
 
     const customPenalty = data.penalty_amount !== undefined ? data.penalty_amount : data.penaltyAmount;
@@ -1463,8 +1476,8 @@ export class AttendanceService {
       ...updated,
       employee_id: updated.userId,
       employee_name: empName,
-      check_in_time: updated.checkInAt ? updated.checkInAt.toISOString() : null,
-      check_out_time: updated.checkOutAt ? updated.checkOutAt.toISOString() : null,
+      check_in_time: updated.checkInAt ? (checkInFormatted ? `${dateFormatted}T${checkInFormatted}:00+05:00` : updated.checkInAt.toISOString()) : null,
+      check_out_time: updated.checkOutAt ? (checkOutFormatted ? `${dateFormatted}T${checkOutFormatted}:00+05:00` : updated.checkOutAt.toISOString()) : null,
       total_minutes: updated.totalMinutes || 0,
       work_hours: updated.totalMinutes ? Math.round((updated.totalMinutes / 60) * 100) / 100 : 0,
       late_minutes: updated.lateMinutes || 0,
