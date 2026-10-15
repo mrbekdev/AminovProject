@@ -155,36 +155,56 @@ export class ProductService {
     if (search) {
       const rawSearch = String(search).trim();
       if (rawSearch) {
-        // Remove noise punctuation like parentheses, quotes, brackets, etc.
+        // Remove noise punctuation
         const cleaned = rawSearch.replace(/[\(\)\[\]\{\}\"\'\`,\?!\+]/g, ' ').trim();
 
-        // Split by whitespace, dashes, slashes, underscores, dots, colons into distinct tokens
+        // Also split glued letters & numbers e.g. "iphone17" -> "iphone 17"
+        const normalized = cleaned
+          .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+          .replace(/(\d)([a-zA-Z])/g, '$1 $2');
+
         const tokens = Array.from(
-          new Set(cleaned.split(/[\s\-_\/:\;.]+/).filter((t) => t.length > 0))
+          new Set(normalized.split(/[\s\-_\/:\;.]+/).filter((t) => t.length > 0))
         );
 
-        const fieldMatch = (term: string) => ({
+        const isBarcodeQuery = /^\d+$/.test(rawSearch) && rawSearch.length >= 4;
+
+        // Match tokens across text fields (name, model, category)
+        const textTokenMatch = (term: string) => ({
           OR: [
             { name: { contains: term, mode: 'insensitive' as const } },
             { model: { contains: term, mode: 'insensitive' as const } },
-            { barcode: { contains: term, mode: 'insensitive' as const } },
             { category: { name: { contains: term, mode: 'insensitive' as const } } },
           ],
         });
 
-        if (tokens.length > 0) {
-          // Every token in the search string must match in AT LEAST ONE field (name, model, barcode, category)
-          // e.g., "avt f2j" -> token "avt" in name AND token "f2j" in model -> MATCHES!
-          const allTokensCondition = {
-            AND: tokens.map((token) => fieldMatch(token)),
-          };
+        const searchOrBranches: any[] = [];
 
-          // Also allow full rawSearch string match as an alternative fallback
+        // 1. All tokens must match across (name, model, category)
+        if (tokens.length > 0) {
+          searchOrBranches.push({
+            AND: tokens.map((token) => textTokenMatch(token)),
+          });
+        }
+
+        // 2. Full raw search directly in name or model
+        searchOrBranches.push({
+          OR: [
+            { name: { contains: rawSearch, mode: 'insensitive' as const } },
+            { model: { contains: rawSearch, mode: 'insensitive' as const } },
+          ],
+        });
+
+        // 3. Barcode match if query looks like a barcode or scan
+        if (isBarcodeQuery) {
+          searchOrBranches.push({
+            barcode: { contains: rawSearch, mode: 'insensitive' as const },
+          });
+        }
+
+        if (searchOrBranches.length > 0) {
           andConditions.push({
-            OR: [
-              allTokensCondition,
-              fieldMatch(rawSearch),
-            ],
+            OR: searchOrBranches,
           });
         }
       }
@@ -216,30 +236,28 @@ export class ProductService {
       ...(page && limit ? { skip: (page - 1) * limit, take: limit } : {}),
     });
 
-    // Only calculate sold counts if status === 'SOLD'
+    // Calculate sold counts for enriched products
+    const productIds = products.map(p => p.id);
     const individualSalesMap = new Map<number, number>();
-    if (status === 'SOLD') {
-      const productIds = products.map(p => p.id);
-      if (productIds.length > 0) {
-        const soldCounts = await this.prisma.transactionItem.groupBy({
-          by: ['productId'],
-          where: {
-            productId: { in: productIds },
-            transaction: {
-              type: { in: ['SALE', 'DELIVERY'] },
-              status: { not: 'CANCELLED' }
-            }
-          },
-          _sum: {
-            quantity: true
+    if (productIds.length > 0) {
+      const soldCounts = await this.prisma.transactionItem.groupBy({
+        by: ['productId'],
+        where: {
+          productId: { in: productIds },
+          transaction: {
+            type: { in: ['SALE', 'DELIVERY'] },
+            status: { not: 'CANCELLED' }
           }
-        });
-        soldCounts.forEach(item => {
-          if (item.productId) {
-            individualSalesMap.set(item.productId, item._sum.quantity || 0);
-          }
-        });
-      }
+        },
+        _sum: {
+          quantity: true
+        }
+      });
+      soldCounts.forEach(item => {
+        if (item.productId) {
+          individualSalesMap.set(item.productId, item._sum.quantity || 0);
+        }
+      });
     }
 
     // Get exchange rate once
@@ -331,7 +349,7 @@ export class ProductService {
       },
     });
 
-    if (!product) {
+    if (!product || product.isDeleted) {
       throw new NotFoundException('Mahsulot topilmadi');
     }
     
@@ -354,7 +372,8 @@ export class ProductService {
     const product = await this.prisma.product.findFirst({
       where: { 
         id,
-        branchId 
+        branchId,
+        isDeleted: false,
       },
       include: {
         branch: true,
@@ -961,7 +980,9 @@ async update(
   // Defective mahsulotlar ro'yxati
   async getDefectiveProducts(branchId?: number) {
     const where: Prisma.ProductWhereInput = {
+      isDeleted: false,
       defectiveQuantity: { gt: 0 },
+      branch: { status: { not: 'DELETED' } },
     };
 
     if (branchId) {
@@ -1000,7 +1021,9 @@ async update(
   // Fixed mahsulotlar ro'yxati
   async getFixedProducts(branchId?: number) {
     const where: Prisma.ProductWhereInput = {
+      isDeleted: false,
       status: 'FIXED',
+      branch: { status: { not: 'DELETED' } },
     };
 
     if (branchId) {

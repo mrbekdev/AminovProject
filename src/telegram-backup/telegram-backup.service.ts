@@ -373,8 +373,6 @@ export class TelegramBackupService implements OnModuleInit {
       this.logger.error('Telegram xabar yuborishda xato:', err.message);
     }
   }
-
-  // ─── Delete all backup files from server disk completely ───────────────────
   private cleanAllBackups(): void {
     try {
       if (!fs.existsSync(this.backupDir)) return;
