@@ -251,8 +251,12 @@ export class DailyRepaymentService {
     if (branchId) {
       const branchIdNum = typeof branchId === 'string' ? parseInt(branchId) : branchId;
       if (!isNaN(branchIdNum)) {
-        where.branchId = branchIdNum;
-      } else {
+        where.OR = [
+          { branchId: branchIdNum },
+          { branchId: null },
+          { transaction: { fromBranchId: branchIdNum } },
+          { transaction: { toBranchId: branchIdNum } },
+        ];
       }
     }
     

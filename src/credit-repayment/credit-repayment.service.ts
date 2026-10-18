@@ -260,7 +260,14 @@ export class CreditRepaymentService {
       paidByUserId: userId,
     };
     
-    if (branchId) where.branchId = branchId;
+    if (branchId) {
+      where.OR = [
+        { branchId: branchId },
+        { branchId: null },
+        { transaction: { fromBranchId: branchId } },
+        { transaction: { toBranchId: branchId } },
+      ];
+    }
     
     if (startDate || endDate) {
       where.paidAt = {};
@@ -315,8 +322,12 @@ export class CreditRepaymentService {
     if (branchId) {
       const branchIdNum = typeof branchId === 'string' ? parseInt(branchId) : branchId;
       if (!isNaN(branchIdNum)) {
-        where.branchId = branchIdNum;
-      } else {
+        where.OR = [
+          { branchId: branchIdNum },
+          { branchId: null },
+          { transaction: { fromBranchId: branchIdNum } },
+          { transaction: { toBranchId: branchIdNum } },
+        ];
       }
     }
     
