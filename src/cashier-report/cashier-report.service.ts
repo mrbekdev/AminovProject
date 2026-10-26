@@ -301,6 +301,7 @@ export class CashierReportService {
       Yuksalish: 0,
       'Bir zumda': 0,
       'Limit nasiya': 0,
+      Hamroh: 0,
       Boshqa: 0,
     };
 
