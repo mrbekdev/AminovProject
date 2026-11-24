@@ -80,9 +80,9 @@ export class CashierReportService {
     });
   }
 
-  async getCashierReport(cashierId: number, branchId: number, startDate: Date, endDate: Date) {
+  async getCashierReport(cashierId: number, branchId: number, startDate: Date, endDate: Date, role?: string) {
     const hasBranch = typeof branchId === 'number' && !Number.isNaN(branchId);
-    return this.generateCashierReport(cashierId, hasBranch ? branchId : null, startDate, endDate);
+    return this.generateCashierReport(cashierId, hasBranch ? branchId : null, startDate, endDate, role);
   }
 
   private async generateCashierReport(
@@ -90,7 +90,19 @@ export class CashierReportService {
     branchId: number | null,
     startDate: Date,
     endDate: Date,
+    role?: string,
   ) {
+    const userOrFilter: any[] = [
+      { soldByUserId: cashierId },
+      { userId: cashierId },
+    ];
+    if (String(role || '').toUpperCase() === 'WAREHOUSE') {
+      userOrFilter.push(
+        { soldBy: { role: 'WAREHOUSE' } },
+        { user: { role: 'WAREHOUSE' } },
+      );
+    }
+
     const whereClause: any = {
       type: 'SALE',
       createdAt: {
@@ -99,10 +111,7 @@ export class CashierReportService {
       },
       AND: [
         {
-          OR: [
-            { soldByUserId: cashierId },
-            { userId: cashierId },
-          ],
+          OR: userOrFilter,
         },
       ],
     };
@@ -116,143 +125,165 @@ export class CashierReportService {
       });
     }
 
-    // Get all transactions for the cashier in the date range with selective fields
-    const transactions = await this.prisma.transaction.findMany({
-      where: whereClause,
-      select: {
-        id: true,
-        type: true,
-        total: true,
-        finalTotal: true,
-        amountPaid: true,
-        paymentType: true,
-        upfrontPaymentType: true,
-        partnerName: true,
-        createdAt: true,
-        payments: {
-          select: {
-            id: true,
-            amount: true,
-            method: true,
+    // Run all 4 independent queries in parallel
+    const [transactions, dailyRepayments, creditRepayments, defectiveLogs] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          total: true,
+          finalTotal: true,
+          amountPaid: true,
+          downPayment: true,
+          description: true,
+          paymentType: true,
+          upfrontPaymentType: true,
+          partnerName: true,
+          createdAt: true,
+          payments: {
+            select: {
+              id: true,
+              amount: true,
+              method: true,
+            },
+          },
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              quantity: true,
+              price: true,
+              sellingPrice: true,
+              total: true,
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  model: true,
+                  barcode: true,
+                },
+              },
+            },
+          },
+          customer: {
+            select: {
+              id: true,
+              fullName: true,
+              phone: true,
+            },
+          },
+          soldBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+              role: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+              role: true,
+            },
+          },
+          fromBranch: {
+            select: { id: true, name: true },
+          },
+          toBranch: {
+            select: { id: true, name: true },
           },
         },
-        items: {
-          select: {
-            id: true,
-            productId: true,
-            quantity: true,
-            price: true,
-            sellingPrice: true,
-            total: true,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+      this.prisma.dailyRepayment.findMany({
+        where: {
+          paidByUserId: cashierId,
+          ...(branchId != null ? { branchId } : {}),
+          paidAt: {
+            gte: startDate,
+            lte: endDate,
           },
         },
-        customer: {
-          select: {
-            id: true,
-            fullName: true,
-            phone: true,
+        select: {
+          id: true,
+          amount: true,
+          channel: true,
+          paidAt: true,
+          transactionId: true,
+          paidByUserId: true,
+          transaction: {
+            select: {
+              id: true,
+              customer: { select: { id: true, fullName: true, phone: true } },
+              soldBy: { select: { id: true, firstName: true, lastName: true, username: true } },
+              user: { select: { id: true, firstName: true, lastName: true, username: true } },
+            },
+          },
+          paidBy: {
+            select: { id: true, firstName: true, lastName: true, username: true },
           },
         },
-        soldBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            username: true,
+      }),
+      this.prisma.creditRepayment.findMany({
+        where: {
+          paidByUserId: cashierId,
+          ...(branchId != null ? { branchId } : {}),
+          paidAt: {
+            gte: startDate,
+            lte: endDate,
           },
         },
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            username: true,
+        select: {
+          id: true,
+          scheduleId: true,
+          amount: true,
+          channel: true,
+          month: true,
+          paidAt: true,
+          transactionId: true,
+          paidByUserId: true,
+          schedule: {
+            select: { installmentType: true },
+          },
+          transaction: {
+            select: {
+              id: true,
+              paymentType: true,
+              partnerName: true,
+              customer: { select: { id: true, fullName: true, phone: true } },
+              soldBy: { select: { id: true, firstName: true, lastName: true, username: true } },
+              user: { select: { id: true, firstName: true, lastName: true, username: true } },
+            },
+          },
+          paidBy: {
+            select: { id: true, firstName: true, lastName: true, username: true },
           },
         },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-
-    // Get daily repayments
-    const dailyRepayments = await this.prisma.dailyRepayment.findMany({
-      where: {
-        paidByUserId: cashierId,
-        ...(branchId != null ? { branchId } : {}),
-        paidAt: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-      select: {
-        id: true,
-        amount: true,
-        channel: true,
-        paidAt: true,
-        transactionId: true,
-        paidByUserId: true,
-        transaction: {
-          select: {
-            id: true,
-            customer: { select: { id: true, fullName: true, phone: true } },
-            soldBy: { select: { id: true, firstName: true, lastName: true, username: true } },
-            user: { select: { id: true, firstName: true, lastName: true, username: true } },
+      }),
+      this.prisma.defectiveLog.findMany({
+        where: {
+          OR: [
+            { handledByUserId: cashierId },
+            { userId: cashierId },
+            { transaction: { userId: cashierId } },
+            { transaction: { soldByUserId: cashierId } },
+          ],
+          ...(branchId != null ? { branchId } : {}),
+          createdAt: {
+            gte: startDate,
+            lte: endDate,
           },
         },
-        paidBy: {
-          select: { id: true, firstName: true, lastName: true, username: true },
-        },
-      },
-    });
-
-    // Get credit repayments
-    const creditRepayments = await this.prisma.creditRepayment.findMany({
-      where: {
-        paidByUserId: cashierId,
-        ...(branchId != null ? { branchId } : {}),
-        paidAt: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-      select: {
-        id: true,
-        scheduleId: true,
-        amount: true,
-        channel: true,
-        month: true,
-        paidAt: true,
-        transactionId: true,
-        paidByUserId: true,
-        transaction: {
-          select: {
-            id: true,
-            customer: { select: { id: true, fullName: true, phone: true } },
-            soldBy: { select: { id: true, firstName: true, lastName: true, username: true } },
-            user: { select: { id: true, firstName: true, lastName: true, username: true } },
-          },
-        },
-        paidBy: {
-          select: { id: true, firstName: true, lastName: true, username: true },
-        },
-      },
-    });
-
-    // Get defective logs
-    const defectiveLogs = await this.prisma.defectiveLog.findMany({
-      where: {
-        OR: [
-          { handledByUserId: cashierId },
-          { userId: cashierId }
-        ],
-        ...(branchId != null ? { branchId } : {}),
-        createdAt: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-    });
+      }),
+    ]);
 
     // Preload return transactions in a single query (fixes N+1)
     const returnTxIds = defectiveLogs
@@ -435,12 +466,19 @@ export class CashierReportService {
     }
 
     // Process credit repayments
-    for (const repayment of creditRepayments) {
+    for (const repayment of creditRepayments as any[]) {
       const amt = Number(repayment.amount || 0);
       if (!amt) continue;
       const repayKey = `${repayment.transactionId}:${amt}:${new Date(repayment.paidAt).toISOString()}`;
       if (seenRepayments.has(repayKey)) continue;
       seenRepayments.add(repayKey);
+
+      const isPartner = (repayment.transaction?.paymentType === 'PARTNER') || (repayment.month === 'Ҳамкор тўлови');
+      const isInst = !isPartner && (
+        (repayment.transaction?.paymentType === 'INSTALLMENT') ||
+        (repayment.schedule?.installmentType === 'INSTALLMENT') ||
+        (repayment.month === 'Бўлиб тўлаш')
+      );
 
       repaymentTotal += amt;
       mappedRepayments.push({
@@ -449,20 +487,24 @@ export class CashierReportService {
         transactionId: repayment.transactionId,
         amount: amt,
         channel: (repayment.channel || 'CASH').toUpperCase(),
-        month: repayment.month || '-',
+        month: isPartner ? `Ҳамкор (${repayment.transaction?.partnerName || 'Ҳамкор'})` : (isInst ? 'Бўлиб тўлаш' : (repayment.month || '-')),
+        isInstallment: isInst,
+        isPartner,
+        paymentType: repayment.transaction?.paymentType,
         paidAt: repayment.paidAt,
-        customer: repayment.transaction?.customer || null,
+        customer: repayment.transaction?.customer || (repayment.transaction?.partnerName ? { fullName: `Ҳамкор: ${repayment.transaction.partnerName}` } : null),
         paidBy: repayment.paidBy || { id: repayment.paidByUserId },
         soldBy: repayment.transaction?.soldBy || null,
       });
     }
 
     // Process defective logs
+    const defectiveReturns: any[] = [];
     for (const log of defectiveLogs) {
       const raw = Number(log.cashAmount ?? 0) || 0;
       const dir = String(log.cashAdjustmentDirection || '').toUpperCase();
-      let signed = dir === 'MINUS' ? -Math.abs(raw) : dir === 'PLUS' ? Math.abs(raw) : raw;
       const isReturn = String(log.actionType || '').toUpperCase() === 'RETURN';
+      let signed = dir === 'MINUS' ? -Math.abs(raw) : dir === 'PLUS' ? Math.abs(raw) : (isReturn && raw > 0 ? -Math.abs(raw) : raw);
       if ((Number.isNaN(signed) ? 0 : signed) === 0 && isReturn) {
         const txId = log.transactionId ? Number(log.transactionId) : null;
         if (txId) {
@@ -482,8 +524,26 @@ export class CashierReportService {
         defectivePlus += signed;
       } else if (signed < 0) {
         defectiveMinus += Math.abs(signed);
+        if (isReturn) {
+          defectiveReturns.push({
+            id: log.id,
+            createdAt: log.createdAt,
+            amount: Math.abs(signed),
+            transactionId: log.transactionId ? Number(log.transactionId) : null,
+            productId: log.productId,
+            quantity: log.quantity,
+          });
+        }
       }
     }
+
+    const formatUserName = (u: any) =>
+      u ? (`${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username || '') : '';
+
+    const enrichedTransactions = (transactions as any[]).map((t) => ({
+      ...t,
+      soldByName: formatUserName(t.soldBy) || formatUserName(t.user) || '-',
+    }));
 
     const reportDataEnriched: any = {
       cashierId,
@@ -508,8 +568,9 @@ export class CashierReportService {
       repaymentTotal,
       defectivePlus,
       defectiveMinus,
+      defectiveReturns,
       repayments: mappedRepayments,
-      transactions: transactions,
+      transactions: enrichedTransactions,
     };
 
     if (branchId != null) {
@@ -531,7 +592,8 @@ export class CashierReportService {
         defectiveMinus,
       };
 
-      const dbRecord = await this.prisma.cashierReport.upsert({
+      // Persist report asynchronously so GET response is not delayed by DB write lock
+      this.prisma.cashierReport.upsert({
         where: {
           cashierId_branchId_reportDate: {
             cashierId,
@@ -541,16 +603,7 @@ export class CashierReportService {
         },
         update: reportDataDb,
         create: reportDataDb,
-        include: {
-          cashier: true,
-          branch: true,
-        },
-      });
-
-      return {
-        ...dbRecord,
-        ...reportDataEnriched,
-      };
+      }).catch(() => {});
     }
 
     return {

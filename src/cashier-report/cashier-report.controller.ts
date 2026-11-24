@@ -38,6 +38,7 @@ export class CashierReportController {
     @Query('branchId') branchId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('role') role?: string,
   ) {
     let start = new Date('2000-01-01T00:00:00.000Z');
     if (startDate) {
@@ -65,6 +66,7 @@ export class CashierReportController {
       parsedBranchId,
       start,
       end,
+      role,
     );
   }
 }

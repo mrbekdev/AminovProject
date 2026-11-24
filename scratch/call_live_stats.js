@@ -28,8 +28,8 @@ async function testAPI(label, url) {
 }
 
 async function main() {
-  await testAPI('Statistics: 2025-01-01 to 2026-01-01', 'https://alikafecrmm.uz/statistics?startDate=2025-01-01&endDate=2026-01-01');
-  await testAPI('User Report: 2025-01-01 to 2026-01-01', 'https://alikafecrmm.uz/transactions/user-report/7?startDate=2025-01-01&endDate=2026-01-01');
+  await testAPI('Statistics: 2025-01-01 to 2026-01-01', 'http://localhost:4000/statistics?startDate=2025-01-01&endDate=2026-01-01');
+  await testAPI('User Report: 2025-01-01 to 2026-01-01', 'http://localhost:4000/transactions/user-report/7?startDate=2025-01-01&endDate=2026-01-01');
 }
 
 main().catch(console.error);
