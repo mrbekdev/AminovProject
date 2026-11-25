@@ -45,6 +45,29 @@ async function bootstrap() {
   app.use(json({ limit: '2000mb' }));
   app.use(urlencoded({ extended: true, limit: '2000mb' }));
 
+  // Gzip compression for large JSON responses (e.g., 3000+ products)
+  const zlib = require('zlib');
+  app.use((req: any, res: any, next: any) => {
+    const acceptEncoding = String(req.headers?.['accept-encoding'] || '');
+    if (!acceptEncoding.includes('gzip')) return next();
+
+    const originalJson = res.json.bind(res);
+    res.json = (body: any) => {
+      try {
+        const jsonStr = JSON.stringify(body);
+        if (jsonStr && jsonStr.length > 2048) {
+          const compressed = zlib.gzipSync(jsonStr, { level: 6 });
+          res.setHeader('Content-Encoding', 'gzip');
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.setHeader('Vary', 'Accept-Encoding');
+          return res.send(compressed);
+        }
+      } catch {}
+      return originalJson(body);
+    };
+    next();
+  });
+
   const express = require('express');
   const path = require('path');
   app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));

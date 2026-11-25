@@ -227,31 +227,65 @@ export class ProductService {
       where.AND = andConditions;
     }
 
-    const total = await this.prisma.product.count({ where });
+    const isPaginated = Boolean(page && limit);
 
-    const products = await this.prisma.product.findMany({
-      where,
-      include: { category: true, branch: true },
-      orderBy: [{ name: 'asc' }, { id: 'desc' }],
-      ...(page && limit ? { skip: (page - 1) * limit, take: limit } : {}),
-    });
+    const [total, products, exchangeRate] = await Promise.all([
+      isPaginated ? this.prisma.product.count({ where }) : Promise.resolve(0),
+      this.prisma.product.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          barcode: true,
+          model: true,
+          price: true,
+          marketPrice: true,
+          quantity: true,
+          defectiveQuantity: true,
+          returnedQuantity: true,
+          exchangedQuantity: true,
+          initialQuantity: true,
+          status: true,
+          branchId: true,
+          categoryId: true,
+          bonusPercentage: true,
+          months: true,
+          isDeleted: true,
+          createdAt: true,
+          category: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true } },
+        },
+        orderBy: [{ name: 'asc' }, { id: 'desc' }],
+        ...(isPaginated ? { skip: (page! - 1) * limit!, take: limit } : {}),
+      }),
+      this.currencyExchangeRateService.getCurrentRate('USD', 'UZS'),
+    ]);
 
     // Calculate sold counts for enriched products
     const productIds = products.map(p => p.id);
     const individualSalesMap = new Map<number, number>();
     if (productIds.length > 0) {
+      const soldCountsWhere: Prisma.TransactionItemWhereInput = {
+        transaction: {
+          type: { in: ['SALE', 'DELIVERY'] },
+          status: { not: 'CANCELLED' },
+        },
+        ...(productIds.length <= 500
+          ? { productId: { in: productIds } }
+          : {
+              product: {
+                isDeleted: false,
+                ...(where.branchId ? { branchId: where.branchId } : {}),
+              },
+            }),
+      };
+
       const soldCounts = await this.prisma.transactionItem.groupBy({
         by: ['productId'],
-        where: {
-          productId: { in: productIds },
-          transaction: {
-            type: { in: ['SALE', 'DELIVERY'] },
-            status: { not: 'CANCELLED' }
-          }
-        },
+        where: soldCountsWhere,
         _sum: {
-          quantity: true
-        }
+          quantity: true,
+        },
       });
       soldCounts.forEach(item => {
         if (item.productId) {
@@ -259,9 +293,6 @@ export class ProductService {
         }
       });
     }
-
-    // Get exchange rate once
-    const exchangeRate = await this.currencyExchangeRateService.getCurrentRate('USD', 'UZS');
 
     // Efficient local enrichment
     const enrichedProducts = products.map((product) => {

@@ -392,6 +392,11 @@ model Product {
   @@unique([barcode, branchId], name: "barcode_branchId")
   @@index([isDeleted])
   @@index([branchId, isDeleted])
+  @@index([categoryId])
+  @@index([isDeleted, branchId, categoryId])
+  @@index([isDeleted, name, id])
+  @@index([isDeleted, status])
+  @@index([isDeleted, bonusPercentage])
 }
 
 model DefectiveLog {
@@ -428,6 +433,11 @@ model DefectiveLog {
   @@index([branchId])
   @@index([productId])
   @@index([transactionId])
+  @@index([handledByUserId])
+  @@index([userId])
+  @@index([handledByUserId, createdAt])
+  @@index([userId, createdAt])
+  @@index([branchId, createdAt])
   @@map("defective_logs")
 }
 
@@ -526,9 +536,15 @@ model Transaction {
   @@index([fromBranchId])
   @@index([toBranchId])
   @@index([type])
+  @@index([type, status])
   @@index([transactionType])
   @@index([status])
   @@index([createdAt])
+  @@index([type, createdAt])
+  @@index([soldByUserId, createdAt])
+  @@index([userId, createdAt])
+  @@index([fromBranchId, createdAt])
+  @@index([toBranchId, createdAt])
 }
 
 model TransactionItem {
@@ -549,6 +565,9 @@ model TransactionItem {
 
   transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   product     Product?    @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([transactionId])
+  @@index([productId])
 }
 
 model TransactionPayment {
@@ -665,6 +684,8 @@ model DailyRepayment {
   @@index([paidAt])
   @@index([paidByUserId])
   @@index([branchId])
+  @@index([paidByUserId, paidAt])
+  @@index([branchId, paidAt])
 }
 
 // New model for credit repayments (oylik bo'lib to'lash)
@@ -691,6 +712,8 @@ model CreditRepayment {
   @@index([paidAt])
   @@index([paidByUserId])
   @@index([branchId])
+  @@index([paidByUserId, paidAt])
+  @@index([branchId, paidAt])
 }
 
 // New model for cashier reports

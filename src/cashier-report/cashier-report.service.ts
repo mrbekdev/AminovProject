@@ -273,8 +273,6 @@ export class CashierReportService {
           OR: [
             { handledByUserId: cashierId },
             { userId: cashierId },
-            { transaction: { userId: cashierId } },
-            { transaction: { soldByUserId: cashierId } },
           ],
           ...(branchId != null ? { branchId } : {}),
           createdAt: {
