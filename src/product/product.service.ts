@@ -9,6 +9,9 @@ import { ProductHistoryService } from '../product-history/product-history.servic
 
 @Injectable()
 export class ProductService {
+  private soldCountsCache = new Map<string, { data: Map<number, number>; expiry: number }>();
+  private exchangeRateCache: { rate: number; expiry: number } | null = null;
+
   constructor(
     private prisma: PrismaService,
     private currencyExchangeRateService: CurrencyExchangeRateService,
@@ -229,7 +232,46 @@ export class ProductService {
 
     const isPaginated = Boolean(page && limit);
 
-    const [total, products, exchangeRate] = await Promise.all([
+    const getCachedExchangeRate = async () => {
+      if (this.exchangeRateCache && Date.now() < this.exchangeRateCache.expiry) {
+        return this.exchangeRateCache.rate;
+      }
+      const rate = await this.currencyExchangeRateService.getCurrentRate('USD', 'UZS');
+      this.exchangeRateCache = { rate, expiry: Date.now() + 60_000 };
+      return rate;
+    };
+
+    const soldCacheKey = `branch_${branchId ? String(branchId) : 'all'}`;
+    const getAllSoldCountsMap = async () => {
+      const cached = this.soldCountsCache.get(soldCacheKey);
+      if (cached && Date.now() < cached.expiry) {
+        return cached.data;
+      }
+      const soldCounts = await this.prisma.transactionItem.groupBy({
+        by: ['productId'],
+        where: {
+          transaction: {
+            type: { in: ['SALE', 'DELIVERY'] },
+            status: { not: 'CANCELLED' },
+          },
+          product: {
+            isDeleted: false,
+            ...(where.branchId ? { branchId: where.branchId } : {}),
+          },
+        },
+        _sum: { quantity: true },
+      });
+      const map = new Map<number, number>();
+      for (const item of soldCounts) {
+        if (item.productId) {
+          map.set(item.productId, item._sum.quantity || 0);
+        }
+      }
+      this.soldCountsCache.set(soldCacheKey, { data: map, expiry: Date.now() + 20_000 });
+      return map;
+    };
+
+    const [total, products, exchangeRate, preloadedSalesMap] = await Promise.all([
       isPaginated ? this.prisma.product.count({ where }) : Promise.resolve(0),
       this.prisma.product.findMany({
         where,
@@ -258,34 +300,24 @@ export class ProductService {
         orderBy: [{ name: 'asc' }, { id: 'desc' }],
         ...(isPaginated ? { skip: (page! - 1) * limit!, take: limit } : {}),
       }),
-      this.currencyExchangeRateService.getCurrentRate('USD', 'UZS'),
+      getCachedExchangeRate(),
+      !isPaginated ? getAllSoldCountsMap() : Promise.resolve(null),
     ]);
 
     // Calculate sold counts for enriched products
     const productIds = products.map(p => p.id);
-    const individualSalesMap = new Map<number, number>();
-    if (productIds.length > 0) {
-      const soldCountsWhere: Prisma.TransactionItemWhereInput = {
-        transaction: {
-          type: { in: ['SALE', 'DELIVERY'] },
-          status: { not: 'CANCELLED' },
-        },
-        ...(productIds.length <= 500
-          ? { productId: { in: productIds } }
-          : {
-              product: {
-                isDeleted: false,
-                ...(where.branchId ? { branchId: where.branchId } : {}),
-              },
-            }),
-      };
-
+    let individualSalesMap = preloadedSalesMap || new Map<number, number>();
+    if (isPaginated && productIds.length > 0) {
       const soldCounts = await this.prisma.transactionItem.groupBy({
         by: ['productId'],
-        where: soldCountsWhere,
-        _sum: {
-          quantity: true,
+        where: {
+          productId: { in: productIds },
+          transaction: {
+            type: { in: ['SALE', 'DELIVERY'] },
+            status: { not: 'CANCELLED' },
+          },
         },
+        _sum: { quantity: true },
       });
       soldCounts.forEach(item => {
         if (item.productId) {

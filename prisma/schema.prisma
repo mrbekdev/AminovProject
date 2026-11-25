@@ -151,98 +151,98 @@ enum ProductStatus {
 }
 
 model Branch {
-  id               Int                    @id @default(autoincrement())
-  name             String
-  address          String?
-  type             BranchType             @default(SAVDO_MARKAZ)
-  cashBalance      Float                  @default(0)
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  phoneNumber      String?
-  status           BranchStatus           @default(ACTIVE)
-  products         Product[]
-  transactions     Transaction[]          @relation("FromBranch")
-  toTransactions   Transaction[]          @relation("ToBranch")
-  users            User[]
-  allowedUsers     UserBranchAccess[]
-  categories       Category[]
-  fromTransfers    ProductTransfer[]      @relation("FromBranch")
-  toTransfers      ProductTransfer[]      @relation("ToBranch")
-  defectiveLogs    DefectiveLog[]
-  exchangeRates    CurrencyExchangeRate[]
-  cashierReports   CashierReport[]
-  DailyRepayment   DailyRepayment[]
-  CreditRepayment  CreditRepayment[]
-  bonuses          Bonus[]
-  attendanceDays   AttendanceDay[]
-  attendanceEvents AttendanceEvent[]
-  reconciliations  CashReconciliation[]
-  incomingReports  IncomingStockReport[]  @relation("BranchIncomingReports")
+  id                 Int                    @id @default(autoincrement())
+  name               String
+  address            String?
+  type               BranchType             @default(SAVDO_MARKAZ)
+  cashBalance        Float                  @default(0)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  phoneNumber        String?
+  status             BranchStatus           @default(ACTIVE)
+  products           Product[]
+  transactions       Transaction[]          @relation("FromBranch")
+  toTransactions     Transaction[]          @relation("ToBranch")
+  users              User[]
+  allowedUsers       UserBranchAccess[]
+  categories         Category[]
+  fromTransfers      ProductTransfer[]      @relation("FromBranch")
+  toTransfers        ProductTransfer[]      @relation("ToBranch")
+  defectiveLogs      DefectiveLog[]
+  exchangeRates      CurrencyExchangeRate[]
+  cashierReports     CashierReport[]
+  DailyRepayment     DailyRepayment[]
+  CreditRepayment    CreditRepayment[]
+  bonuses            Bonus[]
+  attendanceDays     AttendanceDay[]
+  attendanceEvents   AttendanceEvent[]
+  reconciliations    CashReconciliation[]
+  incomingReports    IncomingStockReport[]  @relation("BranchIncomingReports")
   debtCashierReports DebtCashierReport[]
-  stores           Store[]
-  salaryPayments   SalaryPayment[]
-  deletedRecords   DeletedRecord[]        @relation("DeletedRecordBranch")
-  tradeInProducts  TradeInProduct[]
+  stores             Store[]
+  salaryPayments     SalaryPayment[]
+  deletedRecords     DeletedRecord[]        @relation("DeletedRecordBranch")
+  tradeInProducts    TradeInProduct[]
 
   @@index([name])
 }
 
 model User {
-  id                   Int                    @id @default(autoincrement())
-  firstName            String?
-  lastName             String?
-  phone                String?
-  username             String                 @unique
-  password             String?
-  role                 UserRole
-  branchId             Int?
-  storeId              Int?
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  status               UserStatus             @default(ACTIVE)
-  allowedBranches      UserBranchAccess[]
-  workStartTime        String?                @db.VarChar(5)
-  workEndTime          String?                @db.VarChar(5)
-  workShift            String?                @default("DAY")
-  position             String?
-  monthlySalary        Float?                 @map("monthly_salary") @default(5000000)
-  passportSeries       String?                @map("passport_series")
-  jshshir              String?
-  birthDate            String?                @map("birth_date")
-  passportFront        String?                @map("passport_front") @db.Text
-  passportBack         String?                @map("passport_back") @db.Text
-  isHidden             Boolean                @default(false)
-  branch               Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  store                Store?                 @relation("UserStore", fields: [storeId], references: [id], onDelete: SetNull)
-  createdTransactions  Transaction[]          @relation("TransactionsCreatedBy")
-  soldTransactions     Transaction[]          @relation("TransactionsSoldBy")
-  initiatedTransfers   ProductTransfer[]      @relation("InitiatedTransfers")
-  approvedTransfers    ProductTransfer[]      @relation("ApprovedTransfers")
-  userLocations        UserLocation[]
+  id                                Int                            @id @default(autoincrement())
+  firstName                         String?
+  lastName                          String?
+  phone                             String?
+  username                          String                         @unique
+  password                          String?
+  role                              UserRole
+  branchId                          Int?
+  storeId                           Int?
+  createdAt                         DateTime                       @default(now())
+  updatedAt                         DateTime                       @updatedAt
+  status                            UserStatus                     @default(ACTIVE)
+  allowedBranches                   UserBranchAccess[]
+  workStartTime                     String?                        @db.VarChar(5)
+  workEndTime                       String?                        @db.VarChar(5)
+  workShift                         String?                        @default("DAY")
+  position                          String?
+  monthlySalary                     Float?                         @default(5000000) @map("monthly_salary")
+  passportSeries                    String?                        @map("passport_series")
+  jshshir                           String?
+  birthDate                         String?                        @map("birth_date")
+  passportFront                     String?                        @map("passport_front") @db.Text
+  passportBack                      String?                        @map("passport_back") @db.Text
+  isHidden                          Boolean                        @default(false)
+  branch                            Branch?                        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  store                             Store?                         @relation("UserStore", fields: [storeId], references: [id], onDelete: SetNull)
+  createdTransactions               Transaction[]                  @relation("TransactionsCreatedBy")
+  soldTransactions                  Transaction[]                  @relation("TransactionsSoldBy")
+  initiatedTransfers                ProductTransfer[]              @relation("InitiatedTransfers")
+  approvedTransfers                 ProductTransfer[]              @relation("ApprovedTransfers")
+  userLocations                     UserLocation[]
   // Defective logs relations
-  createdDefectiveLogs DefectiveLog[]         @relation("DefectiveLogCreatedBy")
-  handledDefectiveLogs DefectiveLog[]         @relation("DefectiveLogHandledBy")
-  PaymentSchedule      PaymentSchedule[]
-  PaymentRepayment     PaymentRepayment[]
-  dailyRepayments      DailyRepayment[]
-  creditRepayments     CreditRepayment[]
-  cashierReports       CashierReport[]        @relation("CashierReports")
-  exchangeRates        CurrencyExchangeRate[]
-  bonuses              Bonus[]                @relation("UserBonuses")
-  createdBonuses       Bonus[]                @relation("BonusCreatedBy")
-  attendanceDays       AttendanceDay[]
-  attendanceEvents     AttendanceEvent[]
-  faceTemplates        FaceTemplate[]
-  Transaction          Transaction[]
-  auditTasks           Task[]                 @relation("TaskAuditor")
-  collectedUydanTasks  Task[]                 @relation("TaskUydanCollectedBy")
-  driverRatings        DriverRating[]         @relation("DriverRatings")
-  ratingsGiven         DriverRating[]         @relation("RatingsGiven")
-  cashierReconciliations       CashReconciliation[]           @relation("CashierReconciliations")
-  approvedReconciliations      CashReconciliation[]           @relation("ApprovedReconciliations")
+  createdDefectiveLogs              DefectiveLog[]                 @relation("DefectiveLogCreatedBy")
+  handledDefectiveLogs              DefectiveLog[]                 @relation("DefectiveLogHandledBy")
+  PaymentSchedule                   PaymentSchedule[]
+  PaymentRepayment                  PaymentRepayment[]
+  dailyRepayments                   DailyRepayment[]
+  creditRepayments                  CreditRepayment[]
+  cashierReports                    CashierReport[]                @relation("CashierReports")
+  exchangeRates                     CurrencyExchangeRate[]
+  bonuses                           Bonus[]                        @relation("UserBonuses")
+  createdBonuses                    Bonus[]                        @relation("BonusCreatedBy")
+  attendanceDays                    AttendanceDay[]
+  attendanceEvents                  AttendanceEvent[]
+  faceTemplates                     FaceTemplate[]
+  Transaction                       Transaction[]
+  auditTasks                        Task[]                         @relation("TaskAuditor")
+  collectedUydanTasks               Task[]                         @relation("TaskUydanCollectedBy")
+  driverRatings                     DriverRating[]                 @relation("DriverRatings")
+  ratingsGiven                      DriverRating[]                 @relation("RatingsGiven")
+  cashierReconciliations            CashReconciliation[]           @relation("CashierReconciliations")
+  approvedReconciliations           CashReconciliation[]           @relation("ApprovedReconciliations")
   uploadedReconciliationAttachments CashReconciliationAttachment[] @relation("ReconciliationUploadedAttachments")
-  debtCashierReports           DebtCashierReport[]            @relation("DebtCashierReports")
-  approvedDebtReports          DebtCashierReport[]            @relation("DebtCashierReportApprover")
+  debtCashierReports                DebtCashierReport[]            @relation("DebtCashierReports")
+  approvedDebtReports               DebtCashierReport[]            @relation("DebtCashierReportApprover")
   createdIncomingReports            IncomingStockReport[]          @relation("UserCreatedIncomingReports")
   approvedIncomingReports           IncomingStockReport[]          @relation("UserApprovedIncomingReports")
   incomingStockAuditLogs            IncomingStockAuditLog[]        @relation("UserIncomingAuditLogs")
@@ -250,8 +250,8 @@ model User {
   sellerTargets                     SellerTarget[]
   productHistories                  ProductHistory[]               @relation("ProductHistoryPerformedBy")
   transactionNotes                  TransactionNote[]
-  salaryPayments       SalaryPayment[]        @relation("UserSalaryPayments")
-  createdSalaryPayments SalaryPayment[]       @relation("SalaryPaymentCreatedBy")
+  salaryPayments                    SalaryPayment[]                @relation("UserSalaryPayments")
+  createdSalaryPayments             SalaryPayment[]                @relation("SalaryPaymentCreatedBy")
   deletedRecords                    DeletedRecord[]                @relation("DeletedRecordUser")
   createdTradeInProducts            TradeInProduct[]               @relation("TradeInCreatedBy")
   approvedTradeInProducts           TradeInProduct[]               @relation("TradeInApprovedBy")
@@ -262,27 +262,27 @@ model User {
 }
 
 model Store {
-  id                        Int             @id @default(autoincrement())
-  storeName                 String          @map("store_name")
-  address                   String?
-  latitude                  Float           @default(41.311081)
-  longitude                 Float           @default(69.240562)
-  radiusMeters              Float           @default(150)
-  workingDays               String          @default("Monday,Tuesday,Wednesday,Thursday,Friday,Saturday")
-  timezone                  String          @default("Asia/Tashkent")
-  lateToleranceMin          Int             @default(15)
-  earlyLeaveToleranceMin    Int             @default(15)
-  latePenaltyPerMin         Float           @default(500)
-  earlyBonusPerMin          Float           @default(500)
-  overtimePolicy            String          @default("Standard 1.5x Hourly Rate")
-  faceConfidenceThreshold   Float           @default(0.75)
-  branchId                  Int?
-  createdAt                 DateTime        @default(now())
-  updatedAt                 DateTime        @updatedAt
+  id                      Int      @id @default(autoincrement())
+  storeName               String   @map("store_name")
+  address                 String?
+  latitude                Float    @default(41.311081)
+  longitude               Float    @default(69.240562)
+  radiusMeters            Float    @default(150)
+  workingDays             String   @default("Monday,Tuesday,Wednesday,Thursday,Friday,Saturday")
+  timezone                String   @default("Asia/Tashkent")
+  lateToleranceMin        Int      @default(15)
+  earlyLeaveToleranceMin  Int      @default(15)
+  latePenaltyPerMin       Float    @default(500)
+  earlyBonusPerMin        Float    @default(500)
+  overtimePolicy          String   @default("Standard 1.5x Hourly Rate")
+  faceConfidenceThreshold Float    @default(0.75)
+  branchId                Int?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
-  branch                    Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  users                     User[]          @relation("UserStore")
-  attendanceDays            AttendanceDay[]
+  branch         Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  users          User[]          @relation("UserStore")
+  attendanceDays AttendanceDay[]
 
   @@index([storeName])
   @@index([branchId])
@@ -298,7 +298,7 @@ model SellerTarget {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  seller       User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  seller User @relation(fields: [sellerId], references: [id], onDelete: Cascade)
 
   @@unique([sellerId, year, month])
   @@index([sellerId])
@@ -350,8 +350,8 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  products Product[]
+  branch          Branch?          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  products        Product[]
   tradeInProducts TradeInProduct[]
 
   @@index([name])
@@ -359,35 +359,35 @@ model Category {
 }
 
 model Product {
-  id                Int                       @id @default(autoincrement())
-  name              String
-  barcode           String?
-  model             String?
-  price             Float
-  quantity          Int
-  defectiveQuantity Int                       @default(0)
-  returnedQuantity  Int                       @default(0)
-  exchangedQuantity Int                       @default(0)
-  initialQuantity   Int                       @default(0)
-  status            ProductStatus             @default(IN_STORE)
-  branchId          Int
-  categoryId        Int
-  marketPrice       Float?
-  bonusPercentage   Float?                    @default(0) // Bonus foizi
-  months            String? // Oylar soni (masalan: 001, 002, 012)
-  isDeleted         Boolean                   @default(false) // Soft delete uchun
-  deletedAt         DateTime?
-  createdAt         DateTime?                 @default(now())
-  updatedAt         DateTime?                 @updatedAt
-  branch            Branch                    @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  category          Category                  @relation(fields: [categoryId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  transactions      TransactionItem[]
-  DefectiveLog      DefectiveLog[]
-  ProductTransfer   ProductTransfer[]
-  bonusProducts     TransactionBonusProduct[]
+  id                 Int                       @id @default(autoincrement())
+  name               String
+  barcode            String?
+  model              String?
+  price              Float
+  quantity           Int
+  defectiveQuantity  Int                       @default(0)
+  returnedQuantity   Int                       @default(0)
+  exchangedQuantity  Int                       @default(0)
+  initialQuantity    Int                       @default(0)
+  status             ProductStatus             @default(IN_STORE)
+  branchId           Int
+  categoryId         Int
+  marketPrice        Float?
+  bonusPercentage    Float?                    @default(0) // Bonus foizi
+  months             String? // Oylar soni (masalan: 001, 002, 012)
+  isDeleted          Boolean                   @default(false) // Soft delete uchun
+  deletedAt          DateTime?
+  createdAt          DateTime?                 @default(now())
+  updatedAt          DateTime?                 @updatedAt
+  branch             Branch                    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  category           Category                  @relation(fields: [categoryId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  transactions       TransactionItem[]
+  DefectiveLog       DefectiveLog[]
+  ProductTransfer    ProductTransfer[]
+  bonusProducts      TransactionBonusProduct[]
   incomingStockItems IncomingStockItem[]       @relation("ProductIncomingItems")
-  history           ProductHistory[]
-  tradeInProducts   TradeInProduct[]          @relation("TradeInApprovedProduct")
+  history            ProductHistory[]
+  tradeInProducts    TradeInProduct[]          @relation("TradeInApprovedProduct")
 
   @@unique([barcode, branchId], name: "barcode_branchId")
   @@index([isDeleted])
@@ -456,7 +456,7 @@ model Customer {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  transactions Transaction[]
+  transactions    Transaction[]
   tradeInProducts TradeInProduct[]
 
   @@index([phone])
@@ -489,8 +489,8 @@ model Transaction {
   remainingBalance      Float?
   receiptId             String?
   description           String?
-  source                String?           // Instagram, Telegram, Youtube, Tanishimdan
-  partnerName           String?           // Ishonch, Yuksalish, Bir zumda, Limit nasiya, Hamroh
+  source                String? // Instagram, Telegram, Youtube, Tanishimdan
+  partnerName           String? // Ishonch, Yuksalish, Bir zumda, Limit nasiya, Hamroh
   updatedById           Int?
   // Credit repayment tracking fields
   creditRepaymentAmount Float?            @default(0)
@@ -498,8 +498,8 @@ model Transaction {
   extraProfit           Float?            @default(0)
 
   // Term fields for credit/installment
-  days   Int? // Kunlar soni (kunlik bo'lib to'lash uchun)
-  months Int? // Oylar soni (oylik bo'lib to'lash uchun)
+  days         Int? // Kunlar soni (kunlik bo'lib to'lash uchun)
+  months       Int? // Oylar soni (oylik bo'lib to'lash uchun)
   regionId     Int?
   districtId   Int?
   regionName   String?
@@ -537,6 +537,8 @@ model Transaction {
   @@index([toBranchId])
   @@index([type])
   @@index([type, status])
+  @@index([paymentType, createdAt])
+  @@index([partnerName])
   @@index([transactionType])
   @@index([status])
   @@index([createdAt])
@@ -580,6 +582,7 @@ model TransactionPayment {
   transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
   @@index([transactionId])
+  @@index([method])
 }
 
 model ProductTransfer {
@@ -795,13 +798,13 @@ model Bonus {
 
 model SalaryPayment {
   id          Int      @id @default(autoincrement())
-  userId      Int      // Employee receiving salary payment
-  amount      Float    // Amount paid
+  userId      Int // Employee receiving salary payment
+  amount      Float // Amount paid
   paymentDate DateTime @default(now()) // Date of payment
   paymentType String?  @default("CASH") // CASH, CARD, BANK, etc.
-  notes       String?  // Optional description or note
-  createdById Int      // Admin/Manager who paid
-  branchId    Int?     // Branch where payment was made
+  notes       String? // Optional description or note
+  createdById Int // Admin/Manager who paid
+  branchId    Int? // Branch where payment was made
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -926,19 +929,19 @@ model GlobalRate {
 }
 
 model SystemSetting {
-  id                         Int      @id @default(1)
-  skladAllowEdit             Boolean  @default(true)
-  skladAllowDelete           Boolean  @default(true)
-  adminAllowDeleteProduct    Boolean  @default(true)
-  adminAllowDeleteCategory   Boolean  @default(true)
-  adminAllowDeleteEmployee   Boolean  @default(true)
-  adminAllowDeleteAttendance Boolean  @default(true)
-  adminAllowDeleteTransaction Boolean @default(true)
-  adminAllowDeleteRepayment  Boolean  @default(true)
-  adminAllowDeleteBranch     Boolean  @default(true)
-  adminAllowDeleteCustomer   Boolean  @default(true)
-  adminAllowDeleteExpense    Boolean  @default(true)
-  updatedAt                  DateTime @updatedAt
+  id                          Int      @id @default(1)
+  skladAllowEdit              Boolean  @default(true)
+  skladAllowDelete            Boolean  @default(true)
+  adminAllowDeleteProduct     Boolean  @default(true)
+  adminAllowDeleteCategory    Boolean  @default(true)
+  adminAllowDeleteEmployee    Boolean  @default(true)
+  adminAllowDeleteAttendance  Boolean  @default(true)
+  adminAllowDeleteTransaction Boolean  @default(true)
+  adminAllowDeleteRepayment   Boolean  @default(true)
+  adminAllowDeleteBranch      Boolean  @default(true)
+  adminAllowDeleteCustomer    Boolean  @default(true)
+  adminAllowDeleteExpense     Boolean  @default(true)
+  updatedAt                   DateTime @updatedAt
 }
 
 enum ReconciliationStatus {
@@ -961,26 +964,26 @@ enum ReconciliationPaymentType {
 }
 
 model CashReconciliation {
-  id               Int                            @id @default(autoincrement())
+  id               Int                  @id @default(autoincrement())
   cashierId        Int
   branchId         Int
   reportDate       DateTime
   expectedCash     Float
   receivedCash     Float
   differenceAmount Float
-  status           ReconciliationStatus           @default(PENDING)
+  status           ReconciliationStatus @default(PENDING)
   reason           String?
   notes            String?
   approvedBy       Int?
   approvedAt       DateTime?
-  createdAt        DateTime                       @default(now())
-  updatedAt        DateTime                       @updatedAt
-  
-  cashier          User                           @relation("CashierReconciliations", fields: [cashierId], references: [id], onDelete: Cascade)
-  branch           Branch                         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  approver         User?                          @relation("ApprovedReconciliations", fields: [approvedBy], references: [id], onDelete: SetNull)
-  details          CashReconciliationDetail[]
-  attachments      CashReconciliationAttachment[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  cashier     User                           @relation("CashierReconciliations", fields: [cashierId], references: [id], onDelete: Cascade)
+  branch      Branch                         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  approver    User?                          @relation("ApprovedReconciliations", fields: [approvedBy], references: [id], onDelete: SetNull)
+  details     CashReconciliationDetail[]
+  attachments CashReconciliationAttachment[]
 
   @@unique([cashierId, branchId, reportDate])
   @@index([cashierId])
@@ -989,30 +992,30 @@ model CashReconciliation {
 }
 
 model CashReconciliationDetail {
-  id               Int                            @id @default(autoincrement())
+  id               Int                       @id @default(autoincrement())
   reconciliationId Int
   paymentType      ReconciliationPaymentType
   expectedAmount   Float
   actualAmount     Float
   difference       Float
   reason           String?
-  createdAt        DateTime                       @default(now())
+  createdAt        DateTime                  @default(now())
 
-  reconciliation   CashReconciliation             @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  reconciliation CashReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
 
   @@index([reconciliationId])
 }
 
 model CashReconciliationAttachment {
-  id               Int                            @id @default(autoincrement())
+  id               Int      @id @default(autoincrement())
   reconciliationId Int
   fileName         String
   filePath         String
   uploadedBy       Int
-  createdAt        DateTime                       @default(now())
+  createdAt        DateTime @default(now())
 
-  reconciliation   CashReconciliation             @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
-  uploader         User                           @relation("ReconciliationUploadedAttachments", fields: [uploadedBy], references: [id], onDelete: Cascade)
+  reconciliation CashReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  uploader       User               @relation("ReconciliationUploadedAttachments", fields: [uploadedBy], references: [id], onDelete: Cascade)
 
   @@index([reconciliationId])
 }
@@ -1057,11 +1060,11 @@ model IncomingStockReport {
   submittedAt   DateTime?
   approvedAt    DateTime?
 
-  branch        Branch                    @relation("BranchIncomingReports", fields: [branchId], references: [id], onDelete: Cascade)
-  creator       User                      @relation("UserCreatedIncomingReports", fields: [createdBy], references: [id], onDelete: Cascade)
-  approver      User?                     @relation("UserApprovedIncomingReports", fields: [approvedBy], references: [id], onDelete: SetNull)
-  items         IncomingStockItem[]       @relation("ReportItems")
-  auditLogs     IncomingStockAuditLog[]   @relation("ReportAuditLogs")
+  branch    Branch                  @relation("BranchIncomingReports", fields: [branchId], references: [id], onDelete: Cascade)
+  creator   User                    @relation("UserCreatedIncomingReports", fields: [createdBy], references: [id], onDelete: Cascade)
+  approver  User?                   @relation("UserApprovedIncomingReports", fields: [approvedBy], references: [id], onDelete: SetNull)
+  items     IncomingStockItem[]     @relation("ReportItems")
+  auditLogs IncomingStockAuditLog[] @relation("ReportAuditLogs")
 
   @@index([branchId])
   @@index([createdBy])
@@ -1079,8 +1082,8 @@ model IncomingStockItem {
   status    IncomingStockItemStatus @default(PENDING)
   createdAt DateTime                @default(now())
 
-  report    IncomingStockReport @relation("ReportItems", fields: [reportId], references: [id], onDelete: Cascade)
-  product   Product             @relation("ProductIncomingItems", fields: [productId], references: [id], onDelete: Cascade)
+  report  IncomingStockReport @relation("ReportItems", fields: [reportId], references: [id], onDelete: Cascade)
+  product Product             @relation("ProductIncomingItems", fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([reportId])
   @@index([productId])
@@ -1088,33 +1091,33 @@ model IncomingStockItem {
 }
 
 model IncomingStockAuditLog {
-  id         Int                      @id @default(autoincrement())
-  reportId   Int
-  userId     Int
-  action     IncomingStockAuditAction
-  oldValue   String?                  @db.Text
-  newValue   String?                  @db.Text
-  ipAddress  String?
-  device     String?
-  createdAt  DateTime                 @db.Timestamp @default(now())
+  id        Int                      @id @default(autoincrement())
+  reportId  Int
+  userId    Int
+  action    IncomingStockAuditAction
+  oldValue  String?                  @db.Text
+  newValue  String?                  @db.Text
+  ipAddress String?
+  device    String?
+  createdAt DateTime                 @default(now()) @db.Timestamp
 
-  report     IncomingStockReport      @relation("ReportAuditLogs", fields: [reportId], references: [id], onDelete: Cascade)
-  user       User                     @relation("UserIncomingAuditLogs", fields: [userId], references: [id], onDelete: Cascade)
+  report IncomingStockReport @relation("ReportAuditLogs", fields: [reportId], references: [id], onDelete: Cascade)
+  user   User                @relation("UserIncomingAuditLogs", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([reportId])
   @@index([userId])
 }
 
 model Notification {
-  id          Int      @id @default(autoincrement())
-  userId      Int
-  title       String
-  message     String
-  isRead      Boolean  @default(false)
-  type        String   @default("INFO")
-  createdAt   DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  type      String   @default("INFO")
+  createdAt DateTime @default(now())
 
-  user        User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -1126,34 +1129,34 @@ enum DebtReportStatus {
 }
 
 model DebtCashierReport {
-  id                      Int              @id @default(autoincrement())
-  cashierId               Int
-  branchId                Int
-  reportDate              DateTime         @db.Date
-  cashAmount              Float            @default(0)
-  click9905Amount         Float            @default(0)
-  bankAccountAmount       Float            @default(0)
-  onlineAmount            Float            @default(0)
-  terminalAmount          Float            @default(0)
-  discountAmount          Float            @default(0)
-  discountNote            String?
-  mibAmount               Float            @default(0)
-  mibNote                 String?
-  contractsCount          Int              @default(0)
-  contractsAmount         Float            @default(0)
-  notes                   String?
-  status                  DebtReportStatus @default(PENDING)
-  acceptedCashAmount      Float?
-  acceptedClick9905Amount Float?
+  id                        Int              @id @default(autoincrement())
+  cashierId                 Int
+  branchId                  Int
+  reportDate                DateTime         @db.Date
+  cashAmount                Float            @default(0)
+  click9905Amount           Float            @default(0)
+  bankAccountAmount         Float            @default(0)
+  onlineAmount              Float            @default(0)
+  terminalAmount            Float            @default(0)
+  discountAmount            Float            @default(0)
+  discountNote              String?
+  mibAmount                 Float            @default(0)
+  mibNote                   String?
+  contractsCount            Int              @default(0)
+  contractsAmount           Float            @default(0)
+  notes                     String?
+  status                    DebtReportStatus @default(PENDING)
+  acceptedCashAmount        Float?
+  acceptedClick9905Amount   Float?
   acceptedBankAccountAmount Float?
-  acceptedOnlineAmount    Float?
-  acceptedTerminalAmount  Float?
-  acceptedMibAmount       Float?
-  accountantNotes         String?
-  approvedBy              Int?
-  approvedAt              DateTime?
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @updatedAt
+  acceptedOnlineAmount      Float?
+  acceptedTerminalAmount    Float?
+  acceptedMibAmount         Float?
+  accountantNotes           String?
+  approvedBy                Int?
+  approvedAt                DateTime?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
 
   cashier  User   @relation("DebtCashierReports", fields: [cashierId], references: [id], onDelete: Cascade)
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -1168,7 +1171,7 @@ model DebtCashierReport {
 model ProductHistory {
   id              Int      @id @default(autoincrement())
   productId       Int
-  actionType      String   // CREATED, UPDATED, SALE, BONUS_GIFT, INCOMING_STOCK, REVIZOR_ADJUSTMENT, DELETED, etc.
+  actionType      String // CREATED, UPDATED, SALE, BONUS_GIFT, INCOMING_STOCK, REVIZOR_ADJUSTMENT, DELETED, etc.
   performedById   Int?
   performedByName String?
   description     String   @db.Text
@@ -1187,14 +1190,14 @@ model ProductHistory {
 }
 
 model TransactionNote {
-  id            Int         @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   transactionId Int
   userId        Int?
-  note          String      @db.Text
-  createdAt     DateTime    @default(now())
+  note          String   @db.Text
+  createdAt     DateTime @default(now())
 
-  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([transactionId])
   @@index([userId])
@@ -1229,7 +1232,7 @@ model JobApplication {
 
 model DeletedRecord {
   id            Int      @id @default(autoincrement())
-  entityType    String   // 'PRODUCT' | 'TRANSACTION'
+  entityType    String // 'PRODUCT' | 'TRANSACTION'
   entityId      Int?
   title         String
   details       Json
@@ -1239,8 +1242,8 @@ model DeletedRecord {
   reason        String?
   createdAt     DateTime @default(now())
 
-  deletedBy     User?    @relation("DeletedRecordUser", fields: [deletedById], references: [id], onDelete: SetNull)
-  branch        Branch?  @relation("DeletedRecordBranch", fields: [branchId], references: [id], onDelete: SetNull)
+  deletedBy User?   @relation("DeletedRecordUser", fields: [deletedById], references: [id], onDelete: SetNull)
+  branch    Branch? @relation("DeletedRecordBranch", fields: [branchId], references: [id], onDelete: SetNull)
 
   @@index([entityType])
   @@index([createdAt])
@@ -1251,15 +1254,15 @@ model TradeInProduct {
   id                Int       @id @default(autoincrement())
   transactionId     Int?
   branchId          Int
-  userId            Int?      // Cashier who accepted the trade-in item
+  userId            Int? // Cashier who accepted the trade-in item
   customerId        Int?
   name              String
   model             String?
   barcode           String?
-  costPrice         Float     // Received valuation / cost price in UZS
-  costPriceUSD      Float?    // In USD
-  sellingPrice      Float?    // Admin defined selling price in UZS
-  sellingPriceUSD   Float?    // In USD
+  costPrice         Float // Received valuation / cost price in UZS
+  costPriceUSD      Float? // In USD
+  sellingPrice      Float? // Admin defined selling price in UZS
+  sellingPriceUSD   Float? // In USD
   quantity          Int       @default(1)
   status            String    @default("PENDING") // PENDING, APPROVED, REJECTED
   approvedById      Int?
@@ -1270,13 +1273,13 @@ model TradeInProduct {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  transaction       Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
-  branch            Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  user              User?        @relation("TradeInCreatedBy", fields: [userId], references: [id], onDelete: SetNull)
-  approvedBy        User?        @relation("TradeInApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedProduct   Product?     @relation("TradeInApprovedProduct", fields: [approvedProductId], references: [id], onDelete: SetNull)
-  category          Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  customer          Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  transaction     Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  branch          Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user            User?        @relation("TradeInCreatedBy", fields: [userId], references: [id], onDelete: SetNull)
+  approvedBy      User?        @relation("TradeInApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedProduct Product?     @relation("TradeInApprovedProduct", fields: [approvedProductId], references: [id], onDelete: SetNull)
+  category        Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  customer        Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([branchId])
   @@index([status])
@@ -1284,6 +1287,3 @@ model TradeInProduct {
   @@index([createdAt])
   @@map("trade_in_products")
 }
-
-
-

@@ -536,7 +536,7 @@ export class TransactionService {
 
     try {
       this.taskService.emitUpdated({ type: 'transaction_created', id: transaction.id });
-    } catch {}
+    } catch { }
 
     return transaction;
   }
@@ -1102,834 +1102,908 @@ export class TransactionService {
     const {
       page = '1',
       limit,
+      lite,
+      report,
+      includeSchedules,
     } = query;
 
     // Parse and validate page and limit
     const parsedPage = parseInt(page) || 1;
     const parsedLimit = limit && limit !== 'all' ? parseInt(limit) : undefined;
+    const isLite = lite === 'true' || lite === true;
+    const isReport = report === 'true' || report === true;
+    const withSchedules = includeSchedules === 'true' || includeSchedules === true || isReport;
 
     const { where } = this.buildTransactionWhere(query);
 
-    const [transactions, total] = await Promise.all([
-      this.prisma.transaction.findMany({
-      where,
+    const includeObj: any = (isLite || isReport)
+      ? {
+          customer: {
+            select: { id: true, fullName: true, phone: true, address: true },
+          },
+          user: {
+            select: { id: true, firstName: true, lastName: true, username: true, role: true },
+          },
+          soldBy: {
+            select: { id: true, firstName: true, lastName: true, username: true, role: true },
+          },
+          fromBranch: {
+            select: { id: true, name: true },
+          },
+          toBranch: {
+            select: { id: true, name: true },
+          },
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              quantity: true,
+              price: true,
+              sellingPrice: true,
+              originalPrice: true,
+              total: true,
+              product: {
+                select: { id: true, name: true, model: true, barcode: true, price: true, marketPrice: true },
+              },
+            },
+          },
+          payments: {
+            select: { id: true, method: true, amount: true },
+          },
+          ...(withSchedules ? {
+            paymentSchedules: {
+              orderBy: { month: 'asc' },
+              select: {
+                id: true,
+                month: true,
+                payment: true,
+                paidAmount: true,
+                remainingBalance: true,
+                isPaid: true,
+                dueDate: true,
+              },
+            },
+          } : {}),
+          ...(!isReport ? {
+            creditRepayments: {
+              select: {
+                id: true,
+                amount: true,
+                channel: true,
+                paidAt: true,
+                paidByUserId: true,
+                paidBy: { select: { id: true, firstName: true, lastName: true, username: true } },
+              },
+              orderBy: { paidAt: 'desc' },
+            },
+          } : {}),
+        }
+      : {
+          customer: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+              role: true,
+            },
+          },
+          soldBy: {
+      select: {
+        id: true,
+          firstName: true,
+            lastName: true,
+              username: true,
+                role: true,
+            },
+    },
+    fromBranch: {
+      select: {
+        id: true,
+          name: true,
+            address: true,
+              phoneNumber: true,
+            },
+    },
+    toBranch: {
+      select: {
+        id: true,
+          name: true,
+            address: true,
+              phoneNumber: true,
+            },
+    },
+    items: {
       include: {
-        customer: true,
-        user: {
+        product: {
           select: {
             id: true,
-            firstName: true,
-            lastName: true,
-            username: true,
-            role: true,
-          },
-        },
-        soldBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            username: true,
-            role: true,
-          },
-        },
-        fromBranch: {
-          select: {
-            id: true,
-            name: true,
-            address: true,
-            phoneNumber: true,
-          },
-        },
-        toBranch: {
-          select: {
-            id: true,
-            name: true,
-            address: true,
-            phoneNumber: true,
-          },
-        },
-        items: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
+              name: true,
                 model: true,
-                barcode: true,
-                price: true,
-                marketPrice: true,
-                branchId: true,
-                categoryId: true,
-                branch: {
-                  select: { id: true, name: true },
-                },
-                category: {
-                  select: { id: true, name: true },
-                },
-              },
+                  barcode: true,
+                    price: true,
+                      marketPrice: true,
+                        branchId: true,
+                          categoryId: true,
+                            branch: {
+              select: { id: true, name: true },
+            },
+            category: {
+              select: { id: true, name: true },
             },
           },
         },
-        payments: true,
-        paymentSchedules: {
-          orderBy: { month: 'asc' },
-          include: {
-            paidBy: {
-              select: { id: true, firstName: true, lastName: true, username: true },
-            },
-          },
+      },
+    },
+    payments: true,
+      paymentSchedules: {
+      orderBy: { month: 'asc' },
+      include: {
+        paidBy: {
+          select: { id: true, firstName: true, lastName: true, username: true },
         },
-        tasks: {
-          select: {
-            id: true,
-            status: true,
+      },
+    },
+    tasks: {
+      select: {
+        id: true,
+          status: true,
             auditor: {
-              select: { id: true, firstName: true, lastName: true, username: true, phone: true },
-            },
-          },
+          select: { id: true, firstName: true, lastName: true, username: true, phone: true },
         },
-        bonusProducts: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
+      },
+    },
+    bonusProducts: {
+      include: {
+        product: {
+          select: {
+            id: true,
+              name: true,
                 model: true,
-                barcode: true,
-                price: true,
-                category: { select: { id: true, name: true } },
-                branch: { select: { id: true, name: true } },
-              },
-            },
-          },
-        },
-        tradeInProducts: {
-          include: {
-            category: { select: { id: true, name: true } },
+                  barcode: true,
+                    price: true,
+                      category: { select: { id: true, name: true } },
             branch: { select: { id: true, name: true } },
           },
         },
-        defectiveLogs: {
-          select: {
-            id: true,
-            productId: true,
+      },
+    },
+    tradeInProducts: {
+      include: {
+        category: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+      },
+    },
+    defectiveLogs: {
+      select: {
+        id: true,
+          productId: true,
             quantity: true,
-            description: true,
-            cashAmount: true,
-            actionType: true,
-            createdAt: true,
-          },
-        },
-        creditRepayments: {
-          include: {
-            paidBy: {
-              select: { id: true, firstName: true, lastName: true, username: true },
+              description: true,
+                cashAmount: true,
+                  actionType: true,
+                    createdAt: true,
             },
-          },
-          orderBy: { paidAt: 'desc' },
+    },
+    creditRepayments: {
+      include: {
+        paidBy: {
+          select: { id: true, firstName: true, lastName: true, username: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
-      skip: parsedLimit ? (parsedPage - 1) * parsedLimit : 0,
-      take: parsedLimit,
-    }), this.prisma.transaction.count({ where })]);
+      orderBy: { paidAt: 'desc' },
+    },
+};
 
-    return {
-      transactions,
-      pagination: {
-        page: parsedPage,
-        limit: parsedLimit || total,
-        total,
-        pages: parsedLimit ? Math.ceil(total / parsedLimit) : 1
-      }
-    };
+const [transactions, countResult] = await Promise.all([
+  this.prisma.transaction.findMany({
+    where,
+    include: includeObj,
+    orderBy: { createdAt: 'desc' },
+    skip: parsedLimit ? (parsedPage - 1) * parsedLimit : 0,
+    take: parsedLimit,
+  }),
+  parsedLimit ? this.prisma.transaction.count({ where }) : Promise.resolve(null),
+]);
+
+const total = countResult !== null ? countResult : transactions.length;
+
+return {
+  transactions,
+  pagination: {
+    page: parsedPage,
+    limit: parsedLimit || total,
+    total,
+    pages: parsedLimit ? Math.ceil(total / parsedLimit) : 1
+  }
+};
   }
 
   // ═══════════ FILTER OPTIONS — Sotuvchi va Kassir ro'yxati ═══════════
   async getFilterOptions(query: any = {}) {
-    // Endi branchId va sana bo'yicha millionlab tranzaksiyalarni qidirmaymiz.
-    // Shunchaki tizimdagi faol foydalanuvchilar (sotuvchilar/kassirlar) ro'yxatini qaytaramiz.
-    // Bu backend timeout va xotira tolib ketishini oldini oladi.
+  // Endi branchId va sana bo'yicha millionlab tranzaksiyalarni qidirmaymiz.
+  // Shunchaki tizimdagi faol foydalanuvchilar (sotuvchilar/kassirlar) ro'yxatini qaytaramiz.
+  // Bu backend timeout va xotira tolib ketishini oldini oladi.
 
-    const users = await this.prisma.user.findMany({
-      where: {
-        status: { not: UserStatus.DELETED },
-        role: {
-          in: ['ADMIN', 'MANAGER', 'CASHIER', 'MARKETING']
-        }
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        username: true,
-        role: true,
-        status: true,
+  const users = await this.prisma.user.findMany({
+    where: {
+      status: { not: UserStatus.DELETED },
+      role: {
+        in: ['ADMIN', 'MANAGER', 'CASHIER', 'MARKETING']
       }
-    });
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      username: true,
+      role: true,
+      status: true,
+    }
+  });
 
-    const sellersMap = new Map<number, any>();
-    const cashiersMap = new Map<number, any>();
+  const sellersMap = new Map<number, any>();
+  const cashiersMap = new Map<number, any>();
 
-    for (const u of users) {
-      const name = [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.username || `User ${u.id}`;
+  for (const u of users) {
+    const name = [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.username || `User ${u.id}`;
 
-      // Marketing xodimlari barcha ro'llar учун asosan "Sotuvchi" vazifasini bajaradi
-      if (['MARKETING', 'ADMIN', 'MANAGER'].includes(u.role)) {
-        sellersMap.set(u.id, { id: u.id, name, role: u.role, status: u.status });
-      }
-
-      // Cashier vazifasini bajaruvchilar yoki hamma "Kassir" bo'lishi mumkin
-      if (['CASHIER', 'ADMIN', 'MANAGER', 'MARKETING'].includes(u.role)) {
-        cashiersMap.set(u.id, { id: u.id, name, role: u.role, status: u.status });
-      }
+    // Marketing xodimlari barcha ro'llar учун asosan "Sotuvchi" vazifasini bajaradi
+    if (['MARKETING', 'ADMIN', 'MANAGER'].includes(u.role)) {
+      sellersMap.set(u.id, { id: u.id, name, role: u.role, status: u.status });
     }
 
+    // Cashier vazifasini bajaruvchilar yoki hamma "Kassir" bo'lishi mumkin
+    if (['CASHIER', 'ADMIN', 'MANAGER', 'MARKETING'].includes(u.role)) {
+      cashiersMap.set(u.id, { id: u.id, name, role: u.role, status: u.status });
+    }
+  }
+
+  return {
+    sellers: Array.from(sellersMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
+    cashiers: Array.from(cashiersMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+  async findByProductId(productId: number, month ?: string) {
+
+  // First, let's check if the product exists
+  const product = await this.prisma.product.findUnique({
+    where: { id: productId }
+  });
+
+  if (!product) {
     return {
-      sellers: Array.from(sellersMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
-      cashiers: Array.from(cashiersMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      transactions: [],
+      statusCounts: { PENDING: 0, COMPLETED: 0, CANCELLED: 0, total: 0 },
+      typeCounts: { SALE: 0, PURCHASE: 0, TRANSFER: 0, RETURN: 0, WRITE_OFF: 0, STOCK_ADJUSTMENT: 0 }
     };
   }
 
-  async findByProductId(productId: number, month?: string) {
 
-    // First, let's check if the product exists
-    const product = await this.prisma.product.findUnique({
-      where: { id: productId }
-    });
-
-    if (!product) {
-      return {
-        transactions: [],
-        statusCounts: { PENDING: 0, COMPLETED: 0, CANCELLED: 0, total: 0 },
-        typeCounts: { SALE: 0, PURCHASE: 0, TRANSFER: 0, RETURN: 0, WRITE_OFF: 0, STOCK_ADJUSTMENT: 0 }
-      };
-    }
-
-
-    // Build where clause with optional month filter
-    const whereClause: any = {
-      items: {
-        some: {
-          productId: productId
-        }
+  // Build where clause with optional month filter
+  const whereClause: any = {
+    items: {
+      some: {
+        productId: productId
       }
+    }
+  };
+
+  // Add month filter if provided
+  if (month) {
+    const [year, monthNum] = month.split('-');
+    const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+    const endDate = new Date(parseInt(year), parseInt(monthNum), 0, 23, 59, 59);
+
+    whereClause.createdAt = {
+      gte: startDate,
+      lte: endDate
     };
 
-    // Add month filter if provided
-    if (month) {
-      const [year, monthNum] = month.split('-');
-      const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
-      const endDate = new Date(parseInt(year), parseInt(monthNum), 0, 23, 59, 59);
+  }
 
-      whereClause.createdAt = {
-        gte: startDate,
-        lte: endDate
-      };
-
-    }
-
-    const transactions = await this.prisma.transaction.findMany({
-      where: whereClause,
-      include: {
-        customer: true,
-        user: true,
-        soldBy: true,
-        fromBranch: true,
-        toBranch: true,
-        items: {
-          where: {
-            productId: productId
-          },
-          include: {
-            product: true,
-          },
+  const transactions = await this.prisma.transaction.findMany({
+    where: whereClause,
+    include: {
+      customer: true,
+      user: true,
+      soldBy: true,
+      fromBranch: true,
+      toBranch: true,
+      items: {
+        where: {
+          productId: productId
+        },
+        include: {
+          product: true,
         },
       },
-      orderBy: { createdAt: 'desc' },
-    });
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 
-    // Calculate product-specific total for each transaction
-    const transactionsWithAmounts = transactions.map(transaction => {
-      const productSpecificTotal = transaction.items.reduce((sum, item) => {
-        return sum + (item.total || (item.quantity * (item.sellingPrice || item.price || 0)));
-      }, 0);
+  // Calculate product-specific total for each transaction
+  const transactionsWithAmounts = transactions.map(transaction => {
+    const productSpecificTotal = transaction.items.reduce((sum, item) => {
+      return sum + (item.total || (item.quantity * (item.sellingPrice || item.price || 0)));
+    }, 0);
 
-      const productSpecificQuantity = transaction.items.reduce((sum, item) => {
-        return sum + (item.quantity || 0);
-      }, 0);
-
-      return {
-        ...transaction,
-        totalAmount: productSpecificTotal,
-        productSpecificQuantity,
-        productSpecificTotal
-      } as any;
-    });
-
-
-    // Calculate status counts
-    const statusCounts = {
-      PENDING: 0,
-      COMPLETED: 0,
-      CANCELLED: 0,
-      total: transactions.length
-    };
-
-    const typeCounts = {
-      SALE: 0,
-      PURCHASE: 0,
-      TRANSFER: 0,
-      RETURN: 0,
-      WRITE_OFF: 0,
-      STOCK_ADJUSTMENT: 0
-    };
-
-    transactionsWithAmounts.forEach(transaction => {
-      statusCounts[transaction.status]++;
-      typeCounts[transaction.type]++;
-    });
-
+    const productSpecificQuantity = transaction.items.reduce((sum, item) => {
+      return sum + (item.quantity || 0);
+    }, 0);
 
     return {
-      transactions: transactionsWithAmounts,
-      statusCounts,
-      typeCounts
-    };
-  }
+      ...transaction,
+      totalAmount: productSpecificTotal,
+      productSpecificQuantity,
+      productSpecificTotal
+    } as any;
+  });
+
+
+  // Calculate status counts
+  const statusCounts = {
+    PENDING: 0,
+    COMPLETED: 0,
+    CANCELLED: 0,
+    total: transactions.length
+  };
+
+  const typeCounts = {
+    SALE: 0,
+    PURCHASE: 0,
+    TRANSFER: 0,
+    RETURN: 0,
+    WRITE_OFF: 0,
+    STOCK_ADJUSTMENT: 0
+  };
+
+  transactionsWithAmounts.forEach(transaction => {
+    statusCounts[transaction.status]++;
+    typeCounts[transaction.type]++;
+  });
+
+
+  return {
+    transactions: transactionsWithAmounts,
+    statusCounts,
+    typeCounts
+  };
+}
 
   async findOne(id: number) {
-    // Validate that id is provided and is a valid number
-    if (id === undefined || id === null || isNaN(id) || id <= 0) {
-      throw new BadRequestException('Invalid transaction ID provided');
-    }
+  // Validate that id is provided and is a valid number
+  if (id === undefined || id === null || isNaN(id) || id <= 0) {
+    throw new BadRequestException('Invalid transaction ID provided');
+  }
 
-    let transaction = await this.prisma.transaction.findUnique({
-      where: { id },
-      include: {
-        customer: true,
-        user: true,
-        soldBy: true,
-        fromBranch: true,
-        toBranch: true,
-        items: {
-          include: {
-            product: {
-              include: {
-                branch: true
-              }
+  let transaction = await this.prisma.transaction.findUnique({
+    where: { id },
+    include: {
+      customer: true,
+      user: true,
+      soldBy: true,
+      fromBranch: true,
+      toBranch: true,
+      items: {
+        include: {
+          product: {
+            include: {
+              branch: true
             }
           }
+        }
+      },
+      paymentSchedules: {
+        orderBy: { month: 'asc' },
+        include: { paidBy: true }
+      },
+      payments: true,
+      tradeInProducts: {
+        include: {
+          category: true,
+          branch: true,
+          approvedProduct: true,
         },
-        paymentSchedules: {
-          orderBy: { month: 'asc' },
-          include: { paidBy: true }
-        },
-        payments: true,
-        tradeInProducts: {
-          include: {
-            category: true,
-            branch: true,
-            approvedProduct: true,
-          },
-        },
-        tasks: {
-          include: {
-            auditor: true,
-            uydanCollectedBy: true,
-          }
-        },
-        bonusProducts: {
-          include: {
-            product: {
-              include: {
-                category: true,
-                branch: true,
-              },
+      },
+      tasks: {
+        include: {
+          auditor: true,
+          uydanCollectedBy: true,
+        }
+      },
+      bonusProducts: {
+        include: {
+          product: {
+            include: {
+              category: true,
+              branch: true,
             },
           },
         },
-        notes: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                username: true,
-                role: true,
-              }
+      },
+      notes: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+              role: true,
             }
-          },
-          orderBy: { createdAt: 'desc' }
+          }
         },
-        creditRepayments: {
-          include: { paidBy: true },
-          orderBy: { paidAt: 'desc' }
-        },
-      }
-    });
-
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
+        orderBy: { createdAt: 'desc' }
+      },
+      creditRepayments: {
+        include: { paidBy: true },
+        orderBy: { paidAt: 'desc' }
+      },
     }
+  });
 
-    // Hydrate missing products for a single transaction
-    const hydrated = await this.hydrateMissingProducts([transaction]);
-    return hydrated[0];
+  if (!transaction) {
+    throw new NotFoundException('Transaction not found');
   }
+
+  // Hydrate missing products for a single transaction
+  const hydrated = await this.hydrateMissingProducts([transaction]);
+  return hydrated[0];
+}
 
   async findByType(type: string) {
-    return this.prisma.transaction.findMany({
-      where: {
-        type: type as TransactionType,
-        status: { not: 'CANCELLED' }
-      },
-      include: {
-        customer: true,
-        fromBranch: true,
-        toBranch: true,
-        soldBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            username: true,
-            role: true,
-            branch: { select: { id: true, name: true } },
-          },
+  return this.prisma.transaction.findMany({
+    where: {
+      type: type as TransactionType,
+      status: { not: 'CANCELLED' }
+    },
+    include: {
+      customer: true,
+      fromBranch: true,
+      toBranch: true,
+      soldBy: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          username: true,
+          role: true,
+          branch: { select: { id: true, name: true } },
         },
-        items: {
-          include: {
-            product: {
-              include: {
-                branch: true,
-              },
+      },
+      items: {
+        include: {
+          product: {
+            include: {
+              branch: true,
             },
           },
         },
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phone: true,
-            branch: { select: { id: true, name: true } },
-          },
+      },
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          branch: { select: { id: true, name: true } },
         },
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-  }
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+}
 
   async updateStatus(id: number, status: string, userId: number) {
-    const validStatuses = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
-    if (!validStatuses.includes(status)) {
-      throw new BadRequestException('Invalid status');
-    }
-
-    const transaction = await this.prisma.transaction.findUnique({
-      where: { id },
-      include: { customer: true }
-    });
-
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
-
-    // If marking as completed, ensure all items are properly processed
-    if (status === 'COMPLETED') {
-      const pendingItems = await this.prisma.transactionItem.findMany({
-        where: {
-          transactionId: id,
-          status: 'PENDING'
-        }
-      });
-
-      if (pendingItems.length > 0) {
-        throw new BadRequestException('Cannot complete transaction with pending items');
-      }
-    }
-
-    // Update the transaction status
-    const updatedTransaction = await this.prisma.transaction.update({
-      where: { id },
-      data: {
-        status: status as TransactionStatus,
-        updatedAt: new Date(),
-        updatedBy: { connect: { id: +userId } }
-      },
-      include: {
-        customer: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
-      }
-    });
-
-
-    // If this is a delivery being marked as completed, update inventory
-    if (status === 'COMPLETED' && transaction.type === 'DELIVERY') {
-      await this.processDeliveryCompletion(transaction);
-    }
-
-    return updatedTransaction;
+  const validStatuses = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
+  if (!validStatuses.includes(status)) {
+    throw new BadRequestException('Invalid status');
   }
+
+  const transaction = await this.prisma.transaction.findUnique({
+    where: { id },
+    include: { customer: true }
+  });
+
+  if (!transaction) {
+    throw new NotFoundException('Transaction not found');
+  }
+
+  // If marking as completed, ensure all items are properly processed
+  if (status === 'COMPLETED') {
+    const pendingItems = await this.prisma.transactionItem.findMany({
+      where: {
+        transactionId: id,
+        status: 'PENDING'
+      }
+    });
+
+    if (pendingItems.length > 0) {
+      throw new BadRequestException('Cannot complete transaction with pending items');
+    }
+  }
+
+  // Update the transaction status
+  const updatedTransaction = await this.prisma.transaction.update({
+    where: { id },
+    data: {
+      status: status as TransactionStatus,
+      updatedAt: new Date(),
+      updatedBy: { connect: { id: +userId } }
+    },
+    include: {
+      customer: true,
+      items: {
+        include: {
+          product: true
+        }
+      }
+    }
+  });
+
+
+  // If this is a delivery being marked as completed, update inventory
+  if (status === 'COMPLETED' && transaction.type === 'DELIVERY') {
+    await this.processDeliveryCompletion(transaction);
+  }
+
+  return updatedTransaction;
+}
 
   async updateDeliverySent(id: number, deliverySent: boolean) {
-    const transaction = await this.prisma.transaction.findUnique({
-      where: { id },
-    });
+  const transaction = await this.prisma.transaction.findUnique({
+    where: { id },
+  });
 
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
-
-    const updated = await this.prisma.transaction.update({
-      where: { id },
-      data: {
-        deliverySent,
-      },
-    });
-
-    try {
-      this.taskService.emitUpdated({ type: 'transaction_updated', id: updated.id });
-    } catch {}
-
-    return updated;
+  if (!transaction) {
+    throw new NotFoundException('Transaction not found');
   }
+
+  const updated = await this.prisma.transaction.update({
+    where: { id },
+    data: {
+      deliverySent,
+    },
+  });
+
+  try {
+    this.taskService.emitUpdated({ type: 'transaction_updated', id: updated.id });
+  } catch { }
+
+  return updated;
+}
 
   private async processDeliveryCompletion(transaction: any) {
-    // Update inventory for each item in the delivery
-    for (const item of transaction.items) {
-      await this.prisma.product.update({
-        where: { id: item.productId },
-        data: {
-          quantity: {
-            decrement: item.quantity
-          }
+  // Update inventory for each item in the delivery
+  for (const item of transaction.items) {
+    await this.prisma.product.update({
+      where: { id: item.productId },
+      data: {
+        quantity: {
+          decrement: item.quantity
         }
-      });
-    }
+      }
+    });
   }
+}
 
 
   // Attach product details to items that have productId but product is null
   private async hydrateMissingProducts(transactions: any[]) {
-    try {
-      const missingIdsSet = new Set<number>();
-      for (const tr of transactions) {
-        if (!Array.isArray(tr?.items)) continue;
-        for (const it of tr.items) {
-          const raw = it?.productId;
-          const pid = raw == null ? null : Number(raw);
-          if (pid && !it?.product) missingIdsSet.add(pid);
-        }
+  try {
+    const missingIdsSet = new Set<number>();
+    for (const tr of transactions) {
+      if (!Array.isArray(tr?.items)) continue;
+      for (const it of tr.items) {
+        const raw = it?.productId;
+        const pid = raw == null ? null : Number(raw);
+        if (pid && !it?.product) missingIdsSet.add(pid);
       }
-      const missingIds = Array.from(missingIdsSet);
-      if (missingIds.length === 0) return transactions;
-
-      const products = await this.prisma.product.findMany({
-        where: { id: { in: missingIds } },
-      });
-      const idToProduct: Record<number, any> = {};
-      for (const p of products) idToProduct[p.id] = p;
-
-      for (const tr of transactions) {
-        if (!Array.isArray(tr?.items)) continue;
-        for (const it of tr.items) {
-          if (it && it.productId != null && !it.product) {
-            const pid = Number(it.productId);
-            it.product = (pid && idToProduct[pid]) ? idToProduct[pid] : null;
-          }
-        }
-      }
-      return transactions;
-    } catch (e) {
-      // If anything goes wrong, return original to avoid breaking flow
-      return transactions;
     }
+    const missingIds = Array.from(missingIdsSet);
+    if (missingIds.length === 0) return transactions;
+
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: missingIds } },
+    });
+    const idToProduct: Record<number, any> = {};
+    for (const p of products) idToProduct[p.id] = p;
+
+    for (const tr of transactions) {
+      if (!Array.isArray(tr?.items)) continue;
+      for (const it of tr.items) {
+        if (it && it.productId != null && !it.product) {
+          const pid = Number(it.productId);
+          it.product = (pid && idToProduct[pid]) ? idToProduct[pid] : null;
+        }
+      }
+    }
+    return transactions;
+  } catch (e) {
+    // If anything goes wrong, return original to avoid breaking flow
+    return transactions;
   }
+}
 
   async update(id: number, updateTransactionDto: UpdateTransactionDto) {
-    // Validate that id is provided and is a valid number
-    if (id === undefined || id === null || isNaN(id) || id <= 0) {
-      throw new BadRequestException('Invalid transaction ID provided');
-    }
-
-    const transaction = await this.findOne(id);
-
-    if (transaction.status === TransactionStatus.COMPLETED) {
-      throw new BadRequestException('Completed transactions cannot be modified');
-    }
-
-    return this.prisma.transaction.update({
-      where: { id },
-      data: updateTransactionDto,
-      include: {
-        customer: true,
-        user: true,
-        soldBy: true,
-        fromBranch: true,
-        toBranch: true,
-        items: {
-          include: {
-            product: true
-          }
-        },
-        paymentSchedules: {
-          orderBy: { month: 'asc' }
-        }
-      }
-    });
+  // Validate that id is provided and is a valid number
+  if (id === undefined || id === null || isNaN(id) || id <= 0) {
+    throw new BadRequestException('Invalid transaction ID provided');
   }
 
-  async remove(id: number, currentUser?: any) {
-    // Validate that id is provided and is a valid number
-    if (id === undefined || id === null || isNaN(id) || id <= 0) {
-      throw new BadRequestException('Invalid transaction ID provided');
-    }
+  const transaction = await this.findOne(id);
 
-    const transaction = await this.findOne(id);
+  if (transaction.status === TransactionStatus.COMPLETED) {
+    throw new BadRequestException('Completed transactions cannot be modified');
+  }
 
-    const role = currentUser?.role || currentUser?.userRole;
-    if (role !== 'BIGADMIN') {
-      const setting = await this.prisma.systemSetting.findFirst();
-      if (setting && setting.adminAllowDeleteTransaction === false) {
-        throw new BadRequestException("BigAdmin tomonidan tranzaksiyalarni o'chirish taqiqlangan");
+  return this.prisma.transaction.update({
+    where: { id },
+    data: updateTransactionDto,
+    include: {
+      customer: true,
+      user: true,
+      soldBy: true,
+      fromBranch: true,
+      toBranch: true,
+      items: {
+        include: {
+          product: true
+        }
+      },
+      paymentSchedules: {
+        orderBy: { month: 'asc' }
       }
     }
+  });
+}
 
-    if (transaction.status === TransactionStatus.COMPLETED) {
-      // Faqat ADMIN foydalanuvchiga ruxsat beramiz
-      if (!['ADMIN', 'BIGADMIN'].includes(role)) {
-        throw new BadRequestException('Completed transactions cannot be deleted');
-      }
+  async remove(id: number, currentUser ?: any) {
+  // Validate that id is provided and is a valid number
+  if (id === undefined || id === null || isNaN(id) || id <= 0) {
+    throw new BadRequestException('Invalid transaction ID provided');
+  }
+
+  const transaction = await this.findOne(id);
+
+  const role = currentUser?.role || currentUser?.userRole;
+  if (role !== 'BIGADMIN') {
+    const setting = await this.prisma.systemSetting.findFirst();
+    if (setting && setting.adminAllowDeleteTransaction === false) {
+      throw new BadRequestException("BigAdmin tomonidan tranzaksiyalarni o'chirish taqiqlangan");
     }
+  }
 
-    // Hammasini bitta tranzaksiyada bajarish: miqdorlarni qaytarish, bog'liq yozuvlarni o'chirish, so'ng tranzaksiyani o'chirish
-    return await this.prisma.$transaction(async (tx) => {
-      // Mahsulot miqdorlarini qaytarish
-      for (const item of transaction.items) {
-        if (item.productId) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: {
-              quantity: { increment: item.quantity },
-              status: 'IN_STORE'
-            }
-          });
-        }
-      }
+  if (transaction.status === TransactionStatus.COMPLETED) {
+    // Faqat ADMIN foydalanuvchiga ruxsat beramiz
+    if (!['ADMIN', 'BIGADMIN'].includes(role)) {
+      throw new BadRequestException('Completed transactions cannot be deleted');
+    }
+  }
 
-      // Bog'liq to'lov yozuvlarini o'chirish (agar mavjud bo'lsa)
-      // Baʼzi installlarda jadvallar nomi boshqacha bo‘lishi mumkin; mavjud bo‘lsa o‘chadi
-      try { await tx.creditRepayment.deleteMany({ where: { transactionId: id } }); } catch { }
-      try { await tx.dailyRepayment.deleteMany({ where: { transactionId: id } }); } catch { }
-
-      // Bog'liq payment schedule va itemlarni o'chirish
-      await tx.paymentSchedule.deleteMany({ where: { transactionId: id } });
-      await tx.transactionItem.deleteMany({ where: { transactionId: id } });
-
-      // O'chirish audit logini saqlash
-      try {
-        const deletedUserId = currentUser?.id || currentUser?.userId || currentUser?.sub;
-        let deletedUserName = currentUser?.fullName || currentUser?.firstName || currentUser?.name || currentUser?.username;
-        if (!deletedUserName && deletedUserId) {
-          const u = await tx.user.findUnique({ where: { id: Number(deletedUserId) } });
-          if (u) deletedUserName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username;
-        }
-
-        let customer = transaction.customer;
-        if (!customer && transaction.customerId) {
-          customer = await tx.customer.findUnique({ where: { id: transaction.customerId } });
-        }
-
-        let labelInfo = 'Мижозсиз';
-        if (customer) {
-          labelInfo = customer.fullName || customer.name || [customer.firstName, customer.lastName].filter(Boolean).join(' ') || 'Мижоз';
-        } else if (transaction.type === 'TRANSFER' || transaction.transactionType === 'TRANSFER') {
-          labelInfo = `Трансфер: ${transaction.fromBranch?.name || 'Склад'} ➔ ${transaction.toBranch?.name || 'Филиал'}`;
-        }
-
-        const totalAmount = transaction.finalTotal ?? transaction.total ?? 0;
-
-        await tx.deletedRecord.create({
+  // Hammasini bitta tranzaksiyada bajarish: miqdorlarni qaytarish, bog'liq yozuvlarni o'chirish, so'ng tranzaksiyani o'chirish
+  return await this.prisma.$transaction(async (tx) => {
+    // Mahsulot miqdorlarini qaytarish
+    for (const item of transaction.items) {
+      if (item.productId) {
+        await tx.product.update({
+          where: { id: item.productId },
           data: {
-            entityType: 'TRANSACTION',
-            entityId: id,
-            title: `Транзакция #${id} - ${labelInfo} (${Number(totalAmount).toLocaleString()} сўм)`,
-            details: {
-              ...transaction,
-              customer: customer || transaction.customer || null,
-            },
-            deletedById: deletedUserId ? Number(deletedUserId) : null,
-            deletedByName: deletedUserName || 'Админ',
-            branchId: transaction.fromBranchId || transaction.toBranchId || null,
-            reason: `Транзакциялар бўлимидан ўчирилди (${transaction.type || ''})`,
+            quantity: { increment: item.quantity },
+            status: 'IN_STORE'
           }
         });
-      } catch (logErr) {
-        console.error('DeletedRecord logging error for transaction:', logErr);
+      }
+    }
+
+    // Bog'liq to'lov yozuvlarini o'chirish (agar mavjud bo'lsa)
+    // Baʼzi installlarda jadvallar nomi boshqacha bo‘lishi mumkin; mavjud bo‘lsa o‘chadi
+    try { await tx.creditRepayment.deleteMany({ where: { transactionId: id } }); } catch { }
+    try { await tx.dailyRepayment.deleteMany({ where: { transactionId: id } }); } catch { }
+
+    // Bog'liq payment schedule va itemlarni o'chirish
+    await tx.paymentSchedule.deleteMany({ where: { transactionId: id } });
+    await tx.transactionItem.deleteMany({ where: { transactionId: id } });
+
+    // O'chirish audit logini saqlash
+    try {
+      const deletedUserId = currentUser?.id || currentUser?.userId || currentUser?.sub;
+      let deletedUserName = currentUser?.fullName || currentUser?.firstName || currentUser?.name || currentUser?.username;
+      if (!deletedUserName && deletedUserId) {
+        const u = await tx.user.findUnique({ where: { id: Number(deletedUserId) } });
+        if (u) deletedUserName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username;
       }
 
-      // Oxirida tranzaksiyani o'chirish
-      return tx.transaction.delete({ where: { id } });
-    });
-  }
+      let customer = transaction.customer;
+      if (!customer && transaction.customerId) {
+        customer = await tx.customer.findUnique({ where: { id: transaction.customerId } });
+      }
+
+      let labelInfo = 'Мижозсиз';
+      if (customer) {
+        labelInfo = customer.fullName || customer.name || [customer.firstName, customer.lastName].filter(Boolean).join(' ') || 'Мижоз';
+      } else if (transaction.type === 'TRANSFER' || transaction.transactionType === 'TRANSFER') {
+        labelInfo = `Трансфер: ${transaction.fromBranch?.name || 'Склад'} ➔ ${transaction.toBranch?.name || 'Филиал'}`;
+      }
+
+      const totalAmount = transaction.finalTotal ?? transaction.total ?? 0;
+
+      await tx.deletedRecord.create({
+        data: {
+          entityType: 'TRANSACTION',
+          entityId: id,
+          title: `Транзакция #${id} - ${labelInfo} (${Number(totalAmount).toLocaleString()} сўм)`,
+          details: {
+            ...transaction,
+            customer: customer || transaction.customer || null,
+          },
+          deletedById: deletedUserId ? Number(deletedUserId) : null,
+          deletedByName: deletedUserName || 'Админ',
+          branchId: transaction.fromBranchId || transaction.toBranchId || null,
+          reason: `Транзакциялар бўлимидан ўчирилди (${transaction.type || ''})`,
+        }
+      });
+    } catch (logErr) {
+      console.error('DeletedRecord logging error for transaction:', logErr);
+    }
+
+    // Oxirida tranzaksiyani o'chirish
+    return tx.transaction.delete({ where: { id } });
+  });
+}
 
   // Qarzdorliklar ro'yxati (kredit / bo'lib to'lash)
   async getDebts(params: { branchId?: number; customerId?: number }) {
-    const { branchId, customerId } = params || {};
+  const { branchId, customerId } = params || {};
 
-    const where: any = {
-      paymentType: {
-        in: [PaymentType.CREDIT, PaymentType.INSTALLMENT]
-      },
-      status: { not: TransactionStatus.CANCELLED }
-    };
+  const where: any = {
+    paymentType: {
+      in: [PaymentType.CREDIT, PaymentType.INSTALLMENT]
+    },
+    status: { not: TransactionStatus.CANCELLED }
+  };
 
-    if (customerId) where.customerId = customerId;
-    if (branchId) {
-      // Filial bo'yicha mos keladigan transactionlar
-      where.OR = [{ fromBranchId: branchId }, { toBranchId: branchId }];
-    }
-
-    const transactions = await this.prisma.transaction.findMany({
-      where,
-      include: {
-        customer: true,
-        items: { include: { product: true } },
-        paymentSchedules: { orderBy: { month: 'asc' } },
-        payments: true,
-        tasks: {
-          include: {
-            auditor: true,
-            uydanCollectedBy: true,
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    const debts = transactions
-      .map((t) => {
-        const schedules = t.paymentSchedules || [];
-        const totalPayable = schedules.reduce((sum, s) => sum + (s.payment || 0), 0);
-        const totalPaidFromSchedules = schedules.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
-        const upfrontPaid = (t.downPayment || 0) + (t.amountPaid || 0);
-        const totalPaid = totalPaidFromSchedules + upfrontPaid;
-        const outstanding = Math.max(0, totalPayable - totalPaid);
-
-        // Keyingi to'lov (to'lanmagan birinchi oy)
-        const nextDue = schedules.find(
-          (s) => (s.paidAmount || 0) < (s.payment || 0) && !s.isPaid
-        );
-
-        const monthlyPayment = schedules.length > 0 ? schedules[0].payment : 0;
-
-        return {
-          transactionId: t.id,
-          customer: t.customer
-            ? {
-              id: t.customer.id,
-              fullName: t.customer.fullName,
-              phone: t.customer.phone
-            }
-            : null,
-          createdAt: t.createdAt,
-          paymentType: t.paymentType,
-          totalPayable,
-          totalPaid,
-          outstanding,
-          monthlyPayment,
-          nextDue: nextDue
-            ? {
-              month: nextDue.month,
-              amountDue: Math.max(0, (nextDue.payment || 0) - (nextDue.paidAmount || 0)),
-              remainingBalance: nextDue.remainingBalance
-            }
-            : null,
-          uydan: {
-            amount: (t.tasks || []).reduce((sum, task: any) => sum + Number(task?.uydanAmount || 0), 0),
-            collectedAmount: (t.tasks || []).reduce((sum, task: any) => sum + Number(task?.uydanCollectedAmount || 0), 0),
-            isCollected: (t.tasks || []).some((task: any) => Boolean(task?.isUydanCollected)),
-            collectNote: (t.tasks || []).map((task: any) => task?.uydanCollectNote).find(Boolean) || null,
-            courier: (() => {
-              const taskWithCourier = (t.tasks || []).find((task: any) => task?.auditor);
-              return taskWithCourier?.auditor || null;
-            })(),
-            collectedBy: (() => {
-              const taskWithCollector = (t.tasks || []).find((task: any) => task?.uydanCollectedBy);
-              return taskWithCollector?.uydanCollectedBy || null;
-            })()
-          },
-          items: (t.items || []).map((it) => ({
-            id: it.id,
-            productId: it.productId,
-            productName: it.product?.name,
-            quantity: it.quantity,
-            price: it.price,
-            total: it.total
-          }))
-        };
-      })
-      .filter((d) => d.outstanding > 0);
-
-    // Mijoz bo'yicha jamlama
-    const customerMap = new Map<
-      number,
-      {
-        customerId: number;
-        fullName: string | null;
-        phone: string | null;
-        totalPayable: number;
-        totalPaid: number;
-        outstanding: number;
-        transactions: typeof debts;
-      }
-    >();
-
-    for (const d of debts) {
-      const key = d.customer?.id || 0;
-      if (!customerMap.has(key)) {
-        customerMap.set(key, {
-          customerId: key,
-          fullName: d.customer?.fullName || null,
-          phone: d.customer?.phone || null,
-          totalPayable: 0,
-          totalPaid: 0,
-          outstanding: 0,
-          transactions: []
-        });
-      }
-      const agg = customerMap.get(key)!;
-      agg.totalPayable += d.totalPayable;
-      agg.totalPaid += d.totalPaid;
-      agg.outstanding += d.outstanding;
-      agg.transactions.push(d);
-    }
-
-    const customers = Array.from(customerMap.values()).sort(
-      (a, b) => b.outstanding - a.outstanding
-    );
-
-    const totalOutstanding = debts.reduce((sum, d) => sum + d.outstanding, 0);
-
-    return {
-      debts,
-      customers,
-      summary: {
-        totalOutstanding,
-        totalCustomers: customers.length,
-      }
-    };
+  if (customerId) where.customerId = customerId;
+  if (branchId) {
+    // Filial bo'yicha mos keladigan transactionlar
+    where.OR = [{ fromBranchId: branchId }, { toBranchId: branchId }];
   }
+
+  const transactions = await this.prisma.transaction.findMany({
+    where,
+    include: {
+      customer: true,
+      items: { include: { product: true } },
+      paymentSchedules: { orderBy: { month: 'asc' } },
+      payments: true,
+      tasks: {
+        include: {
+          auditor: true,
+          uydanCollectedBy: true,
+        }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  const debts = transactions
+    .map((t) => {
+      const schedules = t.paymentSchedules || [];
+      const totalPayable = schedules.reduce((sum, s) => sum + (s.payment || 0), 0);
+      const totalPaidFromSchedules = schedules.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
+      const upfrontPaid = (t.downPayment || 0) + (t.amountPaid || 0);
+      const totalPaid = totalPaidFromSchedules + upfrontPaid;
+      const outstanding = Math.max(0, totalPayable - totalPaid);
+
+      // Keyingi to'lov (to'lanmagan birinchi oy)
+      const nextDue = schedules.find(
+        (s) => (s.paidAmount || 0) < (s.payment || 0) && !s.isPaid
+      );
+
+      const monthlyPayment = schedules.length > 0 ? schedules[0].payment : 0;
+
+      return {
+        transactionId: t.id,
+        customer: t.customer
+          ? {
+            id: t.customer.id,
+            fullName: t.customer.fullName,
+            phone: t.customer.phone
+          }
+          : null,
+        createdAt: t.createdAt,
+        paymentType: t.paymentType,
+        totalPayable,
+        totalPaid,
+        outstanding,
+        monthlyPayment,
+        nextDue: nextDue
+          ? {
+            month: nextDue.month,
+            amountDue: Math.max(0, (nextDue.payment || 0) - (nextDue.paidAmount || 0)),
+            remainingBalance: nextDue.remainingBalance
+          }
+          : null,
+        uydan: {
+          amount: (t.tasks || []).reduce((sum, task: any) => sum + Number(task?.uydanAmount || 0), 0),
+          collectedAmount: (t.tasks || []).reduce((sum, task: any) => sum + Number(task?.uydanCollectedAmount || 0), 0),
+          isCollected: (t.tasks || []).some((task: any) => Boolean(task?.isUydanCollected)),
+          collectNote: (t.tasks || []).map((task: any) => task?.uydanCollectNote).find(Boolean) || null,
+          courier: (() => {
+            const taskWithCourier = (t.tasks || []).find((task: any) => task?.auditor);
+            return taskWithCourier?.auditor || null;
+          })(),
+          collectedBy: (() => {
+            const taskWithCollector = (t.tasks || []).find((task: any) => task?.uydanCollectedBy);
+            return taskWithCollector?.uydanCollectedBy || null;
+          })()
+        },
+        items: (t.items || []).map((it) => ({
+          id: it.id,
+          productId: it.productId,
+          productName: it.product?.name,
+          quantity: it.quantity,
+          price: it.price,
+          total: it.total
+        }))
+      };
+    })
+    .filter((d) => d.outstanding > 0);
+
+  // Mijoz bo'yicha jamlama
+  const customerMap = new Map<
+    number,
+    {
+      customerId: number;
+      fullName: string | null;
+      phone: string | null;
+      totalPayable: number;
+      totalPaid: number;
+      outstanding: number;
+      transactions: typeof debts;
+    }
+  >();
+
+  for (const d of debts) {
+    const key = d.customer?.id || 0;
+    if (!customerMap.has(key)) {
+      customerMap.set(key, {
+        customerId: key,
+        fullName: d.customer?.fullName || null,
+        phone: d.customer?.phone || null,
+        totalPayable: 0,
+        totalPaid: 0,
+        outstanding: 0,
+        transactions: []
+      });
+    }
+    const agg = customerMap.get(key)!;
+    agg.totalPayable += d.totalPayable;
+    agg.totalPaid += d.totalPaid;
+    agg.outstanding += d.outstanding;
+    agg.transactions.push(d);
+  }
+
+  const customers = Array.from(customerMap.values()).sort(
+    (a, b) => b.outstanding - a.outstanding
+  );
+
+  const totalOutstanding = debts.reduce((sum, d) => sum + d.outstanding, 0);
+
+  return {
+    debts,
+    customers,
+    summary: {
+      totalOutstanding,
+      totalCustomers: customers.length,
+    }
+  };
+}
 
   /**
    * Bitta tranzaksiya bo'yicha qarzni ishonchli hisoblash (UYDAN / CREDIT).
@@ -1937,1128 +2011,1128 @@ export class TransactionService {
    * qarz UYDAN to'lovlari -> task.uydanAmount -> mahsulotlar summasi orqali tiklanadi.
    */
   private computeDebtTx(t: any) {
-    const num = (v: any) => {
-      const n = Number(v || 0);
-      return Number.isFinite(n) ? n : 0;
-    };
-    const payments: any[] = Array.isArray(t?.payments) ? t.payments : [];
-    const items: any[] = Array.isArray(t?.items) ? t.items : [];
-    const tasks: any[] = Array.isArray(t?.tasks) ? t.tasks : [];
-    const schedules: any[] = (Array.isArray(t?.paymentSchedules) ? t.paymentSchedules : []).filter(
-      (s: any) => !['INSTALLMENT', 'PARTNER'].includes(String(s?.installmentType || '').toUpperCase()),
-    );
+  const num = (v: any) => {
+    const n = Number(v || 0);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const payments: any[] = Array.isArray(t?.payments) ? t.payments : [];
+  const items: any[] = Array.isArray(t?.items) ? t.items : [];
+  const tasks: any[] = Array.isArray(t?.tasks) ? t.tasks : [];
+  const schedules: any[] = (Array.isArray(t?.paymentSchedules) ? t.paymentSchedules : []).filter(
+    (s: any) => !['INSTALLMENT', 'PARTNER'].includes(String(s?.installmentType || '').toUpperCase()),
+  );
 
-    const uydanPay = payments
-      .filter((p: any) => ['UYDAN', 'HOME'].includes(String(p?.method || '').toUpperCase()))
-      .reduce((s: number, p: any) => s + num(p?.amount), 0);
-    const taskUydan = tasks.reduce((m: number, k: any) => Math.max(m, num(k?.uydanAmount)), 0);
-    const itemsSum = items
-      .filter((it: any) => String(it?.status || '').toUpperCase() !== 'RETURNED')
-      .reduce((s: number, it: any) => {
-        const lineTotal = num(it?.total) || num(it?.sellingPrice ?? it?.price) * num(it?.quantity);
-        return s + Math.max(0, lineTotal);
-      }, 0);
-    const downPayment = num(t?.downPayment);
-    const creditRepaid = num(t?.creditRepaymentAmount);
-    const schedTotal = schedules.reduce((s: number, sc: any) => s + num(sc?.payment), 0);
+  const uydanPay = payments
+    .filter((p: any) => ['UYDAN', 'HOME'].includes(String(p?.method || '').toUpperCase()))
+    .reduce((s: number, p: any) => s + num(p?.amount), 0);
+  const taskUydan = tasks.reduce((m: number, k: any) => Math.max(m, num(k?.uydanAmount)), 0);
+  const itemsSum = items
+    .filter((it: any) => String(it?.status || '').toUpperCase() !== 'RETURNED')
+    .reduce((s: number, it: any) => {
+      const lineTotal = num(it?.total) || num(it?.sellingPrice ?? it?.price) * num(it?.quantity);
+      return s + Math.max(0, lineTotal);
+    }, 0);
+  const downPayment = num(t?.downPayment);
+  const creditRepaid = num(t?.creditRepaymentAmount);
+  const schedTotal = schedules.reduce((s: number, sc: any) => s + num(sc?.payment), 0);
 
-    let sold = num(t?.finalTotal) || num(t?.total) || itemsSum;
-    let debt = 0;
-    let paidOnDebt = 0;
-    let outstanding = 0;
+  let sold = num(t?.finalTotal) || num(t?.total) || itemsSum;
+  let debt = 0;
+  let paidOnDebt = 0;
+  let outstanding = 0;
 
-    if (schedules.length > 0 && schedTotal > 0) {
-      debt = schedTotal;
-      let schedPaidSum = 0;
-      let schedOutstandingSum = 0;
-      for (const s of schedules) {
-        const sPayment = num(s.payment);
-        const sPaid = num(s.paidAmount);
-        const sIsPaid = s.isPaid === true || (sPayment > 0 && sPaid >= sPayment);
-        if (sIsPaid) {
-          schedPaidSum += Math.max(sPaid, sPayment);
-        } else {
-          schedPaidSum += Math.max(0, sPaid);
-          schedOutstandingSum += Math.max(0, sPayment - sPaid);
-        }
-      }
-      if (schedPaidSum >= debt || schedOutstandingSum <= 0) {
-        paidOnDebt = debt;
-        outstanding = 0;
-      } else if (creditRepaid > schedPaidSum) {
-        const extra = creditRepaid - schedPaidSum;
-        paidOnDebt = Math.min(debt, schedPaidSum + extra);
-        outstanding = Math.max(0, schedOutstandingSum - extra);
+  if (schedules.length > 0 && schedTotal > 0) {
+    debt = schedTotal;
+    let schedPaidSum = 0;
+    let schedOutstandingSum = 0;
+    for (const s of schedules) {
+      const sPayment = num(s.payment);
+      const sPaid = num(s.paidAmount);
+      const sIsPaid = s.isPaid === true || (sPayment > 0 && sPaid >= sPayment);
+      if (sIsPaid) {
+        schedPaidSum += Math.max(sPaid, sPayment);
       } else {
-        paidOnDebt = Math.min(debt, schedPaidSum);
-        outstanding = schedOutstandingSum;
+        schedPaidSum += Math.max(0, sPaid);
+        schedOutstandingSum += Math.max(0, sPayment - sPaid);
       }
-    } else {
-      if (uydanPay > 0) debt = uydanPay;
-      else if (taskUydan > 0) debt = taskUydan;
-      else debt = Math.max(0, sold - downPayment);
-      paidOnDebt = Math.min(debt, creditRepaid);
-      outstanding = Math.max(0, debt - creditRepaid);
     }
-
-    if (sold <= 0) sold = debt + downPayment;
-    if (sold < debt) sold = debt;
-    const upfront = Math.max(0, sold - debt);
-
-    return {
-      sold,
-      debt,
-      upfront,
-      downPayment,
-      paidOnDebt,
-      totalPaid: upfront + paidOnDebt,
-      outstanding,
-      schedules,
-      hasUydanSignal: uydanPay > 0 || taskUydan > 0,
-    };
+    if (schedPaidSum >= debt || schedOutstandingSum <= 0) {
+      paidOnDebt = debt;
+      outstanding = 0;
+    } else if (creditRepaid > schedPaidSum) {
+      const extra = creditRepaid - schedPaidSum;
+      paidOnDebt = Math.min(debt, schedPaidSum + extra);
+      outstanding = Math.max(0, schedOutstandingSum - extra);
+    } else {
+      paidOnDebt = Math.min(debt, schedPaidSum);
+      outstanding = schedOutstandingSum;
+    }
+  } else {
+    if (uydanPay > 0) debt = uydanPay;
+    else if (taskUydan > 0) debt = taskUydan;
+    else debt = Math.max(0, sold - downPayment);
+    paidOnDebt = Math.min(debt, creditRepaid);
+    outstanding = Math.max(0, debt - creditRepaid);
   }
+
+  if (sold <= 0) sold = debt + downPayment;
+  if (sold < debt) sold = debt;
+  const upfront = Math.max(0, sold - debt);
+
+  return {
+    sold,
+    debt,
+    upfront,
+    downPayment,
+    paidOnDebt,
+    totalPaid: upfront + paidOnDebt,
+    outstanding,
+    schedules,
+    hasUydanSignal: uydanPay > 0 || taskUydan > 0,
+  };
+}
 
   async getDebtCustomers(params: {
-    branchId?: number;
-    page?: number;
-    limit?: number;
-    all?: boolean;
-    search?: string;
-    startDate?: string;
-    endDate?: string;
-    hasOutstanding?: boolean;
-    paymentStatus?: string; // ALL, FULLY_PAID, HAS_REMAINING, UYDAN
-    cashierId?: number;
-  }) {
-    const { branchId, page = 1, limit = 50, all, search, startDate, endDate, hasOutstanding, paymentStatus, cashierId } = params;
-    const skip = (page - 1) * limit;
+  branchId?: number;
+  page?: number;
+  limit?: number;
+  all?: boolean;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+  hasOutstanding?: boolean;
+  paymentStatus?: string; // ALL, FULLY_PAID, HAS_REMAINING, UYDAN
+  cashierId?: number;
+}) {
+  const { branchId, page = 1, limit = 50, all, search, startDate, endDate, hasOutstanding, paymentStatus, cashierId } = params;
+  const skip = (page - 1) * limit;
 
-    // Build where clause: strictly exclude INSTALLMENT and PARTNER, and only allow UYDAN transactions
-    const where: any = {
-      status: { not: TransactionStatus.CANCELLED },
-      paymentType: { notIn: [PaymentType.INSTALLMENT, PaymentType.PARTNER] },
-      partnerName: null,
-      NOT: [
-        { payments: { some: { method: { in: ['PARTNER', 'partner', 'INSTALLMENT', 'installment'] } } } },
-        { partnerName: { not: null } }
-      ],
+  // Build where clause: strictly exclude INSTALLMENT and PARTNER, and only allow UYDAN transactions
+  const where: any = {
+    status: { not: TransactionStatus.CANCELLED },
+    paymentType: { notIn: [PaymentType.INSTALLMENT, PaymentType.PARTNER] },
+    partnerName: null,
+    NOT: [
+      { payments: { some: { method: { in: ['PARTNER', 'partner', 'INSTALLMENT', 'installment'] } } } },
+      { partnerName: { not: null } }
+    ],
+    OR: [
+      { payments: { some: { method: { in: ['UYDAN', 'uydan', 'HOME', 'home'] } } } },
+      { paymentType: PaymentType.CREDIT },
+      { paymentSchedules: { some: { installmentType: { notIn: ['INSTALLMENT', 'installment'] } } } },
+      { tasks: { some: { uydanAmount: { gt: 0 } } } }
+    ]
+  };
+
+  if (!where.AND) where.AND = [];
+
+  // Branch filter
+  if (branchId) {
+    where.AND.push({
       OR: [
-        { payments: { some: { method: { in: ['UYDAN', 'uydan', 'HOME', 'home'] } } } },
-        { paymentType: PaymentType.CREDIT },
-        { paymentSchedules: { some: { installmentType: { notIn: ['INSTALLMENT', 'installment'] } } } },
-        { tasks: { some: { uydanAmount: { gt: 0 } } } }
+        { fromBranchId: branchId },
+        { toBranchId: branchId }
       ]
-    };
-
-    if (!where.AND) where.AND = [];
-
-    // Branch filter
-    if (branchId) {
-      where.AND.push({
-        OR: [
-          { fromBranchId: branchId },
-          { toBranchId: branchId }
-        ]
-      });
-    }
-
-    // Date filter
-    if (startDate || endDate) {
-      const dateCondition: any = {};
-      if (startDate) dateCondition.gte = new Date(startDate);
-      if (endDate) {
-        const endD = new Date(endDate);
-        endD.setHours(23, 59, 59, 999);
-        dateCondition.lte = endD;
-      }
-      where.AND.push({ createdAt: dateCondition });
-    }
-
-    // Search filter
-    if (search) {
-      where.AND.push({
-        customer: {
-          OR: [
-            { fullName: { contains: search, mode: 'insensitive' } },
-            { phone: { contains: search, mode: 'insensitive' } }
-          ]
-        }
-      });
-    }
-
-    // Cashier filter
-    if (cashierId) {
-      where.AND.push({
-        OR: [
-          { soldByUserId: cashierId },
-          { userId: cashierId }
-        ]
-      });
-    }
-
-    if (where.AND.length === 0) delete where.AND;
-
-    // Get transactions with minimal data for performance
-    const transactions = await this.prisma.transaction.findMany({
-      where,
-      select: {
-        id: true,
-        paymentType: true,
-        partnerName: true,
-        finalTotal: true,
-        total: true,
-        downPayment: true,
-        amountPaid: true,
-        creditRepaymentAmount: true,
-        status: true,
-        remainingBalance: true,
-        createdAt: true,
-        customer: {
-          select: { id: true, fullName: true, phone: true }
-        },
-        paymentSchedules: {
-          select: {
-            payment: true,
-            paidAmount: true,
-            isPaid: true,
-            remainingBalance: true,
-            month: true,
-            rating: true,
-            installmentType: true,
-          }
-        },
-        payments: {
-          select: { method: true, amount: true }
-        },
-        tasks: {
-          select: { uydanAmount: true, uydanCollectedAmount: true }
-        },
-        items: {
-          select: { price: true, sellingPrice: true, quantity: true, total: true, status: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
     });
-
-    // Group by customer and calculate totals
-    const customerMap = new Map<number, any>();
-
-    for (const t of transactions) {
-      if (t.paymentType === 'INSTALLMENT' || t.paymentType === 'PARTNER') continue;
-      if (t.partnerName) continue;
-      const cust = t.customer;
-      if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
-
-      const payments = t.payments || [];
-      const hasPartnerPayment = payments.some(p => ['PARTNER', 'HAMKOR'].includes(String(p.method || '').toUpperCase()));
-      const hasInstallmentPayment = payments.some(p => ['INSTALLMENT'].includes(String(p.method || '').toUpperCase()));
-      if (hasPartnerPayment || hasInstallmentPayment) continue;
-
-      const debtInfo = this.computeDebtTx(t);
-      const schedules = debtInfo.schedules;
-      const hasUydanMethod = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()));
-      const hasUydanPayment = hasUydanMethod || debtInfo.hasUydanSignal || ['UYDAN', 'CREDIT'].includes(String(t.paymentType || '').toUpperCase());
-
-      if (!hasUydanPayment && schedules.length === 0) continue;
-
-      // Qarz hisob-kitobi (umumiy helper orqali — UI va Excel bilan bir xil)
-      const txTotalDebt = debtInfo.debt;
-      const txOutstanding = debtInfo.outstanding;
-      const txPaidOnDebt = debtInfo.paidOnDebt;
-
-      // Aggregate rating counts
-      let goodMonths = 0;
-      let badMonths = 0;
-      for (const sc of schedules) {
-        if ((sc as any).rating === 'YAXSHI') goodMonths++;
-        else if ((sc as any).rating === 'YOMON') badMonths++;
-      }
-
-      if (!customerMap.has(cust.id)) {
-        customerMap.set(cust.id, {
-          id: cust.id,
-          fullName: cust.fullName,
-          phone: cust.phone,
-          totalDebt: 0,
-          totalPaid: 0,
-          outstanding: 0,
-          remaining: 0,
-          transactionCount: 0,
-          goodMonths: 0,
-          badMonths: 0,
-          totalMonths: 0,
-          createdAt: t.createdAt
-        });
-      }
-
-      const agg = customerMap.get(cust.id);
-      agg.totalDebt += txTotalDebt;
-      agg.totalPaid += txPaidOnDebt;
-      agg.outstanding += txOutstanding;
-      agg.remaining += txOutstanding;
-      agg.transactionCount += 1;
-      agg.goodMonths += goodMonths;
-      agg.badMonths += badMonths;
-      agg.totalMonths += schedules.length;
-    }
-
-    // Customer-level filtering
-    let customerList = Array.from(customerMap.values());
-
-    if (hasOutstanding === true) {
-      customerList = customerList.filter(c => c.outstanding > 0);
-    } else if (hasOutstanding === false) {
-      customerList = customerList.filter(c => c.outstanding <= 0);
-    }
-
-    if (paymentStatus === 'FULLY_PAID') {
-      customerList = customerList.filter(c => c.outstanding <= 0);
-    } else if (paymentStatus === 'HAS_REMAINING') {
-      customerList = customerList.filter(c => c.outstanding > 0);
-    }
-
-    // Build final list with rating object
-    const customers = customerList.map(c => ({
-      id: c.id,
-      fullName: c.fullName,
-      phone: c.phone,
-      totalDebt: c.totalDebt,
-      totalPaid: c.totalPaid,
-      outstanding: c.outstanding,
-      remaining: c.outstanding,
-      transactionCount: c.transactionCount,
-      createdAt: c.createdAt,
-      rating: {
-        totalMonths: c.totalMonths,
-        goodMonths: c.goodMonths,
-        badMonths: c.badMonths,
-        isGood: c.goodMonths > c.badMonths,
-        isBad: c.badMonths > c.goodMonths,
-        isNeutral: c.goodMonths === c.badMonths
-      }
-    })).sort((a, b) => b.outstanding - a.outstanding);
-
-    // Calculate summary statistics
-    const now = new Date();
-    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0);
-    const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999);
-
-    const yesterdayUydanTx = await this.prisma.transaction.findMany({
-      where: {
-        status: { not: TransactionStatus.CANCELLED },
-        createdAt: { gte: startOfYesterday, lte: endOfYesterday },
-        payments: { some: { method: 'UYDAN' } }
-      },
-      select: {
-        finalTotal: true,
-        total: true,
-        payments: { select: { method: true, amount: true } }
-      }
-    });
-
-    let yesterdayUydanSales = 0;
-    yesterdayUydanTx.forEach(t => {
-      const uydanPayments = (t.payments || []).filter(p => String(p.method || '').toUpperCase() === 'UYDAN');
-      if (uydanPayments.length > 0) {
-        yesterdayUydanSales += uydanPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
-      } else {
-        yesterdayUydanSales += Number(t.finalTotal || t.total || 0);
-      }
-    });
-
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-    const todayCreditRepayments = await this.prisma.creditRepayment.aggregate({
-      where: {
-        OR: [
-          { paidAt: { gte: startOfToday, lte: endOfToday } },
-          { createdAt: { gte: startOfToday, lte: endOfToday } }
-        ]
-      },
-      _sum: { amount: true }
-    });
-
-    const todayDailyRepayments = await this.prisma.dailyRepayment.aggregate({
-      where: {
-        OR: [
-          { paidAt: { gte: startOfToday, lte: endOfToday } },
-          { createdAt: { gte: startOfToday, lte: endOfToday } }
-        ]
-      },
-      _sum: { amount: true }
-    });
-
-    const todayRepayments = (todayCreditRepayments._sum.amount || 0) + (todayDailyRepayments._sum.amount || 0);
-
-    const totalCustomers = customers.length;
-    const debtorsCount = customers.filter(c => c.outstanding > 0).length;
-    const totalOutstanding = customers.reduce((sum, c) => sum + (c.outstanding || 0), 0);
-
-    // Apply pagination
-    const total = customers.length;
-    const paginatedCustomers = (all || limit >= 1000 || limit <= 0) ? customers : customers.slice(skip, skip + limit);
-
-    return {
-      customers: paginatedCustomers,
-      summary: {
-        totalCustomers,
-        debtorsCount,
-        totalOutstanding,
-        yesterdayUydanSales,
-        todayRepayments,
-      },
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
-    };
   }
+
+  // Date filter
+  if (startDate || endDate) {
+    const dateCondition: any = {};
+    if (startDate) dateCondition.gte = new Date(startDate);
+    if (endDate) {
+      const endD = new Date(endDate);
+      endD.setHours(23, 59, 59, 999);
+      dateCondition.lte = endD;
+    }
+    where.AND.push({ createdAt: dateCondition });
+  }
+
+  // Search filter
+  if (search) {
+    where.AND.push({
+      customer: {
+        OR: [
+          { fullName: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search, mode: 'insensitive' } }
+        ]
+      }
+    });
+  }
+
+  // Cashier filter
+  if (cashierId) {
+    where.AND.push({
+      OR: [
+        { soldByUserId: cashierId },
+        { userId: cashierId }
+      ]
+    });
+  }
+
+  if (where.AND.length === 0) delete where.AND;
+
+  // Get transactions with minimal data for performance
+  const transactions = await this.prisma.transaction.findMany({
+    where,
+    select: {
+      id: true,
+      paymentType: true,
+      partnerName: true,
+      finalTotal: true,
+      total: true,
+      downPayment: true,
+      amountPaid: true,
+      creditRepaymentAmount: true,
+      status: true,
+      remainingBalance: true,
+      createdAt: true,
+      customer: {
+        select: { id: true, fullName: true, phone: true }
+      },
+      paymentSchedules: {
+        select: {
+          payment: true,
+          paidAmount: true,
+          isPaid: true,
+          remainingBalance: true,
+          month: true,
+          rating: true,
+          installmentType: true,
+        }
+      },
+      payments: {
+        select: { method: true, amount: true }
+      },
+      tasks: {
+        select: { uydanAmount: true, uydanCollectedAmount: true }
+      },
+      items: {
+        select: { price: true, sellingPrice: true, quantity: true, total: true, status: true }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  // Group by customer and calculate totals
+  const customerMap = new Map<number, any>();
+
+  for (const t of transactions) {
+    if (t.paymentType === 'INSTALLMENT' || t.paymentType === 'PARTNER') continue;
+    if (t.partnerName) continue;
+    const cust = t.customer;
+    if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
+
+    const payments = t.payments || [];
+    const hasPartnerPayment = payments.some(p => ['PARTNER', 'HAMKOR'].includes(String(p.method || '').toUpperCase()));
+    const hasInstallmentPayment = payments.some(p => ['INSTALLMENT'].includes(String(p.method || '').toUpperCase()));
+    if (hasPartnerPayment || hasInstallmentPayment) continue;
+
+    const debtInfo = this.computeDebtTx(t);
+    const schedules = debtInfo.schedules;
+    const hasUydanMethod = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()));
+    const hasUydanPayment = hasUydanMethod || debtInfo.hasUydanSignal || ['UYDAN', 'CREDIT'].includes(String(t.paymentType || '').toUpperCase());
+
+    if (!hasUydanPayment && schedules.length === 0) continue;
+
+    // Qarz hisob-kitobi (umumiy helper orqali — UI va Excel bilan bir xil)
+    const txTotalDebt = debtInfo.debt;
+    const txOutstanding = debtInfo.outstanding;
+    const txPaidOnDebt = debtInfo.paidOnDebt;
+
+    // Aggregate rating counts
+    let goodMonths = 0;
+    let badMonths = 0;
+    for (const sc of schedules) {
+      if ((sc as any).rating === 'YAXSHI') goodMonths++;
+      else if ((sc as any).rating === 'YOMON') badMonths++;
+    }
+
+    if (!customerMap.has(cust.id)) {
+      customerMap.set(cust.id, {
+        id: cust.id,
+        fullName: cust.fullName,
+        phone: cust.phone,
+        totalDebt: 0,
+        totalPaid: 0,
+        outstanding: 0,
+        remaining: 0,
+        transactionCount: 0,
+        goodMonths: 0,
+        badMonths: 0,
+        totalMonths: 0,
+        createdAt: t.createdAt
+      });
+    }
+
+    const agg = customerMap.get(cust.id);
+    agg.totalDebt += txTotalDebt;
+    agg.totalPaid += txPaidOnDebt;
+    agg.outstanding += txOutstanding;
+    agg.remaining += txOutstanding;
+    agg.transactionCount += 1;
+    agg.goodMonths += goodMonths;
+    agg.badMonths += badMonths;
+    agg.totalMonths += schedules.length;
+  }
+
+  // Customer-level filtering
+  let customerList = Array.from(customerMap.values());
+
+  if (hasOutstanding === true) {
+    customerList = customerList.filter(c => c.outstanding > 0);
+  } else if (hasOutstanding === false) {
+    customerList = customerList.filter(c => c.outstanding <= 0);
+  }
+
+  if (paymentStatus === 'FULLY_PAID') {
+    customerList = customerList.filter(c => c.outstanding <= 0);
+  } else if (paymentStatus === 'HAS_REMAINING') {
+    customerList = customerList.filter(c => c.outstanding > 0);
+  }
+
+  // Build final list with rating object
+  const customers = customerList.map(c => ({
+    id: c.id,
+    fullName: c.fullName,
+    phone: c.phone,
+    totalDebt: c.totalDebt,
+    totalPaid: c.totalPaid,
+    outstanding: c.outstanding,
+    remaining: c.outstanding,
+    transactionCount: c.transactionCount,
+    createdAt: c.createdAt,
+    rating: {
+      totalMonths: c.totalMonths,
+      goodMonths: c.goodMonths,
+      badMonths: c.badMonths,
+      isGood: c.goodMonths > c.badMonths,
+      isBad: c.badMonths > c.goodMonths,
+      isNeutral: c.goodMonths === c.badMonths
+    }
+  })).sort((a, b) => b.outstanding - a.outstanding);
+
+  // Calculate summary statistics
+  const now = new Date();
+  const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0);
+  const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999);
+
+  const yesterdayUydanTx = await this.prisma.transaction.findMany({
+    where: {
+      status: { not: TransactionStatus.CANCELLED },
+      createdAt: { gte: startOfYesterday, lte: endOfYesterday },
+      payments: { some: { method: 'UYDAN' } }
+    },
+    select: {
+      finalTotal: true,
+      total: true,
+      payments: { select: { method: true, amount: true } }
+    }
+  });
+
+  let yesterdayUydanSales = 0;
+  yesterdayUydanTx.forEach(t => {
+    const uydanPayments = (t.payments || []).filter(p => String(p.method || '').toUpperCase() === 'UYDAN');
+    if (uydanPayments.length > 0) {
+      yesterdayUydanSales += uydanPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+    } else {
+      yesterdayUydanSales += Number(t.finalTotal || t.total || 0);
+    }
+  });
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  const todayCreditRepayments = await this.prisma.creditRepayment.aggregate({
+    where: {
+      OR: [
+        { paidAt: { gte: startOfToday, lte: endOfToday } },
+        { createdAt: { gte: startOfToday, lte: endOfToday } }
+      ]
+    },
+    _sum: { amount: true }
+  });
+
+  const todayDailyRepayments = await this.prisma.dailyRepayment.aggregate({
+    where: {
+      OR: [
+        { paidAt: { gte: startOfToday, lte: endOfToday } },
+        { createdAt: { gte: startOfToday, lte: endOfToday } }
+      ]
+    },
+    _sum: { amount: true }
+  });
+
+  const todayRepayments = (todayCreditRepayments._sum.amount || 0) + (todayDailyRepayments._sum.amount || 0);
+
+  const totalCustomers = customers.length;
+  const debtorsCount = customers.filter(c => c.outstanding > 0).length;
+  const totalOutstanding = customers.reduce((sum, c) => sum + (c.outstanding || 0), 0);
+
+  // Apply pagination
+  const total = customers.length;
+  const paginatedCustomers = (all || limit >= 1000 || limit <= 0) ? customers : customers.slice(skip, skip + limit);
+
+  return {
+    customers: paginatedCustomers,
+    summary: {
+      totalCustomers,
+      debtorsCount,
+      totalOutstanding,
+      yesterdayUydanSales,
+      todayRepayments,
+    },
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit)
+    }
+  };
+}
 
   // Mahsulot bo'yicha sotuvlar (sodda hisobot)
   async getProductSales(params: {
-    productId?: number;
-    branchId?: number;
-    startDate?: string;
-    endDate?: string;
-  }) {
-    const { productId, branchId, startDate, endDate } = params || {};
+  productId?: number;
+  branchId?: number;
+  startDate?: string;
+  endDate?: string;
+}) {
+  const { productId, branchId, startDate, endDate } = params || {};
 
-    const where: any = {
-      transaction: {
-        type: TransactionType.SALE as any
-      }
-    };
-
-    if (productId) where.productId = productId;
-    if (branchId) where.transaction.fromBranchId = branchId;
-
-    if (startDate || endDate) {
-      where.transaction.createdAt = {};
-      if (startDate) where.transaction.createdAt.gte = new Date(startDate);
-      if (endDate) where.transaction.createdAt.lte = new Date(endDate);
+  const where: any = {
+    transaction: {
+      type: TransactionType.SALE as any
     }
+  };
 
-    const items = await this.prisma.transactionItem.findMany({
-      where,
-      include: {
-        product: true,
-        transaction: true
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+  if (productId) where.productId = productId;
+  if (branchId) where.transaction.fromBranchId = branchId;
 
-    // Mahsulot bo'yicha jamlash
-    const productMap = new Map<
-      number,
-      { productId: number; productName: string | null; totalQuantity: number; totalAmount: number }
-    >();
-
-    // Sana bo'yicha jamlash (kunlik)
-    const dailyMap = new Map<
-      string,
-      { date: string; totalQuantity: number; totalAmount: number }
-    >();
-
-    for (const it of items) {
-      const pid = it.productId || 0;
-      const pname = it.product?.name || null;
-      if (!productMap.has(pid)) {
-        productMap.set(pid, {
-          productId: pid,
-          productName: pname,
-          totalQuantity: 0,
-          totalAmount: 0
-        });
-      }
-      const pAgg = productMap.get(pid)!;
-      pAgg.totalQuantity += it.quantity;
-      pAgg.totalAmount += it.total;
-
-      const d = it.transaction?.createdAt
-        ? new Date(it.transaction.createdAt)
-        : new Date(it.createdAt);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-        d.getDate()
-      ).padStart(2, '0')}`;
-      if (!dailyMap.has(key)) {
-        dailyMap.set(key, { date: key, totalQuantity: 0, totalAmount: 0 });
-      }
-      const dAgg = dailyMap.get(key)!;
-      dAgg.totalQuantity += it.quantity;
-      dAgg.totalAmount += it.total;
-    }
-
-    const products = Array.from(productMap.values()).sort(
-      (a, b) => b.totalQuantity - a.totalQuantity
-    );
-    const daily = Array.from(dailyMap.values()).sort((a, b) => (a.date < b.date ? -1 : 1));
-
-    const totals = products.reduce(
-      (acc, p) => {
-        acc.totalQuantity += p.totalQuantity;
-        acc.totalAmount += p.totalAmount;
-        return acc;
-      },
-      { totalQuantity: 0, totalAmount: 0 }
-    );
-
-    return { products, daily, totals };
+  if (startDate || endDate) {
+    where.transaction.createdAt = {};
+    if (startDate) where.transaction.createdAt.gte = new Date(startDate);
+    if (endDate) where.transaction.createdAt.lte = new Date(endDate);
   }
+
+  const items = await this.prisma.transactionItem.findMany({
+    where,
+    include: {
+      product: true,
+      transaction: true
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  // Mahsulot bo'yicha jamlash
+  const productMap = new Map<
+    number,
+    { productId: number; productName: string | null; totalQuantity: number; totalAmount: number }
+  >();
+
+  // Sana bo'yicha jamlash (kunlik)
+  const dailyMap = new Map<
+    string,
+    { date: string; totalQuantity: number; totalAmount: number }
+  >();
+
+  for (const it of items) {
+    const pid = it.productId || 0;
+    const pname = it.product?.name || null;
+    if (!productMap.has(pid)) {
+      productMap.set(pid, {
+        productId: pid,
+        productName: pname,
+        totalQuantity: 0,
+        totalAmount: 0
+      });
+    }
+    const pAgg = productMap.get(pid)!;
+    pAgg.totalQuantity += it.quantity;
+    pAgg.totalAmount += it.total;
+
+    const d = it.transaction?.createdAt
+      ? new Date(it.transaction.createdAt)
+      : new Date(it.createdAt);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate()
+    ).padStart(2, '0')}`;
+    if (!dailyMap.has(key)) {
+      dailyMap.set(key, { date: key, totalQuantity: 0, totalAmount: 0 });
+    }
+    const dAgg = dailyMap.get(key)!;
+    dAgg.totalQuantity += it.quantity;
+    dAgg.totalAmount += it.total;
+  }
+
+  const products = Array.from(productMap.values()).sort(
+    (a, b) => b.totalQuantity - a.totalQuantity
+  );
+  const daily = Array.from(dailyMap.values()).sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  const totals = products.reduce(
+    (acc, p) => {
+      acc.totalQuantity += p.totalQuantity;
+      acc.totalAmount += p.totalAmount;
+      return acc;
+    },
+    { totalQuantity: 0, totalAmount: 0 }
+  );
+
+  return { products, daily, totals };
+}
 
   // Kredit to'lovlarini boshqarish
   async getPaymentSchedules(transactionId: number) {
-    // Validate that transactionId is provided and is a valid number
-    if (transactionId === undefined || transactionId === null || isNaN(transactionId) || transactionId <= 0) {
-      throw new BadRequestException('Invalid transaction ID provided');
-    }
-
-    const transaction = await this.findOne(transactionId);
-    return transaction.paymentSchedules;
+  // Validate that transactionId is provided and is a valid number
+  if (transactionId === undefined || transactionId === null || isNaN(transactionId) || transactionId <= 0) {
+    throw new BadRequestException('Invalid transaction ID provided');
   }
+
+  const transaction = await this.findOne(transactionId);
+  return transaction.paymentSchedules;
+}
 
   async updatePaymentStatus(transactionId: number, month: number, paid: boolean) {
-    // Validate that transactionId is provided and is a valid number
-    if (transactionId === undefined || transactionId === null || isNaN(transactionId) || transactionId <= 0) {
-      throw new BadRequestException('Invalid transaction ID provided');
-    }
-
-    const schedule = await this.prisma.paymentSchedule.findFirst({
-      where: { transactionId, month }
-    });
-
-    if (!schedule) {
-      throw new NotFoundException('Payment schedule not found');
-    }
-
-    // PaymentSchedule modelida paid field yo'q, shuning uchun boshqa yechim ishlatamiz
-    return this.prisma.paymentSchedule.update({
-      where: { id: schedule.id },
-      data: {
-        // paid field yo'q, shuning uchun boshqa field bilan belgilaymiz
-        remainingBalance: paid ? 0 : schedule.remainingBalance
-      }
-    });
+  // Validate that transactionId is provided and is a valid number
+  if (transactionId === undefined || transactionId === null || isNaN(transactionId) || transactionId <= 0) {
+    throw new BadRequestException('Invalid transaction ID provided');
   }
+
+  const schedule = await this.prisma.paymentSchedule.findFirst({
+    where: { transactionId, month }
+  });
+
+  if (!schedule) {
+    throw new NotFoundException('Payment schedule not found');
+  }
+
+  // PaymentSchedule modelida paid field yo'q, shuning uchun boshqa yechim ishlatamiz
+  return this.prisma.paymentSchedule.update({
+    where: { id: schedule.id },
+    data: {
+      // paid field yo'q, shuning uchun boshqa field bilan belgilaymiz
+      remainingBalance: paid ? 0 : schedule.remainingBalance
+    }
+  });
+}
 
   // Filiallar orasida o'tkazma
   async createTransfer(transferData: any) {
-    const { fromBranchId, toBranchId, items, soldByUserId, userId, ...data } = transferData;
+  const { fromBranchId, toBranchId, items, soldByUserId, userId, ...data } = transferData;
 
-    const numFromBranchId = Number(fromBranchId);
-    const numToBranchId = Number(toBranchId);
+  const numFromBranchId = Number(fromBranchId);
+  const numToBranchId = Number(toBranchId);
 
-    if (!numFromBranchId || isNaN(numFromBranchId) || !numToBranchId || isNaN(numToBranchId)) {
-      throw new BadRequestException("Ikkala filial ham to'g'ri tanlanishi shart");
-    }
+  if (!numFromBranchId || isNaN(numFromBranchId) || !numToBranchId || isNaN(numToBranchId)) {
+    throw new BadRequestException("Ikkala filial ham to'g'ri tanlanishi shart");
+  }
 
-    if (numFromBranchId === numToBranchId) {
-      throw new BadRequestException("Jo'natuvchi va qabul qiluvchi filiallar har xil bo'lishi kerak");
-    }
+  if (numFromBranchId === numToBranchId) {
+    throw new BadRequestException("Jo'natuvchi va qabul qiluvchi filiallar har xil bo'lishi kerak");
+  }
 
-    if (!Array.isArray(items) || items.length === 0) {
-      throw new BadRequestException("Transfer qilinadigan mahsulotlar ro'yxati bo'sh");
-    }
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new BadRequestException("Transfer qilinadigan mahsulotlar ro'yxati bo'sh");
+  }
 
-    // Qaysi user o'tkazma qilganini aniqlash
-    let effectiveUserId = Number(soldByUserId || userId || data.userId);
-    if (!effectiveUserId || isNaN(effectiveUserId)) {
-      const adminUser = await this.prisma.user.findFirst({
-        where: { role: { in: ['BIGADMIN', 'ADMIN'] } },
-        select: { id: true }
-      });
-      effectiveUserId = adminUser?.id || 1;
-    }
+  // Qaysi user o'tkazma qilganini aniqlash
+  let effectiveUserId = Number(soldByUserId || userId || data.userId);
+  if (!effectiveUserId || isNaN(effectiveUserId)) {
+    const adminUser = await this.prisma.user.findFirst({
+      where: { role: { in: ['BIGADMIN', 'ADMIN'] } },
+      select: { id: true }
+    });
+    effectiveUserId = adminUser?.id || 1;
+  }
 
-    return this.prisma.$transaction(async (tx) => {
-      // 1. O'tkazishdan oldin har bir mahsulotni mavjudligini va yetarli miqdorda ekanligini qat'iy tekshiramiz
-      for (const item of items) {
-        const pId = Number(item.productId);
-        const reqQty = Number(item.quantity) || 0;
-        if (!pId || reqQty <= 0) {
-          throw new BadRequestException("Noto'g'ri mahsulot yoki miqdor ko'rsatilgan");
-        }
-
-        const source = await tx.product.findUnique({ where: { id: pId } });
-        if (!source) {
-          throw new BadRequestException(`Mahsulot topilmadi (ID: ${pId})`);
-        }
-
-        const avail = Number(source.quantity) || 0;
-        if (avail < reqQty) {
-          throw new BadRequestException(
-            `"${source.name}" mahsuloti yetarli emas (Omborda: ${avail} ta, So'ralgan: ${reqQty} ta)`
-          );
-        }
+  return this.prisma.$transaction(async (tx) => {
+    // 1. O'tkazishdan oldin har bir mahsulotni mavjudligini va yetarli miqdorda ekanligini qat'iy tekshiramiz
+    for (const item of items) {
+      const pId = Number(item.productId);
+      const reqQty = Number(item.quantity) || 0;
+      if (!pId || reqQty <= 0) {
+        throw new BadRequestException("Noto'g'ri mahsulot yoki miqdor ko'rsatilgan");
       }
 
-      // Umumiy summani hisoblash
-      const total = items.reduce((sum, item) => sum + ((Number(item.price) || 0) * (Number(item.quantity) || 0)), 0);
+      const source = await tx.product.findUnique({ where: { id: pId } });
+      if (!source) {
+        throw new BadRequestException(`Mahsulot topilmadi (ID: ${pId})`);
+      }
 
-      // O'tkazma yaratish
-      const transfer = await tx.transaction.create({
-        data: {
-          ...data,
-          type: TransactionType.TRANSFER,
-          fromBranchId: numFromBranchId,
-          toBranchId: numToBranchId,
-          userId: Number(userId) || effectiveUserId,
-          soldByUserId: effectiveUserId,
-          status: TransactionStatus.PENDING,
-          total: total,
-          finalTotal: total, // Transfer uchun total va finalTotal bir xil
-          items: {
-            create: items.map(item => ({
-              productId: Number(item.productId),
-              quantity: Number(item.quantity),
-              price: Number(item.price) || 0,
-              sellingPrice: Number(item.sellingPrice ?? item.price ?? 0),
-              originalPrice: Number(item.originalPrice ?? item.price ?? 0),
-              total: (Number(item.price) || 0) * (Number(item.quantity) || 0)
-            }))
-          }
-        },
-        include: {
-          customer: true,
-          user: true,
-          soldBy: true,
-          items: {
-            include: {
-              product: true
-            }
-          },
-          paymentSchedules: true
-        }
-      });
-
-      // Mahsulot miqdorlarini darhol yangilash - manba filialdan kamaytirish va maqsad filialga qo'shish
-      await this.updateProductQuantitiesForTransfer(transfer, tx);
-
-      // Inventar yangilangach, yangilangan tranzaksiyani qayta yuklaymiz (item miqdorlari moslashtirilgan bo'lishi mumkin)
-      const refreshed = await tx.transaction.findUnique({
-        where: { id: transfer.id },
-        include: {
-          customer: true,
-          user: true,
-          soldBy: true,
-          items: { include: { product: true } },
-          paymentSchedules: true
-        }
-      });
-
-      return { success: true, data: refreshed } as any;
-    }, {
-      maxWait: 300000,
-      timeout: 1200000
-    });
-  }
-
-
-  async getTransfersByBranch(branchId: number) {
-    const where: any = {
-      type: TransactionType.TRANSFER
-    };
-
-    // Filialdan chiqgan va kirgan o'tkazmalarni olish
-    where.OR = [
-      { fromBranchId: branchId },
-      { toBranchId: branchId }
-    ];
-
-    let tx = await this.prisma.transaction.findMany({
-      where,
-      include: {
-        fromBranch: true,
-        toBranch: true,
-        soldBy: true,
-        user: true,
-        items: {
-          include: {
-            product: {
-              include: {
-                category: true,
-                branch: true
-              }
-            }
-          }
-        },
-        bonusProducts: {
-          include: {
-            product: {
-              include: {
-                category: true,
-                branch: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    tx = await this.hydrateMissingProducts(tx);
-    return tx;
-  }
-
-  // Pending transferlarni olish
-  async getPendingTransfers(branchId?: number) {
-    const where: any = {
-      type: TransactionType.TRANSFER,
-      status: TransactionStatus.PENDING
-    };
-
-    if (branchId) {
-      where.OR = [
-        { fromBranchId: branchId },
-        { toBranchId: branchId }
-      ];
+      const avail = Number(source.quantity) || 0;
+      if (avail < reqQty) {
+        throw new BadRequestException(
+          `"${source.name}" mahsuloti yetarli emas (Omborda: ${avail} ta, So'ralgan: ${reqQty} ta)`
+        );
+      }
     }
 
-    let tx = await this.prisma.transaction.findMany({
-      where,
+    // Umumiy summani hisoblash
+    const total = items.reduce((sum, item) => sum + ((Number(item.price) || 0) * (Number(item.quantity) || 0)), 0);
+
+    // O'tkazma yaratish
+    const transfer = await tx.transaction.create({
+      data: {
+        ...data,
+        type: TransactionType.TRANSFER,
+        fromBranchId: numFromBranchId,
+        toBranchId: numToBranchId,
+        userId: Number(userId) || effectiveUserId,
+        soldByUserId: effectiveUserId,
+        status: TransactionStatus.PENDING,
+        total: total,
+        finalTotal: total, // Transfer uchun total va finalTotal bir xil
+        items: {
+          create: items.map(item => ({
+            productId: Number(item.productId),
+            quantity: Number(item.quantity),
+            price: Number(item.price) || 0,
+            sellingPrice: Number(item.sellingPrice ?? item.price ?? 0),
+            originalPrice: Number(item.originalPrice ?? item.price ?? 0),
+            total: (Number(item.price) || 0) * (Number(item.quantity) || 0)
+          }))
+        }
+      },
       include: {
-        fromBranch: true,
-        toBranch: true,
+        customer: true,
+        user: true,
         soldBy: true,
         items: {
           include: {
             product: true
           }
+        },
+        paymentSchedules: true
+      }
+    });
+
+    // Mahsulot miqdorlarini darhol yangilash - manba filialdan kamaytirish va maqsad filialga qo'shish
+    await this.updateProductQuantitiesForTransfer(transfer, tx);
+
+    // Inventar yangilangach, yangilangan tranzaksiyani qayta yuklaymiz (item miqdorlari moslashtirilgan bo'lishi mumkin)
+    const refreshed = await tx.transaction.findUnique({
+      where: { id: transfer.id },
+      include: {
+        customer: true,
+        user: true,
+        soldBy: true,
+        items: { include: { product: true } },
+        paymentSchedules: true
+      }
+    });
+
+    return { success: true, data: refreshed } as any;
+  }, {
+    maxWait: 300000,
+    timeout: 1200000
+  });
+}
+
+
+  async getTransfersByBranch(branchId: number) {
+  const where: any = {
+    type: TransactionType.TRANSFER
+  };
+
+  // Filialdan chiqgan va kirgan o'tkazmalarni olish
+  where.OR = [
+    { fromBranchId: branchId },
+    { toBranchId: branchId }
+  ];
+
+  let tx = await this.prisma.transaction.findMany({
+    where,
+    include: {
+      fromBranch: true,
+      toBranch: true,
+      soldBy: true,
+      user: true,
+      items: {
+        include: {
+          product: {
+            include: {
+              category: true,
+              branch: true
+            }
+          }
         }
       },
-      orderBy: { createdAt: 'desc' }
-    });
-    tx = await this.hydrateMissingProducts(tx);
-    return tx;
+      bonusProducts: {
+        include: {
+          product: {
+            include: {
+              category: true,
+              branch: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+  tx = await this.hydrateMissingProducts(tx);
+  return tx;
+}
+
+  // Pending transferlarni olish
+  async getPendingTransfers(branchId ?: number) {
+  const where: any = {
+    type: TransactionType.TRANSFER,
+    status: TransactionStatus.PENDING
+  };
+
+  if (branchId) {
+    where.OR = [
+      { fromBranchId: branchId },
+      { toBranchId: branchId }
+    ];
   }
+
+  let tx = await this.prisma.transaction.findMany({
+    where,
+    include: {
+      fromBranch: true,
+      toBranch: true,
+      soldBy: true,
+      items: {
+        include: {
+          product: true
+        }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+  tx = await this.hydrateMissingProducts(tx);
+  return tx;
+}
 
   private async updateProductQuantitiesForTransfer(transfer: any, tx: Prisma.TransactionClient) {
-    // ============================================================================
-    // MUHIM: Barcha itemlarni KETMA-KET (sequential) qayta ishlaymiz.
-    // Parallel processing race condition yaratadi: bir xil target productga
-    // bir nechta item yozganda, oxirgi yozish g'olib bo'ladi va boshqalar yo'qoladi.
-    // ============================================================================
+  // ============================================================================
+  // MUHIM: Barcha itemlarni KETMA-KET (sequential) qayta ishlaymiz.
+  // Parallel processing race condition yaratadi: bir xil target productga
+  // bir nechta item yozganda, oxirgi yozish g'olib bo'ladi va boshqalar yo'qoladi.
+  // ============================================================================
 
-    for (const item of transfer.items) {
-      if (!item.productId) continue;
+  for (const item of transfer.items) {
+    if (!item.productId) continue;
 
-      // 1. Manba filialdan mahsulotni topish
-      const sourceProduct = await tx.product.findUnique({
-        where: { id: item.productId }
-      });
+    // 1. Manba filialdan mahsulotni topish
+    const sourceProduct = await tx.product.findUnique({
+      where: { id: item.productId }
+    });
 
-      if (!sourceProduct) {
-        console.warn(`[Transfer] Source product not found: productId=${item.productId}`);
-        continue;
+    if (!sourceProduct) {
+      console.warn(`[Transfer] Source product not found: productId=${item.productId}`);
+      continue;
+    }
+
+    // Agar manba mahsulot branchi transfer.fromBranchId dan farq qilsa, ogohlantiramiz
+    if (sourceProduct.branchId !== transfer.fromBranchId) {
+      console.warn(`[Transfer] Source product branchId mismatch: product.branchId=${sourceProduct.branchId}, transfer.fromBranchId=${transfer.fromBranchId}`);
+    }
+
+    // 2. Haqiqiy ko'chiriladigan miqdor
+    const requestedQty = Number(item.quantity) || 0;
+    if (requestedQty <= 0) continue;
+
+    // Eng yangi holatni o'qish (oldingi iteratsiyalar o'zgartirgan bo'lishi mumkin)
+    const freshSource = await tx.product.findUnique({ where: { id: sourceProduct.id } });
+    const availableQty = Number(freshSource?.quantity) || 0;
+    const transferQty = Math.min(requestedQty, availableQty);
+
+    if (transferQty <= 0) {
+      console.warn(`[Transfer] No available quantity for productId=${item.productId}, requested=${requestedQty}, available=${availableQty}`);
+      continue;
+    }
+
+    // 3. Manba filialdan kamaytirish (atomic decrement)
+    const newSourceQty = Math.max(0, availableQty - transferQty);
+    await tx.product.update({
+      where: { id: sourceProduct.id },
+      data: {
+        quantity: newSourceQty,
+        status: newSourceQty === 0 ? 'SOLD' : 'IN_STORE'
       }
+    });
 
-      // Agar manba mahsulot branchi transfer.fromBranchId dan farq qilsa, ogohlantiramiz
-      if (sourceProduct.branchId !== transfer.fromBranchId) {
-        console.warn(`[Transfer] Source product branchId mismatch: product.branchId=${sourceProduct.branchId}, transfer.fromBranchId=${transfer.fromBranchId}`);
-      }
+    // 4. Maqsad filialda mahsulotni topish
+    let targetProduct: any = null;
 
-      // 2. Haqiqiy ko'chiriladigan miqdor
-      const requestedQty = Number(item.quantity) || 0;
-      if (requestedQty <= 0) continue;
+    const rawBarcode = ((item as any).product?.barcode || sourceProduct.barcode || '').trim();
+    const barcode = rawBarcode || null;
+    const itemName = (item as any).product?.name || sourceProduct.name;
+    const rawModel = ((item as any).product?.model ?? sourceProduct.model ?? '').trim();
+    const itemModel = rawModel === 'N/A' ? '' : rawModel;
 
-      // Eng yangi holatni o'qish (oldingi iteratsiyalar o'zgartirgan bo'lishi mumkin)
-      const freshSource = await tx.product.findUnique({ where: { id: sourceProduct.id } });
-      const availableQty = Number(freshSource?.quantity) || 0;
-      const transferQty = Math.min(requestedQty, availableQty);
-
-      if (transferQty <= 0) {
-        console.warn(`[Transfer] No available quantity for productId=${item.productId}, requested=${requestedQty}, available=${availableQty}`);
-        continue;
-      }
-
-      // 3. Manba filialdan kamaytirish (atomic decrement)
-      const newSourceQty = Math.max(0, availableQty - transferQty);
-      await tx.product.update({
-        where: { id: sourceProduct.id },
-        data: {
-          quantity: newSourceQty,
-          status: newSourceQty === 0 ? 'SOLD' : 'IN_STORE'
+    if (barcode) {
+      // Barcode mavjud bo'lsa: maqsad filialda AYNAN SHU barcode bo'yicha qidiramiz
+      targetProduct = await tx.product.findFirst({
+        where: {
+          OR: [
+            { barcode: barcode },
+            { barcode: rawBarcode }
+          ],
+          branchId: transfer.toBranchId
         }
       });
-
-      // 4. Maqsad filialda mahsulotni topish
-      let targetProduct: any = null;
-
-      const rawBarcode = ((item as any).product?.barcode || sourceProduct.barcode || '').trim();
-      const barcode = rawBarcode || null;
-      const itemName = (item as any).product?.name || sourceProduct.name;
-      const rawModel = ((item as any).product?.model ?? sourceProduct.model ?? '').trim();
-      const itemModel = rawModel === 'N/A' ? '' : rawModel;
-
-      if (barcode) {
-        // Barcode mavjud bo'lsa: maqsad filialda AYNAN SHU barcode bo'yicha qidiramiz
-        targetProduct = await tx.product.findFirst({
-          where: {
+    } else {
+      // Faqat barcode umuman bo'lmagandagina name + model bo'yicha qidiramiz
+      const searchConditions: any = {
+        AND: [
+          {
             OR: [
-              { barcode: barcode },
-              { barcode: rawBarcode }
-            ],
-            branchId: transfer.toBranchId
-          }
-        });
-      } else {
-        // Faqat barcode umuman bo'lmagandagina name + model bo'yicha qidiramiz
-        const searchConditions: any = {
-          AND: [
-            {
-              OR: [
-                { name: { equals: itemName, mode: 'insensitive' } },
-                { name: { contains: itemName, mode: 'insensitive' } },
-                { name: { contains: itemName?.trim?.() || itemName, mode: 'insensitive' } }
-              ]
-            },
-            { branchId: transfer.toBranchId }
-          ]
-        };
-        if (itemModel) {
-          searchConditions.AND.push({
-            OR: [
-              { model: { equals: itemModel, mode: 'insensitive' } },
-              { model: { contains: itemModel, mode: 'insensitive' } },
+              { name: { equals: itemName, mode: 'insensitive' } },
+              { name: { contains: itemName, mode: 'insensitive' } },
+              { name: { contains: itemName?.trim?.() || itemName, mode: 'insensitive' } }
             ]
-          });
-        } else {
-          searchConditions.AND.push({
-            OR: [{ model: null }, { model: '' }, { model: 'N/A' }]
-          });
-        }
-        targetProduct = await tx.product.findFirst({ where: searchConditions });
-      }
-
-      // Narxlar va boshqa xususiyatlarni aniqlash
-      const itemPrice = Number((item as any).product?.price ?? sourceProduct.price ?? 0);
-      const itemMarketPrice = Number((item as any).product?.marketPrice ?? sourceProduct.marketPrice ?? 0);
-      const itemBonusPct = (item as any).product?.bonusPercentage ?? sourceProduct?.bonusPercentage ?? 0;
-      const itemMonths = sourceProduct?.months ?? (item as any).product?.months;
-
-      // CategoryId ni xavfsiz aniqlash (mavjud bo'lmagan ID tushib qolmasligi uchun)
-      let targetCategoryId = (item as any).product?.categoryId || sourceProduct?.categoryId;
-      if (targetCategoryId) {
-        const catExists = await tx.category.findUnique({ where: { id: targetCategoryId } });
-        if (!catExists) targetCategoryId = null;
-      }
-      if (!targetCategoryId) {
-        const firstCat = await tx.category.findFirst({ select: { id: true } });
-        targetCategoryId = firstCat?.id || 3;
-      }
-
-      // 5. Maqsad filialga qo'shish yoki yangi yaratish
-      if (targetProduct) {
-        // Maqsad filialda mahsulot topildi (aktiv yoki o'chirilgan)
-        // Barcode ASLO O'ZGARTIRILMAYDI! Faqat tovar soni oshiriladi
-        const freshTarget = await tx.product.findUnique({ where: { id: targetProduct.id } });
-        const isDeleted = freshTarget?.isDeleted || false;
-        const currentTargetQty = isDeleted ? 0 : Math.max(0, Number(freshTarget?.quantity) || 0);
-        const newQuantity = currentTargetQty + transferQty;
-
-        await tx.product.update({
-          where: { id: targetProduct.id },
-          data: {
-            name: freshTarget?.name || itemName,
-            model: freshTarget?.model ?? itemModel,
-            barcode: freshTarget?.barcode || barcode,
-            price: isDeleted ? itemPrice : (freshTarget?.price ? freshTarget.price : itemPrice),
-            marketPrice: isDeleted ? itemMarketPrice : (freshTarget?.marketPrice ? freshTarget.marketPrice : itemMarketPrice),
-            bonusPercentage: isDeleted ? itemBonusPct : (freshTarget?.bonusPercentage ?? itemBonusPct),
-            months: isDeleted ? itemMonths : (freshTarget?.months ?? itemMonths),
-            categoryId: freshTarget?.categoryId || targetCategoryId,
-            quantity: newQuantity,
-            status: 'IN_WAREHOUSE',
-            isDeleted: false,
-            deletedAt: null
-          }
+          },
+          { branchId: transfer.toBranchId }
+        ]
+      };
+      if (itemModel) {
+        searchConditions.AND.push({
+          OR: [
+            { model: { equals: itemModel, mode: 'insensitive' } },
+            { model: { contains: itemModel, mode: 'insensitive' } },
+          ]
         });
       } else {
-        // Maqsad filialda mahsulot hali mavjud emas: yangi yaratamiz
-        // BARCODE NI ASLO O'ZGARTIRMAYMIZ! Agar manba tovardagi barcode bor bo'lsa, AYNAN O'SHA BARCODE saqlanadi!
-        let safeBarcode = barcode;
-        if (!safeBarcode) {
-          // Faqat va faqat manba tovarning o'zida umuman barcode bo'lmagandagina generateUniqueBarcode ishlatiladi
-          safeBarcode = await this.generateUniqueBarcode(tx);
-        }
-
-        await tx.product.create({
-          data: {
-            name: itemName,
-            barcode: safeBarcode,
-            model: itemModel || null,
-            price: itemPrice,
-            marketPrice: itemMarketPrice,
-            quantity: transferQty,
-            status: 'IN_WAREHOUSE',
-            branchId: transfer.toBranchId,
-            categoryId: targetCategoryId,
-            bonusPercentage: itemBonusPct,
-            months: itemMonths || null,
-            isDeleted: false,
-            deletedAt: null
-          }
+        searchConditions.AND.push({
+          OR: [{ model: null }, { model: '' }, { model: 'N/A' }]
         });
       }
+      targetProduct = await tx.product.findFirst({ where: searchConditions });
+    }
 
-      // 6. Agar transfer cheklangan bo'lsa, transactionItem miqdorini moslash
-      if (transferQty !== requestedQty) {
-        await tx.transactionItem.update({
-          where: { id: item.id },
-          data: { quantity: transferQty, total: (item.price || 0) * transferQty }
-        }).catch(() => { });
+    // Narxlar va boshqa xususiyatlarni aniqlash
+    const itemPrice = Number((item as any).product?.price ?? sourceProduct.price ?? 0);
+    const itemMarketPrice = Number((item as any).product?.marketPrice ?? sourceProduct.marketPrice ?? 0);
+    const itemBonusPct = (item as any).product?.bonusPercentage ?? sourceProduct?.bonusPercentage ?? 0;
+    const itemMonths = sourceProduct?.months ?? (item as any).product?.months;
+
+    // CategoryId ni xavfsiz aniqlash (mavjud bo'lmagan ID tushib qolmasligi uchun)
+    let targetCategoryId = (item as any).product?.categoryId || sourceProduct?.categoryId;
+    if (targetCategoryId) {
+      const catExists = await tx.category.findUnique({ where: { id: targetCategoryId } });
+      if (!catExists) targetCategoryId = null;
+    }
+    if (!targetCategoryId) {
+      const firstCat = await tx.category.findFirst({ select: { id: true } });
+      targetCategoryId = firstCat?.id || 3;
+    }
+
+    // 5. Maqsad filialga qo'shish yoki yangi yaratish
+    if (targetProduct) {
+      // Maqsad filialda mahsulot topildi (aktiv yoki o'chirilgan)
+      // Barcode ASLO O'ZGARTIRILMAYDI! Faqat tovar soni oshiriladi
+      const freshTarget = await tx.product.findUnique({ where: { id: targetProduct.id } });
+      const isDeleted = freshTarget?.isDeleted || false;
+      const currentTargetQty = isDeleted ? 0 : Math.max(0, Number(freshTarget?.quantity) || 0);
+      const newQuantity = currentTargetQty + transferQty;
+
+      await tx.product.update({
+        where: { id: targetProduct.id },
+        data: {
+          name: freshTarget?.name || itemName,
+          model: freshTarget?.model ?? itemModel,
+          barcode: freshTarget?.barcode || barcode,
+          price: isDeleted ? itemPrice : (freshTarget?.price ? freshTarget.price : itemPrice),
+          marketPrice: isDeleted ? itemMarketPrice : (freshTarget?.marketPrice ? freshTarget.marketPrice : itemMarketPrice),
+          bonusPercentage: isDeleted ? itemBonusPct : (freshTarget?.bonusPercentage ?? itemBonusPct),
+          months: isDeleted ? itemMonths : (freshTarget?.months ?? itemMonths),
+          categoryId: freshTarget?.categoryId || targetCategoryId,
+          quantity: newQuantity,
+          status: 'IN_WAREHOUSE',
+          isDeleted: false,
+          deletedAt: null
+        }
+      });
+    } else {
+      // Maqsad filialda mahsulot hali mavjud emas: yangi yaratamiz
+      // BARCODE NI ASLO O'ZGARTIRMAYMIZ! Agar manba tovardagi barcode bor bo'lsa, AYNAN O'SHA BARCODE saqlanadi!
+      let safeBarcode = barcode;
+      if (!safeBarcode) {
+        // Faqat va faqat manba tovarning o'zida umuman barcode bo'lmagandagina generateUniqueBarcode ishlatiladi
+        safeBarcode = await this.generateUniqueBarcode(tx);
       }
+
+      await tx.product.create({
+        data: {
+          name: itemName,
+          barcode: safeBarcode,
+          model: itemModel || null,
+          price: itemPrice,
+          marketPrice: itemMarketPrice,
+          quantity: transferQty,
+          status: 'IN_WAREHOUSE',
+          branchId: transfer.toBranchId,
+          categoryId: targetCategoryId,
+          bonusPercentage: itemBonusPct,
+          months: itemMonths || null,
+          isDeleted: false,
+          deletedAt: null
+        }
+      });
+    }
+
+    // 6. Agar transfer cheklangan bo'lsa, transactionItem miqdorini moslash
+    if (transferQty !== requestedQty) {
+      await tx.transactionItem.update({
+        where: { id: item.id },
+        data: { quantity: transferQty, total: (item.price || 0) * transferQty }
+      }).catch(() => { });
     }
   }
+}
 
   async approveTransfer(id: number, approvedById: number) {
-    // Validate that id is provided and is a valid number
-    if (id === undefined || id === null || isNaN(id) || id <= 0) {
-      throw new BadRequestException('Invalid transaction ID provided');
-    }
-
-    const transaction = await this.findOne(id);
-
-    if (transaction.type !== TransactionType.TRANSFER) {
-      throw new BadRequestException('Only transfer transactions can be approved');
-    }
-
-    if (transaction.status !== TransactionStatus.PENDING) {
-      throw new BadRequestException('Transaction is not pending');
-    }
-
-    // O'tkazmani tasdiqlash - mahsulotlar allaqachon ko'chirilgan
-    return (this.prisma as any).transaction.update({
-      where: { id },
-      data: {
-        status: TransactionStatus.COMPLETED,
-        userId: approvedById
-      }
-    });
+  // Validate that id is provided and is a valid number
+  if (id === undefined || id === null || isNaN(id) || id <= 0) {
+    throw new BadRequestException('Invalid transaction ID provided');
   }
+
+  const transaction = await this.findOne(id);
+
+  if (transaction.type !== TransactionType.TRANSFER) {
+    throw new BadRequestException('Only transfer transactions can be approved');
+  }
+
+  if (transaction.status !== TransactionStatus.PENDING) {
+    throw new BadRequestException('Transaction is not pending');
+  }
+
+  // O'tkazmani tasdiqlash - mahsulotlar allaqachon ko'chirilgan
+  return (this.prisma as any).transaction.update({
+    where: { id },
+    data: {
+      status: TransactionStatus.COMPLETED,
+      userId: approvedById
+    }
+  });
+}
 
   async rejectTransfer(id: number) {
-    // Validate that id is provided and is a valid number
-    if (id === undefined || id === null || isNaN(id) || id <= 0) {
-      throw new BadRequestException('Invalid transaction ID provided');
-    }
-
-    const transaction = await this.findOne(id);
-
-    if (transaction.type !== TransactionType.TRANSFER) {
-      throw new BadRequestException('Only transfer transactions can be rejected');
-    }
-
-    return (this.prisma as any).transaction.update({
-      where: { id },
-      data: { status: TransactionStatus.CANCELLED }
-    });
+  // Validate that id is provided and is a valid number
+  if (id === undefined || id === null || isNaN(id) || id <= 0) {
+    throw new BadRequestException('Invalid transaction ID provided');
   }
 
+  const transaction = await this.findOne(id);
+
+  if (transaction.type !== TransactionType.TRANSFER) {
+    throw new BadRequestException('Only transfer transactions can be rejected');
+  }
+
+  return (this.prisma as any).transaction.update({
+    where: { id },
+    data: { status: TransactionStatus.CANCELLED }
+  });
+}
+
   // Statistika
-  async getStatistics(branchId?: number, startDate?: string, endDate?: string) {
-    const where: any = {};
-    const whereOr: any = [];
+  async getStatistics(branchId ?: number, startDate ?: string, endDate ?: string) {
+  const where: any = {};
+  const whereOr: any = [];
 
-    if (branchId) {
-      whereOr.push({ fromBranchId: branchId });
-      whereOr.push({ toBranchId: branchId });
-    }
+  if (branchId) {
+    whereOr.push({ fromBranchId: branchId });
+    whereOr.push({ toBranchId: branchId });
+  }
 
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
-    }
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) where.createdAt.lte = new Date(endDate);
+  }
 
-    // Agar branchId berilgan bo'lsa, OR shartini qo'shamiz
-    if (whereOr.length > 0) {
-      where.OR = whereOr;
-    }
+  // Agar branchId berilgan bo'lsa, OR shartini qo'shamiz
+  if (whereOr.length > 0) {
+    where.OR = whereOr;
+  }
 
-    // Credit va daily repaymentlar uchun where clause
-    const repaymentWhere: any = {};
-    if (branchId) {
-      repaymentWhere.branchId = branchId;
-    }
-    if (startDate || endDate) {
-      repaymentWhere.paidAt = {};
-      if (startDate) repaymentWhere.paidAt.gte = new Date(startDate);
-      if (endDate) repaymentWhere.paidAt.lte = new Date(endDate);
-    }
+  // Credit va daily repaymentlar uchun where clause
+  const repaymentWhere: any = {};
+  if (branchId) {
+    repaymentWhere.branchId = branchId;
+  }
+  if (startDate || endDate) {
+    repaymentWhere.paidAt = {};
+    if (startDate) repaymentWhere.paidAt.gte = new Date(startDate);
+    if (endDate) repaymentWhere.paidAt.lte = new Date(endDate);
+  }
 
-    // Get credit and daily repayments separately to avoid potential Prisma client issues
-    let creditRepaymentsCash: any = { _sum: { amount: 0 }, _count: 0 };
-    let creditRepaymentsCard: any = { _sum: { amount: 0 }, _count: 0 };
-    let dailyRepaymentsCash: any = { _sum: { amount: 0 }, _count: 0 };
-    let dailyRepaymentsCard: any = { _sum: { amount: 0 }, _count: 0 };
+  // Get credit and daily repayments separately to avoid potential Prisma client issues
+  let creditRepaymentsCash: any = { _sum: { amount: 0 }, _count: 0 };
+  let creditRepaymentsCard: any = { _sum: { amount: 0 }, _count: 0 };
+  let dailyRepaymentsCash: any = { _sum: { amount: 0 }, _count: 0 };
+  let dailyRepaymentsCard: any = { _sum: { amount: 0 }, _count: 0 };
 
-    try {
-      [creditRepaymentsCash, creditRepaymentsCard, dailyRepaymentsCash, dailyRepaymentsCard] = await Promise.all([
-        (this.prisma as any).creditRepayment.aggregate({
-          where: { ...repaymentWhere, channel: 'CASH' },
-          _sum: { amount: true },
-          _count: true
-        }),
-        (this.prisma as any).creditRepayment.aggregate({
-          where: { ...repaymentWhere, channel: 'CARD' },
-          _sum: { amount: true },
-          _count: true
-        }),
-        (this.prisma as any).dailyRepayment.aggregate({
-          where: { ...repaymentWhere, channel: 'CASH' },
-          _sum: { amount: true },
-          _count: true
-        }),
-        (this.prisma as any).dailyRepayment.aggregate({
-          where: { ...repaymentWhere, channel: 'CARD' },
-          _sum: { amount: true },
-          _count: true
-        })
-      ]);
-    } catch (error) {
-      // Use default values if repayment tables don't exist or have issues
-    }
-
-    const [totalSales, creditSales, cashSales, cardSales, purchases, transfers, upfrontCashSales, upfrontCardSales] = await Promise.all([
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE },
-        _sum: { finalTotal: true },
+  try {
+    [creditRepaymentsCash, creditRepaymentsCard, dailyRepaymentsCash, dailyRepaymentsCard] = await Promise.all([
+      (this.prisma as any).creditRepayment.aggregate({
+        where: { ...repaymentWhere, channel: 'CASH' },
+        _sum: { amount: true },
         _count: true
       }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CREDIT },
-        _sum: { finalTotal: true },
+      (this.prisma as any).creditRepayment.aggregate({
+        where: { ...repaymentWhere, channel: 'CARD' },
+        _sum: { amount: true },
         _count: true
       }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CASH },
-        _sum: { finalTotal: true },
+      (this.prisma as any).dailyRepayment.aggregate({
+        where: { ...repaymentWhere, channel: 'CASH' },
+        _sum: { amount: true },
         _count: true
       }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CARD },
-        _sum: { finalTotal: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.PURCHASE },
-        _sum: { finalTotal: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.TRANSFER },
-        _sum: { finalTotal: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CASH' },
-        _sum: { downPayment: true, amountPaid: true },
-        _count: true
-      }),
-      (this.prisma as any).transaction.aggregate({
-        where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CARD' },
-        _sum: { downPayment: true, amountPaid: true },
+      (this.prisma as any).dailyRepayment.aggregate({
+        where: { ...repaymentWhere, channel: 'CARD' },
+        _sum: { amount: true },
         _count: true
       })
     ]);
-
-    // Calculate total repayments by channel
-    const totalCashRepayments = (creditRepaymentsCash._sum.amount || 0) + (dailyRepaymentsCash._sum.amount || 0);
-    const totalCardRepayments = (creditRepaymentsCard._sum.amount || 0) + (dailyRepaymentsCard._sum.amount || 0);
-    const totalRepayments = totalCashRepayments + totalCardRepayments;
-
-    return {
-      totalSales: totalSales._sum.finalTotal || 0,
-      totalTransactions: totalSales._count || 0,
-      creditSales: creditSales._sum.finalTotal || 0,
-      creditTransactions: creditSales._count || 0,
-      cashSales: cashSales._sum.finalTotal || 0,
-      cashTransactions: cashSales._count || 0,
-      cardSales: cardSales._sum.finalTotal || 0,
-      cardTransactions: cardSales._count || 0,
-      totalPurchases: purchases._sum.finalTotal || 0,
-      purchaseTransactions: purchases._count || 0,
-      totalTransfers: transfers._sum.finalTotal || 0,
-      transferTransactions: transfers._count || 0,
-      upfrontCashTotal: (upfrontCashSales._sum.downPayment || 0) + (upfrontCashSales._sum.amountPaid || 0),
-      upfrontCashTransactions: upfrontCashSales._count || 0,
-      upfrontCardTotal: (upfrontCardSales._sum.downPayment || 0) + (upfrontCardSales._sum.amountPaid || 0),
-      upfrontCardTransactions: upfrontCardSales._count || 0,
-      // Add repayment totals
-      creditRepaymentsCash: totalCashRepayments,
-      creditRepaymentsCard: totalCardRepayments,
-      totalCreditRepayments: totalRepayments,
-      creditRepaymentTransactions: (creditRepaymentsCash._count || 0) + (creditRepaymentsCard._count || 0) + (dailyRepaymentsCash._count || 0) + (dailyRepaymentsCard._count || 0)
-    };
+  } catch (error) {
+    // Use default values if repayment tables don't exist or have issues
   }
+
+  const [totalSales, creditSales, cashSales, cardSales, purchases, transfers, upfrontCashSales, upfrontCardSales] = await Promise.all([
+    (this.prisma as any).transaction.aggregate({
+      where: { ...where, type: TransactionType.SALE },
+      _sum: { finalTotal: true },
+      _count: true
+    }),
+    (this.prisma as any).transaction.aggregate({
+      where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CREDIT },
+      _sum: { finalTotal: true },
+      _count: true
+    }),
+    (this.prisma as any).transaction.aggregate({
+      where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CASH },
+      _sum: { finalTotal: true },
+      _count: true
+    }),
+    (this.prisma as any).transaction.aggregate({
+      where: { ...where, type: TransactionType.SALE, paymentType: PaymentType.CARD },
+      _sum: { finalTotal: true },
+      _count: true
+    }),
+    (this.prisma as any).transaction.aggregate({
+      where: { ...where, type: TransactionType.PURCHASE },
+      _sum: { finalTotal: true },
+      _count: true
+    }),
+    (this.prisma as any).transaction.aggregate({
+      where: { ...where, type: TransactionType.TRANSFER },
+      _sum: { finalTotal: true },
+      _count: true
+    }),
+    (this.prisma as any).transaction.aggregate({
+      where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CASH' },
+      _sum: { downPayment: true, amountPaid: true },
+      _count: true
+    }),
+    (this.prisma as any).transaction.aggregate({
+      where: { ...where, type: TransactionType.SALE, upfrontPaymentType: 'CARD' },
+      _sum: { downPayment: true, amountPaid: true },
+      _count: true
+    })
+  ]);
+
+  // Calculate total repayments by channel
+  const totalCashRepayments = (creditRepaymentsCash._sum.amount || 0) + (dailyRepaymentsCash._sum.amount || 0);
+  const totalCardRepayments = (creditRepaymentsCard._sum.amount || 0) + (dailyRepaymentsCard._sum.amount || 0);
+  const totalRepayments = totalCashRepayments + totalCardRepayments;
+
+  return {
+    totalSales: totalSales._sum.finalTotal || 0,
+    totalTransactions: totalSales._count || 0,
+    creditSales: creditSales._sum.finalTotal || 0,
+    creditTransactions: creditSales._count || 0,
+    cashSales: cashSales._sum.finalTotal || 0,
+    cashTransactions: cashSales._count || 0,
+    cardSales: cardSales._sum.finalTotal || 0,
+    cardTransactions: cardSales._count || 0,
+    totalPurchases: purchases._sum.finalTotal || 0,
+    purchaseTransactions: purchases._count || 0,
+    totalTransfers: transfers._sum.finalTotal || 0,
+    transferTransactions: transfers._count || 0,
+    upfrontCashTotal: (upfrontCashSales._sum.downPayment || 0) + (upfrontCashSales._sum.amountPaid || 0),
+    upfrontCashTransactions: upfrontCashSales._count || 0,
+    upfrontCardTotal: (upfrontCardSales._sum.downPayment || 0) + (upfrontCardSales._sum.amountPaid || 0),
+    upfrontCardTransactions: upfrontCardSales._count || 0,
+    // Add repayment totals
+    creditRepaymentsCash: totalCashRepayments,
+    creditRepaymentsCard: totalCardRepayments,
+    totalCreditRepayments: totalRepayments,
+    creditRepaymentTransactions: (creditRepaymentsCash._count || 0) + (creditRepaymentsCard._count || 0) + (dailyRepaymentsCash._count || 0) + (dailyRepaymentsCard._count || 0)
+  };
+}
 
   // Currency conversion methods
-  async getTransactionWithCurrencyConversion(id: number, branchId?: number) {
-    const transaction = await this.findOne(id);
-    if (!transaction) return null;
+  async getTransactionWithCurrencyConversion(id: number, branchId ?: number) {
+  const transaction = await this.findOne(id);
+  if (!transaction) return null;
 
-    // Convert totals to som
-    const totalInSom = await this.currencyExchangeRateService.convertCurrency(
-      transaction.total,
-      'USD',
-      'UZS',
-      branchId || transaction.fromBranchId || undefined,
-    );
+  // Convert totals to som
+  const totalInSom = await this.currencyExchangeRateService.convertCurrency(
+    transaction.total,
+    'USD',
+    'UZS',
+    branchId || transaction.fromBranchId || undefined,
+  );
 
-    const finalTotalInSom = await this.currencyExchangeRateService.convertCurrency(
-      transaction.finalTotal,
-      'USD',
-      'UZS',
-      branchId || transaction.fromBranchId || undefined,
-    );
+  const finalTotalInSom = await this.currencyExchangeRateService.convertCurrency(
+    transaction.finalTotal,
+    'USD',
+    'UZS',
+    branchId || transaction.fromBranchId || undefined,
+  );
 
-    return {
-      ...transaction,
-      totalInSom,
-      finalTotalInSom,
-      totalInDollar: transaction.total,
-      finalTotalInDollar: transaction.finalTotal,
-    };
-  }
+  return {
+    ...transaction,
+    totalInSom,
+    finalTotalInSom,
+    totalInDollar: transaction.total,
+    finalTotalInDollar: transaction.finalTotal,
+  };
+}
 
-  async getTransactionsWithCurrencyConversion(branchId?: number, startDate?: string, endDate?: string) {
-    const result = await this.findAll({ branchId, startDate, endDate });
-    const transactions = result.transactions;
+  async getTransactionsWithCurrencyConversion(branchId ?: number, startDate ?: string, endDate ?: string) {
+  const result = await this.findAll({ branchId, startDate, endDate });
+  const transactions = result.transactions;
 
-    // Convert all transaction totals to som
-    const transactionsWithCurrency = await Promise.all(
-      transactions.map(async (transaction) => {
-        const totalInSom = await this.currencyExchangeRateService.convertCurrency(
-          transaction.total,
-          'USD',
-          'UZS',
-          branchId || transaction.fromBranchId || undefined,
-        );
+  // Convert all transaction totals to som
+  const transactionsWithCurrency = await Promise.all(
+    transactions.map(async (transaction) => {
+      const totalInSom = await this.currencyExchangeRateService.convertCurrency(
+        transaction.total,
+        'USD',
+        'UZS',
+        branchId || transaction.fromBranchId || undefined,
+      );
 
-        const finalTotalInSom = await this.currencyExchangeRateService.convertCurrency(
-          transaction.finalTotal,
-          'USD',
-          'UZS',
-          branchId || transaction.fromBranchId || undefined,
-        );
+      const finalTotalInSom = await this.currencyExchangeRateService.convertCurrency(
+        transaction.finalTotal,
+        'USD',
+        'UZS',
+        branchId || transaction.fromBranchId || undefined,
+      );
 
-        return {
-          ...transaction,
-          totalInSom,
-          finalTotalInSom,
-          totalInDollar: transaction.total,
-          finalTotalInDollar: transaction.finalTotal,
-        };
-      })
-    );
+      return {
+        ...transaction,
+        totalInSom,
+        finalTotalInSom,
+        totalInDollar: transaction.total,
+        finalTotalInDollar: transaction.finalTotal,
+      };
+    })
+  );
 
-    return {
-      ...result,
-      transactions: transactionsWithCurrency,
-    };
-  }
+  return {
+    ...result,
+    transactions: transactionsWithCurrency,
+  };
+}
 
   /**
    * Avtomatik bonus hisoblash va yaratish
@@ -3068,1023 +3142,1023 @@ export class TransactionService {
    * Agar bonus tovarlar (sovg'a) berilgan bo'lsa, ularning kelish narxi (tannarxi)
    * ortiqcha summadan ayirilib, qolgan sof ortiqcha (extraProfit) dan foiz hisoblanadi.
    */
-  public async calculateAndCreateSalesBonuses(transactionOrId: any, soldByUserIdParam?: number, createdById?: number) {
-    try {
-      let transactionId = typeof transactionOrId === 'object' ? transactionOrId?.id : Number(transactionOrId);
-      if (!transactionId) return;
+  public async calculateAndCreateSalesBonuses(transactionOrId: any, soldByUserIdParam ?: number, createdById ?: number) {
+  try {
+    let transactionId = typeof transactionOrId === 'object' ? transactionOrId?.id : Number(transactionOrId);
+    if (!transactionId) return;
 
-      const transaction = await this.prisma.transaction.findUnique({
-        where: { id: transactionId },
-        include: {
-          items: {
-            include: {
-              product: true,
-            },
-          },
-          bonusProducts: {
-            include: {
-              product: true,
-            },
+    const transaction = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        items: {
+          include: {
+            product: true,
           },
         },
-      });
+        bonusProducts: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
 
-      if (!transaction) {
-        return;
-      }
+    if (!transaction) {
+      return;
+    }
 
-      const soldByUserId = soldByUserIdParam || transaction.soldByUserId || transaction.userId;
-      if (!soldByUserId) {
-        return;
-      }
+    const soldByUserId = soldByUserIdParam || transaction.soldByUserId || transaction.userId;
+    if (!soldByUserId) {
+      return;
+    }
 
-      // Sotuvchining branch ma'lumotini olish
-      const seller = await this.prisma.user.findUnique({
-        where: { id: soldByUserId },
-        include: { branch: true }
-      });
+    // Sotuvchining branch ma'lumotini olish
+    const seller = await this.prisma.user.findUnique({
+      where: { id: soldByUserId },
+      include: { branch: true }
+    });
 
-      if (!seller) {
-        return;
-      }
+    if (!seller) {
+      return;
+    }
 
-      // Avval ushbu tranzaksiya uchun yaratilgan avtomatik bonus/jarimalarni tozalaymiz (dublikat bo'lmasligi uchun)
-      try {
-        await this.prisma.bonus.deleteMany({
-          where: {
-            transactionId: transaction.id,
-            reason: { in: ['SALES_BONUS', 'SALES_PENALTY'] }
-          }
-        });
-      } catch (delErr) {
-        console.error('Failed to clean old transaction bonuses:', delErr);
-      }
-
-      // Branch tekshiruvini majburiy qilmaymiz: avvalo tranzaksiya branchini ishlatamiz, yo'q bo'lsa sotuvchinikini, bo'lmasa branchsiz davom etamiz
-      const branchContextId = transaction.fromBranchId || transaction.toBranchId || seller.branchId || null;
-
-      // USD->UZS kursini aniqlash (branch bo'yicha, bo'lmasa global fallback)
-      let usdToUzsRateBranch = 0;
-      let usdToUzsRateGlobal = 0;
-      try {
-        usdToUzsRateBranch = await this.currencyExchangeRateService.convertCurrency(1, 'USD', 'UZS', branchContextId || undefined);
-      } catch { }
-      try {
-        usdToUzsRateGlobal = await this.currencyExchangeRateService.convertCurrency(1, 'USD', 'UZS', undefined);
-      } catch { }
-      const usdToSomRate = (usdToUzsRateBranch && usdToUzsRateBranch > 1)
-        ? usdToUzsRateBranch
-        : (usdToUzsRateGlobal && usdToUzsRateGlobal > 1)
-          ? usdToUzsRateGlobal
-          : (usdToUzsRateBranch || usdToUzsRateGlobal || 1);
-
-      // Bonus products qiymatini hisoblash
-      let bonusProducts = transaction.bonusProducts || [];
-      if (bonusProducts.length === 0) {
-        bonusProducts = await this.prisma.transactionBonusProduct.findMany({
-          where: { transactionId: transaction.id },
-          include: { product: true }
-        });
-      }
-
-      let totalBonusProductsValue = 0;
-      const bonusProductsData: any[] = [];
-      if (bonusProducts.length > 0) {
-        for (const bonusProduct of bonusProducts) {
-          // Kurs xizmatidan foydalanib USD -> UZS ga aniq konvertatsiya
-          const productPriceInUzs = Math.round(Number(bonusProduct.product?.price || 0) * usdToSomRate);
-          const productTotalValue = productPriceInUzs * bonusProduct.quantity;
-          totalBonusProductsValue += productTotalValue;
-          bonusProductsData.push({
-            productId: bonusProduct.productId,
-            name: bonusProduct.product?.name || 'Номаълум махсулот',
-            productName: bonusProduct.product?.name || 'Номаълум махсулот',
-            model: bonusProduct.product?.model || null,
-            productModel: bonusProduct.product?.model || null,
-            barcode: bonusProduct.product?.barcode || null,
-            productCode: bonusProduct.product?.barcode || 'N/A',
-            quantity: bonusProduct.quantity,
-            price: productPriceInUzs,
-            totalValue: productTotalValue
-          });
+    // Avval ushbu tranzaksiya uchun yaratilgan avtomatik bonus/jarimalarni tozalaymiz (dublikat bo'lmasligi uchun)
+    try {
+      await this.prisma.bonus.deleteMany({
+        where: {
+          transactionId: transaction.id,
+          reason: { in: ['SALES_BONUS', 'SALES_PENALTY'] }
         }
+      });
+    } catch (delErr) {
+      console.error('Failed to clean old transaction bonuses:', delErr);
+    }
+
+    // Branch tekshiruvini majburiy qilmaymiz: avvalo tranzaksiya branchini ishlatamiz, yo'q bo'lsa sotuvchinikini, bo'lmasa branchsiz davom etamiz
+    const branchContextId = transaction.fromBranchId || transaction.toBranchId || seller.branchId || null;
+
+    // USD->UZS kursini aniqlash (branch bo'yicha, bo'lmasa global fallback)
+    let usdToUzsRateBranch = 0;
+    let usdToUzsRateGlobal = 0;
+    try {
+      usdToUzsRateBranch = await this.currencyExchangeRateService.convertCurrency(1, 'USD', 'UZS', branchContextId || undefined);
+    } catch { }
+    try {
+      usdToUzsRateGlobal = await this.currencyExchangeRateService.convertCurrency(1, 'USD', 'UZS', undefined);
+    } catch { }
+    const usdToSomRate = (usdToUzsRateBranch && usdToUzsRateBranch > 1)
+      ? usdToUzsRateBranch
+      : (usdToUzsRateGlobal && usdToUzsRateGlobal > 1)
+        ? usdToUzsRateGlobal
+        : (usdToUzsRateBranch || usdToUzsRateGlobal || 1);
+
+    // Bonus products qiymatini hisoblash
+    let bonusProducts = transaction.bonusProducts || [];
+    if (bonusProducts.length === 0) {
+      bonusProducts = await this.prisma.transactionBonusProduct.findMany({
+        where: { transactionId: transaction.id },
+        include: { product: true }
+      });
+    }
+
+    let totalBonusProductsValue = 0;
+    const bonusProductsData: any[] = [];
+    if (bonusProducts.length > 0) {
+      for (const bonusProduct of bonusProducts) {
+        // Kurs xizmatidan foydalanib USD -> UZS ga aniq konvertatsiya
+        const productPriceInUzs = Math.round(Number(bonusProduct.product?.price || 0) * usdToSomRate);
+        const productTotalValue = productPriceInUzs * bonusProduct.quantity;
+        totalBonusProductsValue += productTotalValue;
+        bonusProductsData.push({
+          productId: bonusProduct.productId,
+          name: bonusProduct.product?.name || 'Номаълум махсулот',
+          productName: bonusProduct.product?.name || 'Номаълум махсулот',
+          model: bonusProduct.product?.model || null,
+          productModel: bonusProduct.product?.model || null,
+          barcode: bonusProduct.product?.barcode || null,
+          productCode: bonusProduct.product?.barcode || 'N/A',
+          quantity: bonusProduct.quantity,
+          price: productPriceInUzs,
+          totalValue: productTotalValue
+        });
       }
+    }
 
-      // Transaction darajasida umumiy narx farqini jamlash uchun akkumulyator
-      let totalPriceDifferenceForTransaction = 0;
+    // Transaction darajasida umumiy narx farqini jamlash uchun akkumulyator
+    let totalPriceDifferenceForTransaction = 0;
 
-      // 1-bosqich: Har bir mahsulot uchun narx farqini hisoblab, jami farqni yig'ish
-      const itemDiffs: Array<{
-        item: any;
-        productInfo: any;
-        sellingPrice: number;
-        quantity: number;
-        bonusPercentage: number;
-        costInUzs: number;
-        priceDifference: number;
-      }> = [];
+    // 1-bosqich: Har bir mahsulot uchun narx farqini hisoblab, jami farqni yig'ish
+    const itemDiffs: Array<{
+      item: any;
+      productInfo: any;
+      sellingPrice: number;
+      quantity: number;
+      bonusPercentage: number;
+      costInUzs: number;
+      priceDifference: number;
+    }> = [];
 
-      const negativeItems: Array<{
-        item: any;
-        productInfo: any;
-        sellingPrice: number;
-        quantity: number;
-        costInUzs: number;
-        lossAmount: number;
-      }> = [];
+    const negativeItems: Array<{
+      item: any;
+      productInfo: any;
+      sellingPrice: number;
+      quantity: number;
+      costInUzs: number;
+      lossAmount: number;
+    }> = [];
 
-      let totalSellingAll = 0;
-      let totalCostAll = 0;
+    let totalSellingAll = 0;
+    let totalCostAll = 0;
 
-      for (const item of transaction.items) {
-        let sellingPrice = 0;
-        if (item?.sellingPrice != null) {
-          const rawSp = Number(item.sellingPrice);
-          if (rawSp > 0 && rawSp < Math.max(usdToSomRate / 2, 10000)) {
-            sellingPrice = Math.round(rawSp * usdToSomRate);
-          } else {
-            sellingPrice = Math.round(rawSp);
-          }
+    for (const item of transaction.items) {
+      let sellingPrice = 0;
+      if (item?.sellingPrice != null) {
+        const rawSp = Number(item.sellingPrice);
+        if (rawSp > 0 && rawSp < Math.max(usdToSomRate / 2, 10000)) {
+          sellingPrice = Math.round(rawSp * usdToSomRate);
         } else {
-          const sellingPriceUsd = Number(item.price || 0);
-          sellingPrice = Math.round(sellingPriceUsd * usdToSomRate);
+          sellingPrice = Math.round(rawSp);
         }
-        const quantity = Number(item.quantity || 1);
-
-        let productInfo = item.product;
-        let bonusPercentage = Number(productInfo?.bonusPercentage || 0);
-
-        if (!productInfo || bonusPercentage === 0) {
-          if (item.productId) {
-            const dbProduct = await this.prisma.product.findUnique({ where: { id: item.productId } });
-            if (dbProduct) {
-              productInfo = dbProduct;
-              bonusPercentage = Number(dbProduct.bonusPercentage || 0);
-            }
-          }
-        }
-
-        const costInUzs = productInfo?.price
-          ? Math.round(Number(productInfo.price) * usdToSomRate)
-          : 0;
-        const priceDifference = (sellingPrice > costInUzs && bonusPercentage > 0)
-          ? (sellingPrice - costInUzs) * quantity
-          : 0;
-
-        totalSellingAll += sellingPrice * quantity;
-        totalCostAll += costInUzs * quantity;
-        if (sellingPrice < costInUzs) {
-          const loss = (costInUzs - sellingPrice) * quantity;
-          negativeItems.push({ item, productInfo, sellingPrice, quantity, costInUzs, lossAmount: loss });
-        }
-
-        if (priceDifference > 0) {
-          totalPriceDifferenceForTransaction += priceDifference;
-          itemDiffs.push({ item, productInfo, sellingPrice, quantity, bonusPercentage, costInUzs, priceDifference });
-        }
+      } else {
+        const sellingPriceUsd = Number(item.price || 0);
+        sellingPrice = Math.round(sellingPriceUsd * usdToSomRate);
       }
+      const quantity = Number(item.quantity || 1);
 
-      // Transaction darajasida jami sotish, kelish va bonus tovarlar tannarxini hisoblash
-      const sellingTotal = Math.round(totalSellingAll);
-      const costPlusBonus = Math.round(totalCostAll) + Math.round(totalBonusProductsValue);
-      const grossDiffAfterBonusCost = sellingTotal - costPlusBonus; // Sof ortiqcha (extraProfit)
+      let productInfo = item.product;
+      let bonusPercentage = Number(productInfo?.bonusPercentage || 0);
 
-      // Transaction ga extraProfit ni saqlash
-      try {
-        await this.prisma.transaction.update({
-          where: { id: transaction.id },
-          data: { extraProfit: grossDiffAfterBonusCost }
-        });
-      } catch (e) {
-        console.error('Failed to update transaction extraProfit:', e);
-      }
-
-      // Sof ortiqcha pool (faqat musbat bo'lsa)
-      const transactionNetExtraPool = Math.max(0, grossDiffAfterBonusCost);
-
-      // 2-bosqich: Sof ortiqchani (pool) ulushlab taqsimlab, keyin foizni qo'llash
-      if (transactionNetExtraPool > 0 && totalPriceDifferenceForTransaction > 0) {
-        for (const info of itemDiffs) {
-          const { item, productInfo, sellingPrice, quantity, bonusPercentage, costInUzs, priceDifference } = info;
-
-          const share = totalPriceDifferenceForTransaction > 0
-            ? (priceDifference / totalPriceDifferenceForTransaction)
-            : 0;
-          const allocatedBonusProductsValue = Math.round(totalBonusProductsValue * share);
-          const netExtraAmount = Math.round(transactionNetExtraPool * share);
-          const bonusAmount = Math.round(netExtraAmount * (bonusPercentage / 100));
-
-          if (bonusAmount > 0) {
-            const bonusData = {
-              userId: soldByUserId,
-              branchId: branchContextId || undefined,
-              amount: bonusAmount,
-              reason: 'SALES_BONUS',
-              description: `${productInfo?.name || item.productName} (${productInfo?.model || '-'}) mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice.toLocaleString()} som, Kelish narxi: ${Math.round(costInUzs).toLocaleString()} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
-              bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
-              transactionId: transaction.id,
-              bonusDate: new Date().toISOString()
-            };
-
-            await this.bonusService.create(bonusData, createdById || soldByUserId);
+      if (!productInfo || bonusPercentage === 0) {
+        if (item.productId) {
+          const dbProduct = await this.prisma.product.findUnique({ where: { id: item.productId } });
+          if (dbProduct) {
+            productInfo = dbProduct;
+            bonusPercentage = Number(dbProduct.bonusPercentage || 0);
           }
         }
       }
 
-      // 3-bosqich: Agar umumiy zarar (kamomad) bo'lsa, jarima yaratish
-      if (grossDiffAfterBonusCost < 0) {
-        const netDeficit = Math.abs(grossDiffAfterBonusCost);
-        try {
-          const bonusProductsInfo = (bonusProducts && bonusProducts.length > 0)
-            ? ' Bonus mahsulotlar: ' + bonusProducts
-              .map((bp: any) => `${bp.product?.name || 'Номаълум махсулот'} (${bp.product?.model || '-'}) qty=${bp.quantity}`)
-              .join(' | ')
-            : '';
+      const costInUzs = productInfo?.price
+        ? Math.round(Number(productInfo.price) * usdToSomRate)
+        : 0;
+      const priceDifference = (sellingPrice > costInUzs && bonusPercentage > 0)
+        ? (sellingPrice - costInUzs) * quantity
+        : 0;
 
-          const penaltyData = {
+      totalSellingAll += sellingPrice * quantity;
+      totalCostAll += costInUzs * quantity;
+      if (sellingPrice < costInUzs) {
+        const loss = (costInUzs - sellingPrice) * quantity;
+        negativeItems.push({ item, productInfo, sellingPrice, quantity, costInUzs, lossAmount: loss });
+      }
+
+      if (priceDifference > 0) {
+        totalPriceDifferenceForTransaction += priceDifference;
+        itemDiffs.push({ item, productInfo, sellingPrice, quantity, bonusPercentage, costInUzs, priceDifference });
+      }
+    }
+
+    // Transaction darajasida jami sotish, kelish va bonus tovarlar tannarxini hisoblash
+    const sellingTotal = Math.round(totalSellingAll);
+    const costPlusBonus = Math.round(totalCostAll) + Math.round(totalBonusProductsValue);
+    const grossDiffAfterBonusCost = sellingTotal - costPlusBonus; // Sof ortiqcha (extraProfit)
+
+    // Transaction ga extraProfit ni saqlash
+    try {
+      await this.prisma.transaction.update({
+        where: { id: transaction.id },
+        data: { extraProfit: grossDiffAfterBonusCost }
+      });
+    } catch (e) {
+      console.error('Failed to update transaction extraProfit:', e);
+    }
+
+    // Sof ortiqcha pool (faqat musbat bo'lsa)
+    const transactionNetExtraPool = Math.max(0, grossDiffAfterBonusCost);
+
+    // 2-bosqich: Sof ortiqchani (pool) ulushlab taqsimlab, keyin foizni qo'llash
+    if (transactionNetExtraPool > 0 && totalPriceDifferenceForTransaction > 0) {
+      for (const info of itemDiffs) {
+        const { item, productInfo, sellingPrice, quantity, bonusPercentage, costInUzs, priceDifference } = info;
+
+        const share = totalPriceDifferenceForTransaction > 0
+          ? (priceDifference / totalPriceDifferenceForTransaction)
+          : 0;
+        const allocatedBonusProductsValue = Math.round(totalBonusProductsValue * share);
+        const netExtraAmount = Math.round(transactionNetExtraPool * share);
+        const bonusAmount = Math.round(netExtraAmount * (bonusPercentage / 100));
+
+        if (bonusAmount > 0) {
+          const bonusData = {
             userId: soldByUserId,
             branchId: branchContextId || undefined,
-            amount: -netDeficit,
-            reason: 'SALES_PENALTY',
-            description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${sellingTotal.toLocaleString()} som, Bonus mahsulotlar qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Umumiy kelish: ${Math.round(totalCostAll).toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: `
-              + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} (${n.productInfo?.model || '-'}) qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | ')
-              + bonusProductsInfo,
+            amount: bonusAmount,
+            reason: 'SALES_BONUS',
+            description: `${productInfo?.name || item.productName} (${productInfo?.model || '-'}) mahsulotini kelish narxidan yuqori bahoda sotgani uchun avtomatik bonus. Transaction ID: ${transaction.id}, Sotish narxi: ${sellingPrice.toLocaleString()} som, Kelish narxi: ${Math.round(costInUzs).toLocaleString()} som, Miqdor: ${quantity}, Bonus mahsulotlar umumiy qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Ajratilgan ulush: ${allocatedBonusProductsValue.toLocaleString()} som, Sof ortiqcha: ${netExtraAmount.toLocaleString()} som, Bonus foizi: ${bonusPercentage}%`,
             bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
             transactionId: transaction.id,
             bonusDate: new Date().toISOString()
-          } as any;
-          await this.bonusService.create(penaltyData, createdById || soldByUserId);
-        } catch (e) {
-          console.error('Failed to create sales penalty:', e);
+          };
+
+          await this.bonusService.create(bonusData, createdById || soldByUserId);
         }
       }
-    } catch (error) {
-      console.error('Bonus calculation error:', error);
+    }
+
+    // 3-bosqich: Agar umumiy zarar (kamomad) bo'lsa, jarima yaratish
+    if (grossDiffAfterBonusCost < 0) {
+      const netDeficit = Math.abs(grossDiffAfterBonusCost);
+      try {
+        const bonusProductsInfo = (bonusProducts && bonusProducts.length > 0)
+          ? ' Bonus mahsulotlar: ' + bonusProducts
+            .map((bp: any) => `${bp.product?.name || 'Номаълум махсулот'} (${bp.product?.model || '-'}) qty=${bp.quantity}`)
+            .join(' | ')
+          : '';
+
+        const penaltyData = {
+          userId: soldByUserId,
+          branchId: branchContextId || undefined,
+          amount: -netDeficit,
+          reason: 'SALES_PENALTY',
+          description: `Arzon (kelish narxidan past) sotuv uchun umumiy jarima. Transaction ID: ${transaction.id}. Umumiy sotish: ${sellingTotal.toLocaleString()} som, Bonus mahsulotlar qiymati: ${Math.round(totalBonusProductsValue).toLocaleString()} som, Umumiy kelish: ${Math.round(totalCostAll).toLocaleString()} som, Jami kamomad: ${netDeficit.toLocaleString()} som. Tafsilotlar: `
+            + negativeItems.map(n => `${n.item.productName || n.productInfo?.name} (${n.productInfo?.model || '-'}) qty=${n.quantity}, sotish=${n.sellingPrice}, kelish=${n.costInUzs}, zarar=${n.lossAmount}`).join(' | ')
+            + bonusProductsInfo,
+          bonusProducts: bonusProductsData.length > 0 ? bonusProductsData : null,
+          transactionId: transaction.id,
+          bonusDate: new Date().toISOString()
+        } as any;
+        await this.bonusService.create(penaltyData, createdById || soldByUserId);
+      } catch (e) {
+        console.error('Failed to create sales penalty:', e);
+      }
+    }
+  } catch (error) {
+    console.error('Bonus calculation error:', error);
+  }
+}
+
+  async getUserReport(userId: number, query: any = {}) {
+  const { startDate, endDate, search } = query;
+
+  // Build where clause for date filtering with Tashkent local time (UTC+5) adjustment
+  const dateWhere: any = {};
+  if (startDate || endDate) {
+    dateWhere.createdAt = {};
+    if (startDate) {
+      const start = new Date(startDate);
+      const isUTC = startDate.endsWith('Z') || startDate.includes('+');
+      if (!isUTC) {
+        start.setUTCHours(start.getUTCHours() - 5);
+      }
+      dateWhere.createdAt.gte = start;
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      const isUTC = endDate.endsWith('Z') || endDate.includes('+');
+      if (!isUTC) {
+        end.setUTCDate(end.getUTCDate() + 1);
+        end.setUTCHours(end.getUTCHours() - 5);
+        end.setTime(end.getTime() - 1);
+      }
+      dateWhere.createdAt.lte = end;
     }
   }
 
-  async getUserReport(userId: number, query: any = {}) {
-    const { startDate, endDate, search } = query;
+  // Basic user select without heavy passport images
+  const userSafeSelect = {
+    id: true,
+    firstName: true,
+    lastName: true,
+    username: true,
+    phone: true,
+    role: true,
+    branchId: true,
+    storeId: true,
+    status: true,
+    position: true,
+    monthlySalary: true,
+    branch: true,
+    createdAt: true,
+    updatedAt: true,
+  };
 
-    // Build where clause for date filtering with Tashkent local time (UTC+5) adjustment
-    const dateWhere: any = {};
-    if (startDate || endDate) {
-      dateWhere.createdAt = {};
-      if (startDate) {
-        const start = new Date(startDate);
-        const isUTC = startDate.endsWith('Z') || startDate.includes('+');
-        if (!isUTC) {
-          start.setUTCHours(start.getUTCHours() - 5);
-        }
-        dateWhere.createdAt.gte = start;
-      }
-      if (endDate) {
-        const end = new Date(endDate);
-        const isUTC = endDate.endsWith('Z') || endDate.includes('+');
-        if (!isUTC) {
-          end.setUTCDate(end.getUTCDate() + 1);
-          end.setUTCHours(end.getUTCHours() - 5);
-          end.setTime(end.getTime() - 1);
-        }
-        dateWhere.createdAt.lte = end;
-      }
-    }
+  const miniUserSelect = {
+    id: true,
+    firstName: true,
+    lastName: true,
+    username: true,
+    phone: true,
+    role: true,
+  };
 
-    // Basic user select without heavy passport images
-    const userSafeSelect = {
-      id: true,
-      firstName: true,
-      lastName: true,
-      username: true,
-      phone: true,
-      role: true,
-      branchId: true,
-      storeId: true,
-      status: true,
-      position: true,
-      monthlySalary: true,
+  // Fetch user
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+    select: userSafeSelect
+  });
+
+  // Fetch bonuses with date filtering
+  const bonuses = await this.prisma.bonus.findMany({
+    where: {
+      userId,
+      ...dateWhere,
+      ...(search && search.trim() ? {
+        OR: [
+          { reason: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } }
+        ]
+      } : {})
+    },
+    include: {
+      user: { select: miniUserSelect },
       branch: true,
-      createdAt: true,
-      updatedAt: true,
-    };
+      createdBy: { select: miniUserSelect }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
 
-    const miniUserSelect = {
-      id: true,
-      firstName: true,
-      lastName: true,
-      username: true,
-      phone: true,
-      role: true,
-    };
-
-    // Fetch user
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: userSafeSelect
-    });
-
-    // Fetch bonuses with date filtering
-    const bonuses = await this.prisma.bonus.findMany({
-      where: {
-        userId,
-        ...dateWhere,
-        ...(search && search.trim() ? {
-          OR: [
-            { reason: { contains: search, mode: 'insensitive' } },
-            { description: { contains: search, mode: 'insensitive' } }
-          ]
-        } : {})
+  // Fetch transactions with date filtering
+  const transactions = await this.prisma.transaction.findMany({
+    where: {
+      OR: [
+        { soldByUserId: userId },
+        { userId: userId }
+      ],
+      type: TransactionType.SALE,
+      status: { not: TransactionStatus.CANCELLED },
+      ...dateWhere,
+      ...(search && search.trim() ? {
+        OR: [
+          { customer: { fullName: { contains: search, mode: 'insensitive' } } },
+          { customer: { phone: { contains: search, mode: 'insensitive' } } },
+          { items: { some: { product: { name: { contains: search, mode: 'insensitive' } } } } },
+          { items: { some: { product: { model: { contains: search, mode: 'insensitive' } } } } },
+          { items: { some: { product: { barcode: { contains: search, mode: 'insensitive' } } } } }
+        ]
+      } : {})
+    },
+    include: {
+      customer: true,
+      user: { select: miniUserSelect },
+      soldBy: { select: miniUserSelect },
+      items: {
+        include: {
+          product: true
+        }
       },
-      include: {
-        user: { select: miniUserSelect },
-        branch: true,
-        createdBy: { select: miniUserSelect }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+      bonusProducts: {
+        include: {
+          product: true
+        }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
 
-    // Fetch transactions with date filtering
-    const transactions = await this.prisma.transaction.findMany({
-      where: {
+  // Fetch bonus products with date filtering
+  const bonusProducts = await this.prisma.transactionBonusProduct.findMany({
+    where: {
+      transaction: {
         OR: [
           { soldByUserId: userId },
           { userId: userId }
         ],
         type: TransactionType.SALE,
         status: { not: TransactionStatus.CANCELLED },
-        ...dateWhere,
-        ...(search && search.trim() ? {
-          OR: [
-            { customer: { fullName: { contains: search, mode: 'insensitive' } } },
-            { customer: { phone: { contains: search, mode: 'insensitive' } } },
-            { items: { some: { product: { name: { contains: search, mode: 'insensitive' } } } } },
-            { items: { some: { product: { model: { contains: search, mode: 'insensitive' } } } } },
-            { items: { some: { product: { barcode: { contains: search, mode: 'insensitive' } } } } }
-          ]
-        } : {})
-      },
-      include: {
-        customer: true,
-        user: { select: miniUserSelect },
-        soldBy: { select: miniUserSelect },
-        items: {
-          include: {
-            product: true
-          }
-        },
-        bonusProducts: {
-          include: {
-            product: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    // Fetch bonus products with date filtering
-    const bonusProducts = await this.prisma.transactionBonusProduct.findMany({
-      where: {
-        transaction: {
-          OR: [
-            { soldByUserId: userId },
-            { userId: userId }
-          ],
-          type: TransactionType.SALE,
-          status: { not: TransactionStatus.CANCELLED },
-          ...dateWhere
-        }
-      },
-      include: {
-        product: true,
-        transaction: {
-          select: {
-            id: true,
-            createdAt: true,
-            total: true,
-            finalTotal: true,
-            receiptId: true,
-          }
-        }
+        ...dateWhere
       }
-    });
-
-    // Calculate stats directly from transactions
-    const txSalesTotal = transactions.reduce(
-      (sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0),
-      0,
-    );
-
-    let totalProfit = 0;
-    for (const b of bonuses) {
-      if (b.description) {
-        const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d\s,.'-]+?)\s*(?:som|сўм|so['`]?m)/i) ||
-                            b.description.match(/Sof ortiqcha:\s*([\d,.'-]+)/i);
-        if (matchProfit) {
-          const valStr = matchProfit[1].replace(/[\s,']/g, '');
-          totalProfit += parseFloat(valStr) || 0;
+    },
+    include: {
+      product: true,
+      transaction: {
+        select: {
+          id: true,
+          createdAt: true,
+          total: true,
+          finalTotal: true,
+          receiptId: true,
         }
       }
     }
+  });
 
-    if (totalProfit === 0 && transactions.length > 0) {
-      totalProfit = transactions.reduce((sum, tx) => sum + Number(tx.extraProfit || 0), 0);
-    }
+  // Calculate stats directly from transactions
+  const txSalesTotal = transactions.reduce(
+    (sum, tx) => sum + (tx.finalTotal ?? tx.total ?? 0),
+    0,
+  );
 
-    const totalBonuses = bonuses.reduce((sum, b) => sum + (b.amount || 0), 0);
-    const bonusProductsValue = bonusProducts.reduce((sum, bp) => {
-      const price = bp.product?.price || 0;
-      return sum + (price * bp.quantity);
-    }, 0);
-    const salesWithBonuses = bonuses.filter(b => b.reason === 'SALES_BONUS').length;
-
-    const stats = {
-      totalSales: txSalesTotal,
-      totalBonuses,
-      bonusProductsValue,
-      salesWithBonuses,
-      totalProfit
-    };
-
-    // Calculate earnings summary
-    const earningsSummary = {
-      [userId]: {
-        totalSalesInSom: txSalesTotal
+  let totalProfit = 0;
+  for (const b of bonuses) {
+    if (b.description) {
+      const matchProfit = b.description.match(/Sof ortiqcha:\s*([\d\s,.'-]+?)\s*(?:som|сўм|so['`]?m)/i) ||
+        b.description.match(/Sof ortiqcha:\s*([\d,.'-]+)/i);
+      if (matchProfit) {
+        const valStr = matchProfit[1].replace(/[\s,']/g, '');
+        totalProfit += parseFloat(valStr) || 0;
       }
-    };
-
-    return {
-      user,
-      bonuses,
-      bonusProducts,
-      stats,
-      transactions,
-      earningsSummary
-    };
+    }
   }
+
+  if (totalProfit === 0 && transactions.length > 0) {
+    totalProfit = transactions.reduce((sum, tx) => sum + Number(tx.extraProfit || 0), 0);
+  }
+
+  const totalBonuses = bonuses.reduce((sum, b) => sum + (b.amount || 0), 0);
+  const bonusProductsValue = bonusProducts.reduce((sum, bp) => {
+    const price = bp.product?.price || 0;
+    return sum + (price * bp.quantity);
+  }, 0);
+  const salesWithBonuses = bonuses.filter(b => b.reason === 'SALES_BONUS').length;
+
+  const stats = {
+    totalSales: txSalesTotal,
+    totalBonuses,
+    bonusProductsValue,
+    salesWithBonuses,
+    totalProfit
+  };
+
+  // Calculate earnings summary
+  const earningsSummary = {
+    [userId]: {
+      totalSalesInSom: txSalesTotal
+    }
+  };
+
+  return {
+    user,
+    bonuses,
+    bonusProducts,
+    stats,
+    transactions,
+    earningsSummary
+  };
+}
 
   async getTopSoldProducts(filters: {
-    startDate?: string;
-    endDate?: string;
-    branchId?: number;
-    categoryId?: number;
-    search?: string;
-  }) {
-    const { startDate, endDate, branchId, categoryId, search } = filters;
+  startDate?: string;
+  endDate?: string;
+  branchId?: number;
+  categoryId?: number;
+  search?: string;
+}) {
+  const { startDate, endDate, branchId, categoryId, search } = filters;
 
-    const where: any = {
+  const where: any = {
+    transaction: {
+      type: { in: ['SALE', 'DELIVERY'] },
+      status: { not: 'CANCELLED' }
+    }
+  };
+
+  if (startDate || endDate) {
+    where.transaction.createdAt = {};
+    if (startDate) where.transaction.createdAt.gte = new Date(startDate);
+    if (endDate) where.transaction.createdAt.lte = new Date(endDate);
+  }
+
+  if (branchId) {
+    where.transaction.fromBranchId = branchId;
+  }
+
+  const productWhere: any = {};
+  if (categoryId) {
+    productWhere.categoryId = categoryId;
+  }
+
+  if (search) {
+    const searchTerm = String(search).trim();
+    const words = searchTerm.split(/\s+/).filter(Boolean);
+    if (words.length > 0) {
+      productWhere.AND = words.map(word => ({
+        OR: [
+          { name: { contains: word, mode: 'insensitive' } },
+          { barcode: { contains: word, mode: 'insensitive' } },
+          { model: { contains: word, mode: 'insensitive' } },
+        ]
+      }));
+    }
+  }
+
+  if (Object.keys(productWhere).length > 0) {
+    where.product = productWhere;
+  }
+
+  const transactionItems = await this.prisma.transactionItem.findMany({
+    where,
+    include: {
+      product: {
+        include: {
+          category: true
+        }
+      },
       transaction: {
-        type: { in: ['SALE', 'DELIVERY'] },
-        status: { not: 'CANCELLED' }
-      }
-    };
-
-    if (startDate || endDate) {
-      where.transaction.createdAt = {};
-      if (startDate) where.transaction.createdAt.gte = new Date(startDate);
-      if (endDate) where.transaction.createdAt.lte = new Date(endDate);
-    }
-
-    if (branchId) {
-      where.transaction.fromBranchId = branchId;
-    }
-
-    const productWhere: any = {};
-    if (categoryId) {
-      productWhere.categoryId = categoryId;
-    }
-
-    if (search) {
-      const searchTerm = String(search).trim();
-      const words = searchTerm.split(/\s+/).filter(Boolean);
-      if (words.length > 0) {
-        productWhere.AND = words.map(word => ({
-          OR: [
-            { name: { contains: word, mode: 'insensitive' } },
-            { barcode: { contains: word, mode: 'insensitive' } },
-            { model: { contains: word, mode: 'insensitive' } },
-          ]
-        }));
-      }
-    }
-
-    if (Object.keys(productWhere).length > 0) {
-      where.product = productWhere;
-    }
-
-    const transactionItems = await this.prisma.transactionItem.findMany({
-      where,
-      include: {
-        product: {
-          include: {
-            category: true
-          }
-        },
-        transaction: {
-          include: {
-            fromBranch: true
-          }
+        include: {
+          fromBranch: true
         }
       }
-    });
+    }
+  });
 
-    const productSales: Record<string, any> = {};
+  const productSales: Record<string, any> = {};
 
-    transactionItems.forEach(item => {
-      const product = item.product;
-      if (!product) return;
+  transactionItems.forEach(item => {
+    const product = item.product;
+    if (!product) return;
 
-      const productName = (product.name || 'Номаълум махсулот').trim();
-      const quantity = Number(item.quantity) || 0;
-      const price = Number(item.price) || Number(product.price) || 0;
-      const branchName = item.transaction?.fromBranch?.name ||
-        (item.transaction?.fromBranchId ? `Филиал #${item.transaction.fromBranchId}` : 'Номаълум filial');
+    const productName = (product.name || 'Номаълум махсулот').trim();
+    const quantity = Number(item.quantity) || 0;
+    const price = Number(item.price) || Number(product.price) || 0;
+    const branchName = item.transaction?.fromBranch?.name ||
+      (item.transaction?.fromBranchId ? `Филиал #${item.transaction.fromBranchId}` : 'Номаълум filial');
 
-      if (!productSales[productName]) {
-        productSales[productName] = {
-          id: product.id,
-          name: productName,
-          unit: 'дона',
-          model: String(product.model || '-').trim(),
-          barcode: product.barcode || 'Номаълум',
-          categoryId: product.categoryId,
-          category: product.category,
-          transactionCount: 0,
-          totalQuantity: 0,
-          totalAmount: 0,
-          barcodes: new Set<string>(),
-          branchNames: new Set<string>(),
-          models: []
-        };
-      }
+    if (!productSales[productName]) {
+      productSales[productName] = {
+        id: product.id,
+        name: productName,
+        unit: 'дона',
+        model: String(product.model || '-').trim(),
+        barcode: product.barcode || 'Номаълум',
+        categoryId: product.categoryId,
+        category: product.category,
+        transactionCount: 0,
+        totalQuantity: 0,
+        totalAmount: 0,
+        barcodes: new Set<string>(),
+        branchNames: new Set<string>(),
+        models: []
+      };
+    }
 
-      const pSales = productSales[productName];
-      pSales.transactionCount += 1;
-      pSales.totalQuantity += quantity;
-      pSales.totalAmount += quantity * price;
+    const pSales = productSales[productName];
+    pSales.transactionCount += 1;
+    pSales.totalQuantity += quantity;
+    pSales.totalAmount += quantity * price;
 
-      if (product.barcode) pSales.barcodes.add(product.barcode);
-      pSales.branchNames.add(branchName);
+    if (product.barcode) pSales.barcodes.add(product.barcode);
+    pSales.branchNames.add(branchName);
 
-      const existingModel = pSales.models.find(
-        m => m.model === product.model && m.barcode === product.barcode
-      );
-      if (existingModel) {
-        existingModel.quantity += quantity;
-      } else {
-        pSales.models.push({
-          model: product.model,
-          barcode: product.barcode,
-          quantity,
-          price,
-          branchName,
-          unit: 'дона',
-          date: item.transaction?.createdAt ? new Date(item.transaction.createdAt).toLocaleDateString() : 'Номаълум сана'
-        });
-      }
-    });
-
-    const ranked = Object.values(productSales)
-      .filter(item => item.transactionCount > 0 && item.totalQuantity > 0)
-      .sort((a, b) => b.totalQuantity - a.totalQuantity || b.transactionCount - a.transactionCount)
-      .map((item: any, index) => {
-        const avgPricePerUnit = item.totalQuantity > 0
-          ? Math.round((item.totalAmount / item.totalQuantity) * 100) / 100
-          : 0;
-
-        return {
-          ...item,
-          rank: index + 1,
-          color: index < 3 ? ['#FFD700', '#C0C0C0', '#CD7F32'][index] : '#3b82f6',
-          barcodes: Array.from(item.barcodes).join(', '),
-          branchName: Array.from(item.branchNames).join(', '),
-          totalAmount: Math.round(item.totalAmount * 100) / 100,
-          avgPrice: item.transactionCount > 0
-            ? Math.round((item.totalAmount / item.transactionCount) * 100) / 100
-            : 0,
-          avgPricePerUnit,
-        };
+    const existingModel = pSales.models.find(
+      m => m.model === product.model && m.barcode === product.barcode
+    );
+    if (existingModel) {
+      existingModel.quantity += quantity;
+    } else {
+      pSales.models.push({
+        model: product.model,
+        barcode: product.barcode,
+        quantity,
+        price,
+        branchName,
+        unit: 'дона',
+        date: item.transaction?.createdAt ? new Date(item.transaction.createdAt).toLocaleDateString() : 'Номаълум сана'
       });
+    }
+  });
 
-    return ranked;
-  }
+  const ranked = Object.values(productSales)
+    .filter(item => item.transactionCount > 0 && item.totalQuantity > 0)
+    .sort((a, b) => b.totalQuantity - a.totalQuantity || b.transactionCount - a.transactionCount)
+    .map((item: any, index) => {
+      const avgPricePerUnit = item.totalQuantity > 0
+        ? Math.round((item.totalAmount / item.totalQuantity) * 100) / 100
+        : 0;
+
+      return {
+        ...item,
+        rank: index + 1,
+        color: index < 3 ? ['#FFD700', '#C0C0C0', '#CD7F32'][index] : '#3b82f6',
+        barcodes: Array.from(item.barcodes).join(', '),
+        branchName: Array.from(item.branchNames).join(', '),
+        totalAmount: Math.round(item.totalAmount * 100) / 100,
+        avgPrice: item.transactionCount > 0
+          ? Math.round((item.totalAmount / item.transactionCount) * 100) / 100
+          : 0,
+        avgPricePerUnit,
+      };
+    });
+
+  return ranked;
+}
 
   async exportDebtCustomersToExcel(params: {
-    branchId?: number;
-    search?: string;
-    startDate?: string;
-    endDate?: string;
-    hasOutstanding?: boolean;
-    paymentStatus?: string; // ALL, FULLY_PAID, HAS_REMAINING, UYDAN
-    cashierId?: number;
-  }) {
-    const { branchId, search, startDate, endDate, hasOutstanding, paymentStatus, cashierId } = params;
+  branchId?: number;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+  hasOutstanding?: boolean;
+  paymentStatus?: string; // ALL, FULLY_PAID, HAS_REMAINING, UYDAN
+  cashierId?: number;
+}) {
+  const { branchId, search, startDate, endDate, hasOutstanding, paymentStatus, cashierId } = params;
 
-    const where: any = {
-      status: { not: TransactionStatus.CANCELLED },
-      paymentType: { notIn: [PaymentType.INSTALLMENT, PaymentType.PARTNER] },
-      partnerName: null,
-      NOT: [
-        { payments: { some: { method: { in: ['PARTNER', 'partner', 'INSTALLMENT', 'installment'] } } } },
-        { partnerName: { not: null } }
-      ],
+  const where: any = {
+    status: { not: TransactionStatus.CANCELLED },
+    paymentType: { notIn: [PaymentType.INSTALLMENT, PaymentType.PARTNER] },
+    partnerName: null,
+    NOT: [
+      { payments: { some: { method: { in: ['PARTNER', 'partner', 'INSTALLMENT', 'installment'] } } } },
+      { partnerName: { not: null } }
+    ],
+    OR: [
+      { payments: { some: { method: { in: ['UYDAN', 'uydan', 'HOME', 'home'] } } } },
+      { paymentType: PaymentType.CREDIT },
+      { paymentSchedules: { some: { installmentType: { notIn: ['INSTALLMENT', 'installment'] } } } },
+      { tasks: { some: { uydanAmount: { gt: 0 } } } }
+    ]
+  };
+
+  if (!where.AND) where.AND = [];
+
+  if (branchId) {
+    where.AND.push({
       OR: [
-        { payments: { some: { method: { in: ['UYDAN', 'uydan', 'HOME', 'home'] } } } },
-        { paymentType: PaymentType.CREDIT },
-        { paymentSchedules: { some: { installmentType: { notIn: ['INSTALLMENT', 'installment'] } } } },
-        { tasks: { some: { uydanAmount: { gt: 0 } } } }
+        { fromBranchId: branchId },
+        { toBranchId: branchId }
       ]
-    };
+    });
+  }
 
-    if (!where.AND) where.AND = [];
-
-    if (branchId) {
-      where.AND.push({
-        OR: [
-          { fromBranchId: branchId },
-          { toBranchId: branchId }
-        ]
-      });
+  if (startDate || endDate) {
+    const dateCondition: any = {};
+    if (startDate) dateCondition.gte = new Date(startDate);
+    if (endDate) {
+      const endD = new Date(endDate);
+      endD.setHours(23, 59, 59, 999);
+      dateCondition.lte = endD;
     }
+    where.AND.push({ createdAt: dateCondition });
+  }
 
-    if (startDate || endDate) {
-      const dateCondition: any = {};
-      if (startDate) dateCondition.gte = new Date(startDate);
-      if (endDate) {
-        const endD = new Date(endDate);
-        endD.setHours(23, 59, 59, 999);
-        dateCondition.lte = endD;
+  if (search) {
+    where.AND.push({
+      customer: {
+        OR: [
+          { fullName: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search, mode: 'insensitive' } }
+        ]
       }
-      where.AND.push({ createdAt: dateCondition });
-    }
+    });
+  }
 
-    if (search) {
-      where.AND.push({
-        customer: {
-          OR: [
-            { fullName: { contains: search, mode: 'insensitive' } },
-            { phone: { contains: search, mode: 'insensitive' } }
-          ]
-        }
-      });
-    }
+  if (cashierId) {
+    where.AND.push({
+      OR: [
+        { soldByUserId: cashierId },
+        { userId: cashierId }
+      ]
+    });
+  }
 
-    if (cashierId) {
-      where.AND.push({
-        OR: [
-          { soldByUserId: cashierId },
-          { userId: cashierId }
-        ]
-      });
-    }
+  if (where.AND.length === 0) delete where.AND;
 
-    if (where.AND.length === 0) delete where.AND;
-
-    // Load ALL matching transactions with only necessary fields for speed & memory efficiency
-    const transactions: any[] = await (this.prisma.transaction.findMany as any)({
-      where,
-      select: {
-        id: true,
-        status: true,
-        paymentType: true,
-        partnerName: true,
-        finalTotal: true,
-        total: true,
-        downPayment: true,
-        creditRepaymentAmount: true,
-        createdAt: true,
-        customer: {
-          select: { id: true, fullName: true, phone: true }
-        },
-        user: {
-          select: { role: true, firstName: true, lastName: true, username: true }
-        },
-        soldBy: {
-          select: { role: true, firstName: true, lastName: true, username: true }
-        },
-        fromBranch: {
-          select: { id: true, name: true }
-        },
-        payments: {
-          select: { method: true, amount: true }
-        },
-        paymentSchedules: {
-          select: {
-            payment: true,
-            paidAmount: true,
-            isPaid: true,
-            remainingBalance: true,
-            installmentType: true,
-          }
-        },
-        tasks: { select: { uydanAmount: true, uydanCollectedAmount: true } },
-        items: {
-          select: {
-            price: true,
-            sellingPrice: true,
-            quantity: true,
-            total: true,
-            status: true,
-            product: {
-              select: { name: true, model: true }
-            }
-          }
+  // Load ALL matching transactions with only necessary fields for speed & memory efficiency
+  const transactions: any[] = await (this.prisma.transaction.findMany as any)({
+    where,
+    select: {
+      id: true,
+      status: true,
+      paymentType: true,
+      partnerName: true,
+      finalTotal: true,
+      total: true,
+      downPayment: true,
+      creditRepaymentAmount: true,
+      createdAt: true,
+      customer: {
+        select: { id: true, fullName: true, phone: true }
+      },
+      user: {
+        select: { role: true, firstName: true, lastName: true, username: true }
+      },
+      soldBy: {
+        select: { role: true, firstName: true, lastName: true, username: true }
+      },
+      fromBranch: {
+        select: { id: true, name: true }
+      },
+      payments: {
+        select: { method: true, amount: true }
+      },
+      paymentSchedules: {
+        select: {
+          payment: true,
+          paidAmount: true,
+          isPaid: true,
+          remainingBalance: true,
+          installmentType: true,
         }
       },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    const customerMap = new Map<number, any>();
-
-    for (const t of transactions) {
-      if (t.paymentType === 'INSTALLMENT' || t.paymentType === 'PARTNER') continue;
-      if (t.partnerName) continue;
-      const payments = t.payments || [];
-      const hasPartnerPayment = payments.some(p => ['PARTNER', 'HAMKOR'].includes(String(p.method || '').toUpperCase()));
-      const hasInstallmentPayment = payments.some(p => ['INSTALLMENT'].includes(String(p.method || '').toUpperCase()));
-      if (hasPartnerPayment || hasInstallmentPayment) continue;
-
-      const cust = t.customer;
-      if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
-
-      // getDebtCustomers bilan bir xil filtr
-      const dInfo = this.computeDebtTx(t);
-      const hasUydanMethod = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()));
-      const isDebtTx = hasUydanMethod || dInfo.hasUydanSignal || ['UYDAN', 'CREDIT'].includes(String(t.paymentType || '').toUpperCase());
-      if (!isDebtTx && dInfo.schedules.length === 0) continue;
-
-      if (!customerMap.has(cust.id)) {
-        customerMap.set(cust.id, {
-          customer: cust,
-          txs: []
-        });
+      tasks: { select: { uydanAmount: true, uydanCollectedAmount: true } },
+      items: {
+        select: {
+          price: true,
+          sellingPrice: true,
+          quantity: true,
+          total: true,
+          status: true,
+          product: {
+            select: { name: true, model: true }
+          }
+        }
       }
-      customerMap.get(cust.id).txs.push(t);
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  const customerMap = new Map<number, any>();
+
+  for (const t of transactions) {
+    if (t.paymentType === 'INSTALLMENT' || t.paymentType === 'PARTNER') continue;
+    if (t.partnerName) continue;
+    const payments = t.payments || [];
+    const hasPartnerPayment = payments.some(p => ['PARTNER', 'HAMKOR'].includes(String(p.method || '').toUpperCase()));
+    const hasInstallmentPayment = payments.some(p => ['INSTALLMENT'].includes(String(p.method || '').toUpperCase()));
+    if (hasPartnerPayment || hasInstallmentPayment) continue;
+
+    const cust = t.customer;
+    if (!cust || !cust.fullName || cust.fullName.trim() === '') continue;
+
+    // getDebtCustomers bilan bir xil filtr
+    const dInfo = this.computeDebtTx(t);
+    const hasUydanMethod = payments.some(p => ['UYDAN', 'HOME'].includes(String(p.method || '').toUpperCase()));
+    const isDebtTx = hasUydanMethod || dInfo.hasUydanSignal || ['UYDAN', 'CREDIT'].includes(String(t.paymentType || '').toUpperCase());
+    if (!isDebtTx && dInfo.schedules.length === 0) continue;
+
+    if (!customerMap.has(cust.id)) {
+      customerMap.set(cust.id, {
+        customer: cust,
+        txs: []
+      });
     }
+    customerMap.get(cust.id).txs.push(t);
+  }
 
-    const rows: any[] = [];
-    for (const entry of Array.from(customerMap.values())) {
-      const cust = entry.customer;
-      const txsAll = entry.txs;
+  const rows: any[] = [];
+  for (const entry of Array.from(customerMap.values())) {
+    const cust = entry.customer;
+    const txsAll = entry.txs;
 
-      const marketingNames = new Set<string>();
-      const cashierNames = new Set<string>();
-      const productSet = new Set<string>();
-      const bonusSet = new Set<string>();
-      const returnedTxIds: string[] = [];
+    const marketingNames = new Set<string>();
+    const cashierNames = new Set<string>();
+    const productSet = new Set<string>();
+    const bonusSet = new Set<string>();
+    const returnedTxIds: string[] = [];
 
-      let totalSold = 0;
-      let totalDebt = 0;
-      let totalDown = 0;
-      let totalPaid = 0;
-      let totalRemaining = 0;
+    let totalSold = 0;
+    let totalDebt = 0;
+    let totalDown = 0;
+    let totalPaid = 0;
+    let totalRemaining = 0;
 
-      for (const t of txsAll) {
-        const isReturned = String(t.status || '').toUpperCase() === 'RETURNED';
-        if (isReturned) returnedTxIds.push(String(t.id));
+    for (const t of txsAll) {
+      const isReturned = String(t.status || '').toUpperCase() === 'RETURNED';
+      if (isReturned) returnedTxIds.push(String(t.id));
 
-        const marketingUser =
-          t.user && String(t.user.role).toUpperCase() === 'MARKETING'
-            ? t.user
-            : t.soldBy && String(t.soldBy.role).toUpperCase() === 'MARKETING'
-              ? t.soldBy
-              : null;
-
-        const cashierUser =
-          t.soldBy && String(t.soldBy.role).toUpperCase() === 'CASHIER'
+      const marketingUser =
+        t.user && String(t.user.role).toUpperCase() === 'MARKETING'
+          ? t.user
+          : t.soldBy && String(t.soldBy.role).toUpperCase() === 'MARKETING'
             ? t.soldBy
-            : t.user && String(t.user.role).toUpperCase() === 'CASHIER'
-              ? t.user
-              : null;
+            : null;
 
-        if (marketingUser) marketingNames.add(`${marketingUser.firstName || ''} ${marketingUser.lastName || ''}`.trim() || marketingUser.username);
-        if (cashierUser) cashierNames.add(`${cashierUser.firstName || ''} ${cashierUser.lastName || ''}`.trim() || cashierUser.username);
+      const cashierUser =
+        t.soldBy && String(t.soldBy.role).toUpperCase() === 'CASHIER'
+          ? t.soldBy
+          : t.user && String(t.user.role).toUpperCase() === 'CASHIER'
+            ? t.user
+            : null;
 
-        (t.items || []).forEach((it) => {
-          const name = it?.product?.name || it?.name || '';
-          const model = it?.product?.model || it?.model || '';
-          const label = `${name}${model ? ` (${model})` : ''}`.trim();
-          if (label) productSet.add(label);
+      if (marketingUser) marketingNames.add(`${marketingUser.firstName || ''} ${marketingUser.lastName || ''}`.trim() || marketingUser.username);
+      if (cashierUser) cashierNames.add(`${cashierUser.firstName || ''} ${cashierUser.lastName || ''}`.trim() || cashierUser.username);
 
-          const isBonus = it.isBonus === true || it.isGift === true || it.bonus === true || it.bonusProductId || Number(it.price ?? 0) === 0;
-          if (isBonus) bonusSet.add(label || name || 'BONUS');
-        });
+      (t.items || []).forEach((it) => {
+        const name = it?.product?.name || it?.name || '';
+        const model = it?.product?.model || it?.model || '';
+        const label = `${name}${model ? ` (${model})` : ''}`.trim();
+        if (label) productSet.add(label);
 
-        if (isReturned) continue;
-
-        // Umumiy helper — ro'yxat va UI bilan bir xil natija
-        const info = this.computeDebtTx(t);
-
-        totalSold += info.sold;
-        totalDebt += info.debt;
-        totalDown += info.upfront;
-        totalPaid += info.totalPaid;
-        totalRemaining += info.outstanding;
-      }
-
-      // Customer-level filtering
-      if (hasOutstanding === true && totalRemaining <= 0) continue;
-      if (hasOutstanding === false && totalRemaining > 0) continue;
-
-      if (paymentStatus === 'FULLY_PAID' && totalRemaining > 0) continue;
-      if (paymentStatus === 'HAS_REMAINING' && totalRemaining <= 0) continue;
-
-      rows.push({
-        'Holat': returnedTxIds.length > 0 ? 'Qaytarilgan bor' : (totalRemaining > 0 ? 'Qarzi bor' : 'To\'langan'),
-        'Qaytarilgan TX ID': returnedTxIds.length ? returnedTxIds.join(', ') : '-',
-        'Marketing': Array.from(marketingNames).join(', ') || '-',
-        'Kassir': Array.from(cashierNames).join(', ') || '-',
-        'Mijoz': cust.fullName || 'Noma\'lum',
-        'Telefon': cust.phone || '-',
-        'Mahsulotlar (name + model)': Array.from(productSet).join(' | ') || '-',
-        'Bonus qo\'shilganlar': Array.from(bonusSet).join(' | ') || '-',
-        'Jami sotib olgan (so\'m)': Math.round(totalSold),
-        'Qarz qilgan (so\'m)': Math.round(totalDebt),
-        'Oldindan bergan (so\'m)': Math.round(totalDown),
-        'Jami to\'lov qilgan (so\'m)': Math.round(totalPaid),
-        'Qarzi qolgan (so\'m)': Math.round(totalRemaining)
+        const isBonus = it.isBonus === true || it.isGift === true || it.bonus === true || it.bonusProductId || Number(it.price ?? 0) === 0;
+        if (isBonus) bonusSet.add(label || name || 'BONUS');
       });
+
+      if (isReturned) continue;
+
+      // Umumiy helper — ro'yxat va UI bilan bir xil natija
+      const info = this.computeDebtTx(t);
+
+      totalSold += info.sold;
+      totalDebt += info.debt;
+      totalDown += info.upfront;
+      totalPaid += info.totalPaid;
+      totalRemaining += info.outstanding;
     }
 
-    // Qarzi borlar birinchi (eng katta qarzdan boshlab)
-    rows.sort((a, b) => Number(b['Qarzi qolgan (so\'m)'] || 0) - Number(a['Qarzi qolgan (so\'m)'] || 0));
+    // Customer-level filtering
+    if (hasOutstanding === true && totalRemaining <= 0) continue;
+    if (hasOutstanding === false && totalRemaining > 0) continue;
 
-    if (rows.length > 0) {
-      const sumCol = (key: string) => rows.reduce((s, r) => s + Number(r[key] || 0), 0);
-      const debtorsCount = rows.filter(r => Number(r['Qarzi qolgan (so\'m)'] || 0) > 0).length;
-      rows.push({
-        'Holat': 'JAMI',
-        'Qaytarilgan TX ID': '',
-        'Marketing': '',
-        'Kassir': '',
-        'Mijoz': `${rows.length} ta mijoz (${debtorsCount} ta qarzdor)`,
-        'Telefon': '',
-        'Mahsulotlar (name + model)': '',
-        'Bonus qo\'shilganlar': '',
-        'Jami sotib olgan (so\'m)': sumCol('Jami sotib olgan (so\'m)'),
-        'Qarz qilgan (so\'m)': sumCol('Qarz qilgan (so\'m)'),
-        'Oldindan bergan (so\'m)': sumCol('Oldindan bergan (so\'m)'),
-        'Jami to\'lov qilgan (so\'m)': sumCol('Jami to\'lov qilgan (so\'m)'),
-        'Qarzi qolgan (so\'m)': sumCol('Qarzi qolgan (so\'m)')
-      });
-    }
+    if (paymentStatus === 'FULLY_PAID' && totalRemaining > 0) continue;
+    if (paymentStatus === 'HAS_REMAINING' && totalRemaining <= 0) continue;
 
-    const XLSX = require('xlsx');
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [
-      { wch: 18 }, // Holat
-      { wch: 28 }, // Returned tx ids
-      { wch: 20 }, // Marketing
-      { wch: 18 }, // Kassir
-      { wch: 22 }, // Mijoz
-      { wch: 16 }, // Telefon
-      { wch: 60 }, // Mahsulotlar
-      { wch: 45 }, // Bonus
-      { wch: 20 }, // sold
-      { wch: 18 }, // debt
-      { wch: 18 }, // down
-      { wch: 20 }, // paid
-      { wch: 18 }  // remaining
-    ];
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Kredit mijozlari');
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    return buffer;
-  }
-
-  async addTransactionNote(transactionId: number, note: string, userId?: number) {
-    if (!transactionId || !note || !note.trim()) {
-      throw new BadRequestException('Transaction ID and note text are required');
-    }
-
-    return this.prisma.transactionNote.create({
-      data: {
-        transactionId: Number(transactionId),
-        note: note.trim(),
-        userId: userId ? Number(userId) : null,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            username: true,
-            role: true,
-          }
-        }
-      }
+    rows.push({
+      'Holat': returnedTxIds.length > 0 ? 'Qaytarilgan bor' : (totalRemaining > 0 ? 'Qarzi bor' : 'To\'langan'),
+      'Qaytarilgan TX ID': returnedTxIds.length ? returnedTxIds.join(', ') : '-',
+      'Marketing': Array.from(marketingNames).join(', ') || '-',
+      'Kassir': Array.from(cashierNames).join(', ') || '-',
+      'Mijoz': cust.fullName || 'Noma\'lum',
+      'Telefon': cust.phone || '-',
+      'Mahsulotlar (name + model)': Array.from(productSet).join(' | ') || '-',
+      'Bonus qo\'shilganlar': Array.from(bonusSet).join(' | ') || '-',
+      'Jami sotib olgan (so\'m)': Math.round(totalSold),
+      'Qarz qilgan (so\'m)': Math.round(totalDebt),
+      'Oldindan bergan (so\'m)': Math.round(totalDown),
+      'Jami to\'lov qilgan (so\'m)': Math.round(totalPaid),
+      'Qarzi qolgan (so\'m)': Math.round(totalRemaining)
     });
   }
+
+  // Qarzi borlar birinchi (eng katta qarzdan boshlab)
+  rows.sort((a, b) => Number(b['Qarzi qolgan (so\'m)'] || 0) - Number(a['Qarzi qolgan (so\'m)'] || 0));
+
+  if (rows.length > 0) {
+    const sumCol = (key: string) => rows.reduce((s, r) => s + Number(r[key] || 0), 0);
+    const debtorsCount = rows.filter(r => Number(r['Qarzi qolgan (so\'m)'] || 0) > 0).length;
+    rows.push({
+      'Holat': 'JAMI',
+      'Qaytarilgan TX ID': '',
+      'Marketing': '',
+      'Kassir': '',
+      'Mijoz': `${rows.length} ta mijoz (${debtorsCount} ta qarzdor)`,
+      'Telefon': '',
+      'Mahsulotlar (name + model)': '',
+      'Bonus qo\'shilganlar': '',
+      'Jami sotib olgan (so\'m)': sumCol('Jami sotib olgan (so\'m)'),
+      'Qarz qilgan (so\'m)': sumCol('Qarz qilgan (so\'m)'),
+      'Oldindan bergan (so\'m)': sumCol('Oldindan bergan (so\'m)'),
+      'Jami to\'lov qilgan (so\'m)': sumCol('Jami to\'lov qilgan (so\'m)'),
+      'Qarzi qolgan (so\'m)': sumCol('Qarzi qolgan (so\'m)')
+    });
+  }
+
+  const XLSX = require('xlsx');
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 18 }, // Holat
+    { wch: 28 }, // Returned tx ids
+    { wch: 20 }, // Marketing
+    { wch: 18 }, // Kassir
+    { wch: 22 }, // Mijoz
+    { wch: 16 }, // Telefon
+    { wch: 60 }, // Mahsulotlar
+    { wch: 45 }, // Bonus
+    { wch: 20 }, // sold
+    { wch: 18 }, // debt
+    { wch: 18 }, // down
+    { wch: 20 }, // paid
+    { wch: 18 }  // remaining
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Kredit mijozlari');
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  return buffer;
+}
+
+  async addTransactionNote(transactionId: number, note: string, userId ?: number) {
+  if (!transactionId || !note || !note.trim()) {
+    throw new BadRequestException('Transaction ID and note text are required');
+  }
+
+  return this.prisma.transactionNote.create({
+    data: {
+      transactionId: Number(transactionId),
+      note: note.trim(),
+      userId: userId ? Number(userId) : null,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          username: true,
+          role: true,
+        }
+      }
+    }
+  });
+}
 
   async getTransactionNotes(transactionId: number) {
-    return this.prisma.transactionNote.findMany({
-      where: { transactionId: Number(transactionId) },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            username: true,
-            role: true,
-          }
+  return this.prisma.transactionNote.findMany({
+    where: { transactionId: Number(transactionId) },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          username: true,
+          role: true,
         }
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
+      }
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
 
   async getSellersSalesSummary(params: {
-    startDate?: string;
-    endDate?: string;
-    branchId?: number;
-    userId?: number;
-  }) {
-    const { startDate, endDate, branchId, userId } = params;
+  startDate?: string;
+  endDate?: string;
+  branchId?: number;
+  userId?: number;
+}) {
+  const { startDate, endDate, branchId, userId } = params;
 
-    const where: any = {
-      status: { not: TransactionStatus.CANCELLED },
-      type: TransactionType.SALE,
-    };
+  const where: any = {
+    status: { not: TransactionStatus.CANCELLED },
+    type: TransactionType.SALE,
+  };
 
-    if (startDate || endDate) {
-      const dateCond: any = {};
-      if (startDate) dateCond.gte = new Date(startDate);
-      if (endDate) {
-        const endD = new Date(endDate);
-        endD.setHours(23, 59, 59, 999);
-        dateCond.lte = endD;
-      }
-      where.createdAt = dateCond;
+  if (startDate || endDate) {
+    const dateCond: any = {};
+    if (startDate) dateCond.gte = new Date(startDate);
+    if (endDate) {
+      const endD = new Date(endDate);
+      endD.setHours(23, 59, 59, 999);
+      dateCond.lte = endD;
     }
-
-    if (branchId) {
-      where.OR = [
-        { fromBranchId: branchId },
-        { toBranchId: branchId },
-      ];
-    }
-
-    if (userId) {
-      const userCondition = { OR: [{ soldByUserId: userId }, { userId }] };
-      if (where.OR) {
-        where.AND = [userCondition];
-      } else {
-        where.OR = userCondition.OR;
-      }
-    }
-
-    const transactions = await this.prisma.transaction.findMany({
-      where,
-      select: {
-        id: true,
-        soldByUserId: true,
-        userId: true,
-        fromBranchId: true,
-        finalTotal: true,
-        total: true,
-        paymentType: true,
-      },
-    });
-
-    const summary: Record<number, any> = {};
-
-    for (const tx of transactions) {
-      const sId = tx.soldByUserId || tx.userId;
-      if (!sId) continue;
-
-      const som = Number(tx.finalTotal || tx.total || 0);
-
-      if (!summary[sId]) {
-        summary[sId] = {
-          totalSales: 0,
-          totalSalesInSom: 0,
-          transactionCount: 0,
-          cashSales: 0,
-          cardSales: 0,
-          creditSales: 0,
-          branches: [],
-        };
-      }
-
-      summary[sId].totalSalesInSom += som;
-      summary[sId].transactionCount += 1;
-
-      if (tx.fromBranchId && !summary[sId].branches.includes(tx.fromBranchId)) {
-        summary[sId].branches.push(tx.fromBranchId);
-      }
-
-      const pType = String(tx.paymentType || '').toUpperCase();
-      if (pType === 'CASH') {
-        summary[sId].cashSales += som;
-      } else if (pType === 'CARD') {
-        summary[sId].cardSales += som;
-      } else if (pType === 'CREDIT' || pType === 'INSTALLMENT') {
-        summary[sId].creditSales += som;
-      }
-    }
-
-    return summary;
+    where.createdAt = dateCond;
   }
+
+  if (branchId) {
+    where.OR = [
+      { fromBranchId: branchId },
+      { toBranchId: branchId },
+    ];
+  }
+
+  if (userId) {
+    const userCondition = { OR: [{ soldByUserId: userId }, { userId }] };
+    if (where.OR) {
+      where.AND = [userCondition];
+    } else {
+      where.OR = userCondition.OR;
+    }
+  }
+
+  const transactions = await this.prisma.transaction.findMany({
+    where,
+    select: {
+      id: true,
+      soldByUserId: true,
+      userId: true,
+      fromBranchId: true,
+      finalTotal: true,
+      total: true,
+      paymentType: true,
+    },
+  });
+
+  const summary: Record<number, any> = {};
+
+  for (const tx of transactions) {
+    const sId = tx.soldByUserId || tx.userId;
+    if (!sId) continue;
+
+    const som = Number(tx.finalTotal || tx.total || 0);
+
+    if (!summary[sId]) {
+      summary[sId] = {
+        totalSales: 0,
+        totalSalesInSom: 0,
+        transactionCount: 0,
+        cashSales: 0,
+        cardSales: 0,
+        creditSales: 0,
+        branches: [],
+      };
+    }
+
+    summary[sId].totalSalesInSom += som;
+    summary[sId].transactionCount += 1;
+
+    if (tx.fromBranchId && !summary[sId].branches.includes(tx.fromBranchId)) {
+      summary[sId].branches.push(tx.fromBranchId);
+    }
+
+    const pType = String(tx.paymentType || '').toUpperCase();
+    if (pType === 'CASH') {
+      summary[sId].cashSales += som;
+    } else if (pType === 'CARD') {
+      summary[sId].cardSales += som;
+    } else if (pType === 'CREDIT' || pType === 'INSTALLMENT') {
+      summary[sId].creditSales += som;
+    }
+  }
+
+  return summary;
+}
 }
